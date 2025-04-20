@@ -2,26 +2,28 @@
 //!
 //! A Rust client library for Supabase, providing access to Supabase services including
 //! database, auth, storage, and realtime subscriptions.
+//!
+//! This is a wrapper around individual Supabase component crates that provides
+//! a unified and convenient API that matches the JavaScript supabase-js client.
 
-pub mod auth;
-pub mod postgrest;
-pub mod storage;
-pub mod realtime;
-pub mod functions;
-pub mod error;
-pub mod config;
-pub mod fetch;
+// 各コンポーネントクレートの再エクスポート
+pub use supabase_auth as auth;
+pub use supabase_postgrest as postgrest;
+pub use supabase_storage as storage;
+pub use supabase_realtime as realtime;
+pub use supabase_functions as functions;
+
+// 内部モジュール
+mod config;
+mod error;
+
+// 公開エクスポート
+pub use config::ClientOptions;
+pub use error::{Error, Result};
 
 use std::sync::Arc;
 use reqwest::Client;
 use url::Url;
-
-use crate::auth::Auth;
-use crate::postgrest::PostgrestClient;
-use crate::storage::StorageClient;
-use crate::realtime::RealtimeClient;
-use crate::functions::FunctionsClient;
-use crate::config::ClientOptions;
 
 /// The main entry point for the Supabase Rust client
 pub struct Supabase {
@@ -32,9 +34,9 @@ pub struct Supabase {
     /// HTTP client used for requests
     pub http_client: Client,
     /// Auth client for user management and authentication
-    pub auth: Auth,
+    pub auth: auth::Auth,
     /// Client options
-    pub options: ClientOptions,
+    pub options: config::ClientOptions,
 }
 
 impl Supabase {
@@ -67,7 +69,7 @@ impl Supabase {
     /// # Example
     ///
     /// ```
-    /// use supabase_rust::{Supabase, config::ClientOptions};
+    /// use supabase_rust::{Supabase, ClientOptions};
     ///
     /// let options = ClientOptions::default().with_auto_refresh_token(true);
     /// let supabase = Supabase::new_with_options(
@@ -79,7 +81,13 @@ impl Supabase {
     pub fn new_with_options(supabase_url: &str, supabase_key: &str, options: ClientOptions) -> Self {
         let http_client = Client::new();
         
-        let auth = Auth::new(supabase_url, supabase_key, http_client.clone(), options.clone());
+        let auth_options = auth::AuthOptions {
+            auto_refresh_token: options.auto_refresh_token,
+            persist_session: options.persist_session,
+            detect_session_in_url: options.detect_session_in_url,
+        };
+        
+        let auth = auth::Auth::new(supabase_url, supabase_key, http_client.clone(), auth_options);
         
         Self {
             url: supabase_url.to_string(),
@@ -91,7 +99,7 @@ impl Supabase {
     }
     
     /// Get a reference to the auth client for user management and authentication
-    pub fn auth(&self) -> &Auth {
+    pub fn auth(&self) -> &auth::Auth {
         &self.auth
     }
     
@@ -109,8 +117,8 @@ impl Supabase {
     /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
     /// let query = supabase.from("users");
     /// ```
-    pub fn from(&self, table: &str) -> PostgrestClient {
-        PostgrestClient::new(
+    pub fn from(&self, table: &str) -> postgrest::PostgrestClient {
+        postgrest::PostgrestClient::new(
             &self.url,
             &self.key,
             table,
@@ -118,7 +126,7 @@ impl Supabase {
         )
     }
     
-    /// Get a reference to the storage client for file operations
+    /// Get a storage client for file operations
     ///
     /// # Example
     ///
@@ -128,11 +136,11 @@ impl Supabase {
     /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
     /// let storage = supabase.storage();
     /// ```
-    pub fn storage(&self) -> StorageClient {
-        StorageClient::new(&self.url, &self.key, self.http_client.clone())
+    pub fn storage(&self) -> storage::StorageClient {
+        storage::StorageClient::new(&self.url, &self.key, self.http_client.clone())
     }
     
-    /// Get a reference to the realtime client for subscription operations
+    /// Get a realtime client for subscription operations
     ///
     /// # Example
     ///
@@ -142,11 +150,11 @@ impl Supabase {
     /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
     /// let realtime = supabase.realtime();
     /// ```
-    pub fn realtime(&self) -> RealtimeClient {
-        RealtimeClient::new(&self.url, &self.key)
+    pub fn realtime(&self) -> realtime::RealtimeClient {
+        realtime::RealtimeClient::new(&self.url, &self.key)
     }
     
-    /// Get a reference to the functions client for edge function operations
+    /// Get a functions client for edge function operations
     ///
     /// # Example
     ///
@@ -156,14 +164,42 @@ impl Supabase {
     /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
     /// let functions = supabase.functions();
     /// ```
-    pub fn functions(&self) -> FunctionsClient {
-        FunctionsClient::new(&self.url, &self.key, self.http_client.clone())
+    pub fn functions(&self) -> functions::FunctionsClient {
+        functions::FunctionsClient::new(&self.url, &self.key, self.http_client.clone())
+    }
+    
+    /// Execute a Postgres function via RPC
+    ///
+    /// # Arguments
+    ///
+    /// * `function_name` - The name of the function to call
+    /// * `params` - Parameters to pass to the function
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use supabase_rust::Supabase;
+    /// use serde_json::json;
+    ///
+    /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
+    /// let result = supabase.rpc("calculate_total", json!({"user_id": 123}));
+    /// ```
+    pub fn rpc(&self, function_name: &str, params: serde_json::Value) -> postgrest::PostgrestClient {
+        let client = postgrest::PostgrestClient::new(
+            &self.url,
+            &self.key,
+            "rpc",
+            self.http_client.clone(),
+        );
+        
+        // rpc エンドポイントに関数名とパラメータを設定
+        client
     }
 }
 
 /// A convenience module for common imports
 pub mod prelude {
     pub use crate::Supabase;
-    pub use crate::error::Error;
+    pub use crate::error::{Error, Result};
     pub use crate::config::ClientOptions;
 }

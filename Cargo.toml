@@ -20,11 +20,21 @@ url = "2.3"
 base64 = "0.21"
 async-trait = "0.1"
 jsonwebtoken = "9.1"
+supabase-auth = { path = "crates/auth" }
+supabase-postgrest = { path = "crates/postgrest" }
+supabase-storage = { path = "crates/storage" }
+supabase-realtime = { path = "crates/realtime" }
+supabase-functions = { path = "crates/functions" }
 
 [workspace]
 members = [
     ".",
-    "examples"
+    "examples",
+    "crates/auth",
+    "crates/postgrest",
+    "crates/storage",
+    "crates/realtime",
+    "crates/functions"
 ]
 
 [dev-dependencies]

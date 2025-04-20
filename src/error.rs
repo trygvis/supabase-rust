@@ -14,23 +14,23 @@ pub enum Error {
     
     /// Authentication errors
     #[error("Authentication error: {0}")]
-    AuthError(String),
+    AuthError(#[from] supabase_auth::AuthError),
     
     /// PostgreREST errors
     #[error("PostgreREST error: {0}")]
-    PostgrestError(String),
+    PostgrestError(#[from] supabase_postgrest::PostgrestError),
     
     /// Storage errors
     #[error("Storage error: {0}")]
-    StorageError(String),
+    StorageError(#[from] supabase_storage::StorageError),
     
     /// Realtime errors
     #[error("Realtime error: {0}")]
-    RealtimeError(String),
+    RealtimeError(#[from] supabase_realtime::RealtimeError),
     
     /// Functions errors
     #[error("Functions error: {0}")]
-    FunctionsError(String),
+    FunctionsError(#[from] supabase_functions::FunctionsError),
     
     /// Network errors
     #[error("Network error: {0}")]
@@ -76,17 +76,17 @@ impl Error {
     
     /// Create a new auth error
     pub fn auth(message: impl Into<String>) -> Self {
-        Self::AuthError(message.into())
+        Self::AuthError(supabase_auth::AuthError::new(message.into()))
     }
     
     /// Create a new storage error
     pub fn storage(message: impl Into<String>) -> Self {
-        Self::StorageError(message.into())
+        Self::StorageError(supabase_storage::StorageError::new(message.into()))
     }
     
     /// Create a new function error
     pub fn function(message: impl Into<String>) -> Self {
-        Self::FunctionsError(message.into())
+        Self::FunctionsError(supabase_functions::FunctionsError::new(message.into()))
     }
     
     /// Create a new general error
