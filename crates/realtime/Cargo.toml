@@ -1,0 +1,29 @@
+[package]
+name = "supabase-realtime"
+version = "0.1.0"
+edition = "2021"
+authors = ["Supabase Rust Client Contributors"]
+description = "Realtime client for Supabase"
+license = "MIT"
+repository = "https://github.com/supabase/supabase-rust"
+documentation = "https://docs.rs/supabase-realtime"
+keywords = ["supabase", "realtime", "websocket", "postgres", "subscription"]
+categories = ["web-programming", "asynchronous"]
+
+[dependencies]
+tokio = { version = "1.0", features = ["rt", "sync", "time"] }
+tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+url = "2.3"
+async-trait = "0.1"
+log = "0.4"
+futures-util = "0.3"
+uuid = { version = "1.4", features = ["v4", "serde"] }
+base64 = "0.21"
+
+[dev-dependencies]
+tokio-test = "0.4"
+wiremock = "0.5"

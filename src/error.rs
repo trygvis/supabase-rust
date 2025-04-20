@@ -1,80 +1,72 @@
-//! Error handling for the Supabase Rust client
+//! Error types for Supabase Rust client
 
-use std::fmt;
 use thiserror::Error;
 
-/// Unified error type for the Supabase Rust client
+/// The main error type for the Supabase Rust client
 #[derive(Error, Debug)]
 pub enum Error {
-    /// Network or HTTP related errors
-    #[error("HTTP error: {0}")]
-    Http(#[from] reqwest::Error),
-
-    /// JSON serialization or deserialization errors
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-
+    /// API related errors
+    #[error("API error: {message} (code: {code})")]
+    ApiError {
+        code: String,
+        message: String,
+    },
+    
     /// Authentication errors
     #[error("Authentication error: {0}")]
-    Auth(String),
-
-    /// Database query errors
-    #[error("Database error: {0}")]
-    Database(String),
+    AuthError(#[from] crate::auth::AuthError),
+    
+    /// PostgreREST errors
+    #[error("PostgreREST error: {0}")]
+    PostgrestError(String),
     
     /// Storage errors
     #[error("Storage error: {0}")]
-    Storage(String),
+    StorageError(String),
     
-    /// Realtime subscription errors
+    /// Realtime errors
     #[error("Realtime error: {0}")]
-    Realtime(String),
+    RealtimeError(String),
     
-    /// Edge Function errors
-    #[error("Function error: {0}")]
-    Function(String),
+    /// Functions errors
+    #[error("Functions error: {0}")]
+    FunctionsError(String),
+    
+    /// Network errors
+    #[error("Network error: {0}")]
+    NetworkError(#[from] reqwest::Error),
+    
+    /// JSON serialization errors
+    #[error("JSON error: {0}")]
+    JsonError(#[from] serde_json::Error),
     
     /// URL parsing errors
-    #[error("URL error: {0}")]
-    Url(#[from] url::ParseError),
+    #[error("URL parse error: {0}")]
+    UrlParseError(#[from] url::ParseError),
     
-    /// JWT errors
-    #[error("JWT error: {0}")]
-    Jwt(#[from] jsonwebtoken::errors::Error),
+    /// Unexpected errors
+    #[error("Unexpected error: {0}")]
+    UnexpectedError(String),
     
-    /// General errors
-    #[error("{0}")]
-    General(String),
+    /// Parameter validation errors
+    #[error("Validation error: {0}")]
+    ValidationError(String),
 }
 
-impl Error {
-    /// Create a new authentication error
-    pub fn auth<T: fmt::Display>(msg: T) -> Self {
-        Error::Auth(msg.to_string())
-    }
+/// Result type for Supabase operations
+pub type Result<T> = std::result::Result<T, Error>;
 
-    /// Create a new database error
-    pub fn database<T: fmt::Display>(msg: T) -> Self {
-        Error::Database(msg.to_string())
+impl Error {
+    /// Create a new API error
+    pub fn api_error(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::ApiError {
+            code: code.into(),
+            message: message.into(),
+        }
     }
     
-    /// Create a new storage error
-    pub fn storage<T: fmt::Display>(msg: T) -> Self {
-        Error::Storage(msg.to_string())
-    }
-    
-    /// Create a new realtime error
-    pub fn realtime<T: fmt::Display>(msg: T) -> Self {
-        Error::Realtime(msg.to_string())
-    }
-    
-    /// Create a new function error
-    pub fn function<T: fmt::Display>(msg: T) -> Self {
-        Error::Function(msg.to_string())
-    }
-    
-    /// Create a new general error
-    pub fn general<T: fmt::Display>(msg: T) -> Self {
-        Error::General(msg.to_string())
+    /// Create a new validation error
+    pub fn validation_error(message: impl Into<String>) -> Self {
+        Self::ValidationError(message.into())
     }
 }

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use dotenv::dotenv;
 use uuid::Uuid;
+use serde_json::json;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct User {
@@ -50,27 +51,45 @@ async fn main() -> Result<(), Error> {
     };
     
     let user_response = auth.sign_up(&user.email, &user.password).await?;
-    println!("User created successfully: {}", user_response.user.id);
+    
+    if let Some(ref user_data) = user_response.user {
+        println!("User created successfully: {}", user_data.id);
+    } else {
+        println!("User creation response received but user data is None");
+    }
     
     // Sign in the user
     println!("Signing in the user");
-    let sign_in_response = auth.sign_in_with_password(&user.email, &user.password).await?;
+    let sign_in_response = auth.sign_in(&user.email, &user.password).await?;
     println!("User signed in successfully");
     
     // Get the user's access token
-    let access_token = sign_in_response.session.access_token;
+    let access_token = match &sign_in_response.session {
+        Some(session) => &session.access_token,
+        None => {
+            println!("No session in sign-in response");
+            return Ok(());
+        }
+    };
     println!("Access token retrieved: {:.15}...", access_token);
     
-    // Create a new Supabase client with the user's session
-    let authenticated_supabase = Supabase::new_with_session(&supabase_url, &supabase_key, &access_token);
+    // Use the existing client with the session already stored
+    let client = supabase.from("profiles");
     
     // Create a profile for the user
     println!("Creating user profile");
-    let client = authenticated_supabase.postgrest();
+    
+    let user_id = match &user_response.user {
+        Some(user_data) => user_data.id.clone(),
+        None => {
+            println!("No user data available");
+            return Ok(());
+        }
+    };
     
     let profile = Profile {
         id: None,
-        user_id: user_response.user.id.clone(),
+        user_id,
         username: format!("user_{}", unique_id.split('-').next().unwrap_or("default")),
         avatar_url: None,
     };
@@ -78,12 +97,15 @@ async fn main() -> Result<(), Error> {
     // This assumes you have a 'profiles' table that's set up with RLS policies
     // that allow authenticated users to insert their own profile
     match client
-        .from("profiles")
         .insert(json!(profile))
-        .execute_one::<Profile>()
+        .execute::<Profile>()
         .await {
-            Ok(created_profile) => {
-                println!("Profile created successfully: {:?}", created_profile);
+            Ok(created_profiles) => {
+                if let Some(created_profile) = created_profiles.first() {
+                    println!("Profile created successfully: {:?}", created_profile);
+                } else {
+                    println!("Profile creation response received but no profile data returned");
+                }
             },
             Err(e) => {
                 println!("Error creating profile: {:?}", e);
@@ -93,7 +115,7 @@ async fn main() -> Result<(), Error> {
     
     // Get user data
     println!("Getting user data");
-    match auth.get_user(&access_token).await {
+    match auth.get_user().await {
         Ok(user_data) => {
             println!("User data: {:?}", user_data);
         },
@@ -104,7 +126,7 @@ async fn main() -> Result<(), Error> {
     
     // Sign out
     println!("Signing out");
-    match auth.sign_out(&access_token).await {
+    match auth.sign_out().await {
         Ok(_) => {
             println!("User signed out successfully");
         },

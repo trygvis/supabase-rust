@@ -1,33 +1,22 @@
 //! Configuration options for the Supabase client
 
-use std::time::Duration;
-
-/// Configuration options for the Supabase client
+/// Client options for configuring the Supabase client
 #[derive(Debug, Clone)]
 pub struct ClientOptions {
-    /// Whether to automatically refresh the token
+    /// Auto refresh token when it's about to expire
     pub auto_refresh_token: bool,
     
-    /// The persist session key
+    /// Persist session in memory
     pub persist_session: bool,
     
-    /// The request timeout
-    pub request_timeout: Option<Duration>,
+    /// Detect session from URL query parameters
+    pub detect_session_in_url: bool,
     
-    /// The database schema
-    pub db_schema: String,
+    /// Headers to be sent with each request
+    pub headers: std::collections::HashMap<String, String>,
     
-    /// The storage schema
-    pub storage_schema: String,
-    
-    /// The auth schema
-    pub auth_schema: String,
-    
-    /// The realtime schema
-    pub realtime_schema: String,
-    
-    /// The functions schema
-    pub functions_schema: String,
+    /// Global fetch options (for future compatibility)
+    pub fetch_options: Option<serde_json::Value>,
 }
 
 impl Default for ClientOptions {
@@ -35,62 +24,57 @@ impl Default for ClientOptions {
         Self {
             auto_refresh_token: true,
             persist_session: true,
-            request_timeout: Some(Duration::from_secs(30)),
-            db_schema: "public".to_string(),
-            storage_schema: "storage".to_string(),
-            auth_schema: "auth".to_string(),
-            realtime_schema: "realtime".to_string(),
-            functions_schema: "functions".to_string(),
+            detect_session_in_url: true,
+            headers: std::collections::HashMap::new(),
+            fetch_options: None,
         }
     }
 }
 
 impl ClientOptions {
-    /// Set whether to automatically refresh the token
-    pub fn with_auto_refresh_token(mut self, value: bool) -> Self {
-        self.auto_refresh_token = value;
+    /// Create a new ClientOptions with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// Set whether to auto refresh token
+    pub fn with_auto_refresh_token(mut self, auto_refresh_token: bool) -> Self {
+        self.auto_refresh_token = auto_refresh_token;
         self
     }
     
-    /// Set whether to persist the session
-    pub fn with_persist_session(mut self, value: bool) -> Self {
-        self.persist_session = value;
+    /// Set whether to persist session
+    pub fn with_persist_session(mut self, persist_session: bool) -> Self {
+        self.persist_session = persist_session;
         self
     }
     
-    /// Set the request timeout
-    pub fn with_request_timeout(mut self, value: Option<Duration>) -> Self {
-        self.request_timeout = value;
+    /// Set whether to detect session from URL
+    pub fn with_detect_session_in_url(mut self, detect_session_in_url: bool) -> Self {
+        self.detect_session_in_url = detect_session_in_url;
         self
     }
     
-    /// Set the database schema
-    pub fn with_db_schema(mut self, value: &str) -> Self {
-        self.db_schema = value.to_string();
+    /// Add a header to be sent with each request
+    pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.headers.insert(key.into(), value.into());
         self
     }
     
-    /// Set the storage schema
-    pub fn with_storage_schema(mut self, value: &str) -> Self {
-        self.storage_schema = value.to_string();
+    /// Set fetch options
+    pub fn with_fetch_options(mut self, fetch_options: serde_json::Value) -> Self {
+        self.fetch_options = Some(fetch_options);
         self
     }
+}
+
+/// Supabase constants
+pub struct Constants {
+    /// Default Supabase API version
+    pub static API_VERSION: &'static str = "v1",
     
-    /// Set the auth schema
-    pub fn with_auth_schema(mut self, value: &str) -> Self {
-        self.auth_schema = value.to_string();
-        self
-    }
-    
-    /// Set the realtime schema
-    pub fn with_realtime_schema(mut self, value: &str) -> Self {
-        self.realtime_schema = value.to_string();
-        self
-    }
-    
-    /// Set the functions schema
-    pub fn with_functions_schema(mut self, value: &str) -> Self {
-        self.functions_schema = value.to_string();
-        self
-    }
+    /// Default Supabase headers
+    pub static DEFAULT_HEADERS: &'static [(&'static str, &'static str)] = &[
+        ("X-Client-Info", "supabase-rust/0.1.0"),
+    ],
 }
