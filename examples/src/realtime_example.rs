@@ -1,20 +1,39 @@
 use supabase_rust::prelude::*;
-use serde::{Deserialize, Serialize};
+use dotenv::dotenv;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use futures::StreamExt;
+use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-struct Message {
+struct Task {
     id: Option<i32>,
-    content: String,
-    user_id: Option<String>,
+    title: String,
+    description: Option<String>,
+    is_complete: bool,
     created_at: Option<String>,
+    user_id: String,
+}
+
+// The payload for Real-time messages
+#[derive(Debug, Deserialize)]
+struct RealtimePayload<T> {
+    #[serde(rename = "type")]
+    event_type: String,
+    table: String,
+    schema: String,
+    record: Option<T>,
+    old_record: Option<T>,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+    // Load environment variables from .env file
+    dotenv().ok();
+    
     // Get Supabase URL and key from environment variables
     let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
@@ -24,91 +43,124 @@ async fn main() -> Result<(), Error> {
     
     println!("Starting Realtime example");
     
-    // This example assumes you have a 'messages' table with the following structure:
-    // create table messages (
-    //   id serial primary key,
-    //   content text not null,
-    //   user_id uuid references auth.users(id),
-    //   created_at timestamp with time zone default now()
-    // );
-    //
-    // And that you've enabled realtime for this table in the Supabase dashboard
+    // First, sign up a test user for our example
+    let test_email = format!("test-realtime-{}@example.com", uuid::Uuid::new_v4());
+    let test_password = "password123";
     
-    // Create a message counter to track received messages
-    let message_counter = Arc::new(Mutex::new(0));
-    let message_counter_clone = message_counter.clone();
+    let sign_up_result = supabase
+        .auth()
+        .sign_up(&test_email, test_password)
+        .await?;
     
-    // Set up the realtime client
+    let user_id = sign_up_result.user.id;
+    println!("Created test user with ID: {}", user_id);
+    
+    // Store received messages in a thread-safe vector
+    let messages = Arc::new(Mutex::new(Vec::new()));
+    let messages_clone = messages.clone();
+    
+    // Setup realtime client to listen to the 'tasks' table
     let realtime = supabase.realtime();
     
-    // Connect to the realtime channel for the messages table
-    let channel = realtime.channel("public:messages");
-    
-    // Subscribe to all inserts on the messages table
-    channel
-        .on(
-            RealtimeListenType::PostgresChanges,
-            RealtimeChannelOptions::new("public", "messages", Some(RealtimePostgresChangeEvent::Insert))
-        )
-        .subscribe(move |payload: RealtimeMessage| {
-            let mut counter = message_counter_clone.blocking_lock();
-            *counter += 1;
-            
-            if let Some(record) = payload.new {
-                match serde_json::from_value::<Message>(record.clone()) {
-                    Ok(message) => {
-                        println!("Received new message: {:?}", message);
-                    },
-                    Err(e) => {
-                        println!("Error deserializing message: {:?}", e);
-                        println!("Raw payload: {:?}", record);
+    // Create channel for 'tasks' table changes
+    let channel = realtime
+        .channel("public:tasks")
+        .on_insert(move |payload: HashMap<String, serde_json::Value>| {
+            let messages = messages_clone.clone();
+            async move {
+                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
+                    if let Some(record) = payload.record {
+                        let mut messages = messages.lock().await;
+                        messages.push(format!("INSERT: {}", record.title));
+                        println!("Received INSERT event: {:?}", record);
                     }
                 }
             }
         })
+        .on_update(|payload: HashMap<String, serde_json::Value>| {
+            async move {
+                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
+                    if let Some(record) = payload.record {
+                        println!("Received UPDATE event: {:?}", record);
+                    }
+                }
+            }
+        })
+        .on_delete(|payload: HashMap<String, serde_json::Value>| {
+            async move {
+                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
+                    if let Some(old_record) = payload.old_record {
+                        println!("Received DELETE event: {:?}", old_record);
+                    }
+                }
+            }
+        });
+    
+    // Subscribe to the channel
+    let subscription = channel.subscribe().await?;
+    println!("Subscribed to realtime changes on public:tasks");
+    
+    // Create a task through PostgREST
+    let postgrest = supabase.from("tasks");
+    
+    // Insert tasks with some delay to observe realtime events
+    for i in 1..5 {
+        let task = Task {
+            id: None,
+            title: format!("Realtime Task {}", i),
+            description: Some(format!("Description for realtime task {}", i)),
+            is_complete: false,
+            created_at: None,
+            user_id: user_id.clone(),
+        };
+        
+        println!("Inserting task: {}", task.title);
+        postgrest
+            .insert(json!(task))
+            .execute()
+            .await?;
+        
+        // Wait a bit to see the realtime event
+        sleep(Duration::from_secs(1)).await;
+    }
+    
+    // Update a task
+    println!("\nUpdating tasks...");
+    postgrest
+        .update(json!({ "is_complete": true }))
+        .like("title", "Realtime Task 1")
+        .execute()
         .await?;
     
-    println!("Subscribed to realtime updates for the messages table");
-    println!("Will listen for 30 seconds and simultaneously insert some test messages");
+    sleep(Duration::from_secs(1)).await;
     
-    // Use the Postgres client to insert some test messages
-    let client = supabase.postgrest();
+    // Delete a task
+    println!("\nDeleting a task...");
+    postgrest
+        .delete()
+        .like("title", "Realtime Task 2")
+        .execute()
+        .await?;
     
-    // Insert messages in another task to not block the main thread
-    tokio::spawn({
-        let client = client.clone();
-        async move {
-            for i in 1..=5 {
-                sleep(Duration::from_secs(3)).await;
-                
-                let message = Message {
-                    id: None,
-                    content: format!("Test message {}", i),
-                    user_id: None,
-                    created_at: None,
-                };
-                
-                match client
-                    .from("messages")
-                    .insert(json!(message))
-                    .execute_one::<Message>()
-                    .await {
-                        Ok(msg) => println!("Inserted message: {:?}", msg),
-                        Err(e) => println!("Error inserting message: {:?}", e),
-                    }
-            }
-        }
-    });
+    // Wait a bit to receive all events
+    sleep(Duration::from_secs(2)).await;
     
-    // Wait for 30 seconds to receive realtime updates
-    sleep(Duration::from_secs(30)).await;
+    // Check received messages
+    let message_count = messages.lock().await.len();
+    println!("\nReceived {} insert notifications", message_count);
     
-    // Unsubscribe from the channel
-    channel.unsubscribe().await?;
+    // Unsubscribe from realtime updates
+    subscription.unsubscribe().await?;
+    println!("Unsubscribed from realtime updates");
     
-    let final_count = *message_counter.lock().await;
+    // Clean up - delete all tasks for our test user
+    postgrest
+        .delete()
+        .eq("user_id", &user_id)
+        .execute()
+        .await?;
+    
     println!("Realtime example completed");
-    println!("Received {} messages during the test", final_count);
     
     Ok(())
 }
