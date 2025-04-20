@@ -14,7 +14,7 @@ pub enum Error {
     
     /// Authentication errors
     #[error("Authentication error: {0}")]
-    AuthError(#[from] crate::auth::AuthError),
+    AuthError(String),
     
     /// PostgreREST errors
     #[error("PostgreREST error: {0}")]
@@ -51,6 +51,10 @@ pub enum Error {
     /// Parameter validation errors
     #[error("Validation error: {0}")]
     ValidationError(String),
+    
+    /// General errors
+    #[error("General error: {0}")]
+    GeneralError(String),
 }
 
 /// Result type for Supabase operations
@@ -68,5 +72,25 @@ impl Error {
     /// Create a new validation error
     pub fn validation_error(message: impl Into<String>) -> Self {
         Self::ValidationError(message.into())
+    }
+    
+    /// Create a new auth error
+    pub fn auth(message: impl Into<String>) -> Self {
+        Self::AuthError(message.into())
+    }
+    
+    /// Create a new storage error
+    pub fn storage(message: impl Into<String>) -> Self {
+        Self::StorageError(message.into())
+    }
+    
+    /// Create a new function error
+    pub fn function(message: impl Into<String>) -> Self {
+        Self::FunctionsError(message.into())
+    }
+    
+    /// Create a new general error
+    pub fn general(message: impl Into<String>) -> Self {
+        Self::GeneralError(message.into())
     }
 }

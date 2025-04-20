@@ -69,12 +69,14 @@ impl ClientOptions {
 }
 
 /// Supabase constants
-pub struct Constants {
+pub struct Constants;
+
+impl Constants {
     /// Default Supabase API version
-    pub static API_VERSION: &'static str = "v1",
+    pub const API_VERSION: &'static str = "v1";
     
     /// Default Supabase headers
-    pub static DEFAULT_HEADERS: &'static [(&'static str, &'static str)] = &[
+    pub const DEFAULT_HEADERS: &'static [(&'static str, &'static str)] = &[
         ("X-Client-Info", "supabase-rust/0.1.0"),
-    ],
+    ];
 }
