@@ -8,3 +8,27 @@ supabase-rust = { path = ".." }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+[[bin]]
+name = "auth_example"
+path = "src/auth_example.rs"
+
+[[bin]]
+name = "database_example"
+path = "src/database_example.rs"
+
+[[bin]]
+name = "storage_example"
+path = "src/storage_example.rs"
+
+[[bin]]
+name = "realtime_example"
+path = "src/realtime_example.rs"
+
+[[bin]]
+name = "postgrest_example"
+path = "src/postgrest_example.rs"
+
+[[bin]]
+name = "functions_example"
+path = "src/functions_example.rs"

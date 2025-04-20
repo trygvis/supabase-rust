@@ -1,6 +1,6 @@
 //! HTTP client abstraction for making requests to Supabase services
 
-use reqwest::{Client, RequestBuilder, Method, header::{HeaderMap, HeaderValue}};
+use reqwest::{Client, RequestBuilder, Method, header::{HeaderMap, HeaderValue, HeaderName}};
 use serde::{Serialize, de::DeserializeOwned};
 use crate::error::Error;
 use std::collections::HashMap;
@@ -35,7 +35,9 @@ impl<'a> FetchBuilder<'a> {
     /// Add a header to the request
     pub fn header(mut self, name: &str, value: &str) -> Self {
         if let Ok(value) = HeaderValue::from_str(value) {
-            self.headers.insert(name, value);
+            if let Ok(name) = HeaderName::from_bytes(name.as_bytes()) {
+                self.headers.insert(name, value);
+            }
         }
         self
     }

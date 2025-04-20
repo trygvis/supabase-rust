@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::auth::Session;
 
 /// Authentication response
 #[derive(Debug, Clone, Serialize, Deserialize)]
