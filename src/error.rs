@@ -47,7 +47,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     /// Create a new API error
-    pub fn api_error(code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn api_error(code: impl Into<String> + std::fmt::Display, message: impl Into<String> + std::fmt::Display) -> Self {
         Self::Other(format!("API error: {message} (code: {code})"))
     }
     

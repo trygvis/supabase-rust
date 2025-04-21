@@ -12,6 +12,7 @@ use std::time::Duration;
 use futures_util::{Stream, StreamExt};
 use std::pin::Pin;
 use bytes::{Bytes, BytesMut, BufMut};
+use base64::Engine;
 
 /// エラー型の詳細
 #[derive(Debug, Clone, Deserialize)]
@@ -67,7 +68,10 @@ impl FunctionsError {
     
     pub fn with_details(response: &Response, details: FunctionErrorDetails) -> Self {
         Self::FunctionError {
-            message: details.message.unwrap_or_else(|| format!("Function returned error status: {}", response.status())),
+            message: details.message.as_ref().map_or_else(
+                || format!("Function returned error status: {}", response.status()),
+                |msg| msg.clone()
+            ),
             status: response.status(),
             details: Some(details),
         }
@@ -210,16 +214,26 @@ impl FunctionsClient {
         // ステータスコードの確認
         let status = response.status();
         if !status.is_success() {
+            // レスポンスのクローンを作成してエラー処理に使用
+            let status_copy = status;
+            
             // エラーレスポンスのパース
             let error_body = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
             if let Ok(error_details) = serde_json::from_str::<FunctionErrorDetails>(&error_body) {
-                return Err(FunctionsError::with_details(&response, error_details));
+                return Err(FunctionsError::FunctionError {
+                    message: error_details.message.as_ref().map_or_else(
+                        || format!("Function returned error status: {}", status_copy),
+                        |msg| msg.clone()
+                    ),
+                    status: status_copy,
+                    details: Some(error_details),
+                });
             } else {
                 return Err(FunctionsError::FunctionError {
                     message: error_body,
-                    status,
+                    status: status_copy,
                     details: None,
                 });
             }
@@ -239,7 +253,12 @@ impl FunctionsClient {
         match opts.response_type {
             ResponseType::Json => {
                 let data = response.json::<T>().await
-                    .map_err(|e| FunctionsError::JsonError(serde_json::Error::custom(e)))?;
+                    .map_err(|e| FunctionsError::JsonError(serde_json::from_str::<T>("{}")
+                        .err()
+                        .unwrap_or_else(|| serde_json::Error::io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            e.to_string()
+                        )))))?;
                 
                 Ok(FunctionResponse {
                     data,
@@ -248,11 +267,12 @@ impl FunctionsClient {
                 })
             },
             ResponseType::Text => {
+                // テキスト処理
                 let text = response.text().await?;
                 
-                // T型にテキストを変換できるかをチェック
-                let data = serde_json::from_value::<T>(Value::String(text))
-                    .map_err(|_| FunctionsError::InvalidResponse("Cannot convert text response to requested type".to_string()))?;
+                // テキストからデシリアライズを試みる
+                let data: T = serde_json::from_str(&text)
+                    .unwrap_or_else(|_| panic!("Failed to deserialize text response as requested type"));
                 
                 Ok(FunctionResponse {
                     data,
@@ -261,18 +281,28 @@ impl FunctionsClient {
                 })
             },
             ResponseType::Binary => {
+                // バイナリデータ処理
                 let bytes = response.bytes().await?;
                 
-                // T型にバイトを変換できるかをチェック（通常はValue::Stringに変換されることはないため、エラーになりやすい）
-                let binary_str = base64::encode(&bytes);
-                let data = serde_json::from_value::<T>(Value::String(binary_str))
-                    .map_err(|_| FunctionsError::InvalidResponse("Cannot convert binary response to requested type".to_string()))?;
+                // Base64エンコード（非推奨API対応）
+                let binary_str = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                
+                // バイナリデータをデシリアライズ
+                let data: T = serde_json::from_str(&format!("\"{}\"", binary_str))
+                    .unwrap_or_else(|_| panic!("Failed to deserialize binary response as requested type"));
                 
                 Ok(FunctionResponse {
                     data,
                     status,
                     headers,
                 })
+            },
+            ResponseType::Stream => {
+                // ストリームレスポンスの場合、通常のデシリアライズではなく
+                // 別のストリーム処理用のメソッドを使用する必要がある
+                Err(FunctionsError::InvalidResponse(
+                    "Stream response type cannot be handled by invoke(). Use invoke_stream() instead.".to_string()
+                ))
             }
         }
     }
@@ -329,7 +359,10 @@ impl FunctionsClient {
         body: Option<B>,
         options: Option<FunctionOptions>,
     ) -> Result<ByteStream> {
-        let opts = options.unwrap_or_default();
+        let opts = options.unwrap_or_else(|| FunctionOptions {
+            response_type: ResponseType::Stream,
+            ..Default::default()
+        });
         
         // URLの構築
         let mut url = Url::parse(&self.base_url)?;
@@ -338,22 +371,28 @@ impl FunctionsClient {
             .push("functions")
             .push("v1")
             .push(function_name);
-
-        // リクエスト構築
+            
+        // リクエストの構築
         let mut request_builder = self.http_client
             .post(url)
             .header("apikey", &self.api_key)
             .header("Authorization", format!("Bearer {}", &self.api_key));
         
-        // ストリーミングの設定
-        request_builder = request_builder.header("Accept", "text/event-stream");
-        
-        // その他の設定（タイムアウト、ヘッダーなど）
+        // リクエストタイムアウトの設定
         if let Some(timeout) = opts.timeout_seconds {
             request_builder = request_builder.timeout(Duration::from_secs(timeout));
         }
         
-        if let Some(headers) = &opts.headers {
+        // コンテンツタイプの設定
+        if let Some(content_type) = opts.content_type {
+            request_builder = request_builder.header("Content-Type", content_type);
+        } else {
+            // デフォルトはJSON
+            request_builder = request_builder.header("Content-Type", "application/json");
+        }
+        
+        // カスタムヘッダーの追加
+        if let Some(headers) = opts.headers {
             for (key, value) in headers {
                 request_builder = request_builder.header(key, value);
             }
@@ -364,7 +403,7 @@ impl FunctionsClient {
             request_builder = request_builder.json(&body_data);
         }
         
-        // リクエストの送信とストリームの取得
+        // リクエストの送信
         let response = request_builder.send().await
             .map_err(|e| {
                 if e.is_timeout() {
@@ -373,31 +412,37 @@ impl FunctionsClient {
                     FunctionsError::from(e)
                 }
             })?;
-        
+            
         // ステータスコードの確認
-        if !response.status().is_success() {
-            // エラー処理
+        let status = response.status();
+        if !status.is_success() {
+            // ステータスコードのコピーを保持
+            let status_copy = status;
+            
+            // エラーレスポンスのパース
             let error_body = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
+                
             if let Ok(error_details) = serde_json::from_str::<FunctionErrorDetails>(&error_body) {
-                return Err(FunctionsError::with_details(&response, error_details));
+                return Err(FunctionsError::FunctionError {
+                    message: error_details.message.as_ref().map_or_else(
+                        || format!("Function returned error status: {}", status_copy),
+                        |msg| msg.clone()
+                    ),
+                    status: status_copy,
+                    details: Some(error_details),
+                });
             } else {
                 return Err(FunctionsError::FunctionError {
                     message: error_body,
-                    status: response.status(),
+                    status: status_copy,
                     details: None,
                 });
             }
         }
         
         // ストリームを返す
-        let stream = response.bytes_stream()
-            .map(|result| {
-                result.map_err(|e| FunctionsError::RequestError(e))
-            });
-            
-        Ok(Box::pin(stream))
+        Ok(Box::pin(response.bytes_stream().map(|result| result.map_err(FunctionsError::from))))
     }
     
     /// JSONストリームを取得するメソッド（SSE形式のJSONイベントを扱う）
@@ -406,38 +451,37 @@ impl FunctionsClient {
         function_name: &str,
         body: Option<B>,
         options: Option<FunctionOptions>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Value>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Value>> + Send + '_>>> {
         let byte_stream = self.invoke_stream(function_name, body, options).await?;
         let json_stream = self.byte_stream_to_json(byte_stream);
         Ok(json_stream)
     }
     
     /// バイトストリームをJSONストリームに変換する
-    fn byte_stream_to_json(&self, stream: ByteStream) -> Pin<Box<dyn Stream<Item = Result<Value>> + Send>> {
+    fn byte_stream_to_json(&self, stream: ByteStream) -> Pin<Box<dyn Stream<Item = Result<Value>> + Send + '_>> {
         Box::pin(async_stream::stream! {
             let mut line_stream = self.stream_to_lines(stream);
             
             while let Some(line_result) = line_stream.next().await {
                 match line_result {
                     Ok(line) => {
-                        // SSEフォーマットの処理: "data: {...}" の形式を期待
-                        if line.starts_with("data: ") {
-                            let json_str = line.trim_start_matches("data: ");
-                            match serde_json::from_str::<Value>(json_str) {
-                                Ok(json) => yield Ok(json),
-                                Err(e) => yield Err(FunctionsError::JsonError(e)),
-                            }
-                        } else if !line.trim().is_empty() && !line.starts_with(":") {
-                            // データ行でなく、コメントでもない場合はJSONとして解析を試みる
-                            match serde_json::from_str::<Value>(&line) {
-                                Ok(json) => yield Ok(json),
-                                Err(e) => yield Err(FunctionsError::JsonError(e)),
+                        // 空行はスキップ
+                        if line.trim().is_empty() {
+                            continue;
+                        }
+                        
+                        // JSON解析を試みる
+                        match serde_json::from_str::<Value>(&line) {
+                            Ok(json_value) => {
+                                yield Ok(json_value);
+                            },
+                            Err(err) => {
+                                yield Err(FunctionsError::JsonError(err));
                             }
                         }
-                        // 空行やコメント行は無視
                     },
-                    Err(e) => {
-                        yield Err(e);
+                    Err(err) => {
+                        yield Err(err);
                         break;
                     }
                 }
@@ -446,40 +490,45 @@ impl FunctionsClient {
     }
     
     /// ストリームを行に変換する
-    pub fn stream_to_lines(&self, stream: ByteStream) -> Pin<Box<dyn Stream<Item = Result<String>> + Send>> {
+    pub fn stream_to_lines(&self, stream: ByteStream) -> Pin<Box<dyn Stream<Item = Result<String>> + Send + '_>> {
         Box::pin(async_stream::stream! {
             let mut buf = BytesMut::new();
-            let mut stream = stream;
             
+            // 行ごとに処理
+            tokio::pin!(stream);
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
-                        buf.put(chunk);
+                        buf.extend_from_slice(&chunk);
                         
-                        // 改行で分割して行を処理
-                        loop {
-                            if let Some(i) = buf.iter().position(|&b| b == b'\n') {
-                                let line = String::from_utf8_lossy(&buf[..i]).to_string();
-                                buf.advance(i + 1);
-                                yield Ok(line);
+                        // バッファから完全な行を探して処理
+                        while let Some(i) = buf.iter().position(|&b| b == b'\n') {
+                            let line = if i > 0 && buf[i - 1] == b'\r' {
+                                // CRLF改行の処理
+                                let line = String::from_utf8_lossy(&buf[..i - 1]).to_string();
+                                unsafe { buf.advance_mut(i + 1); }
+                                line
                             } else {
-                                break;
-                            }
+                                // LF改行の処理
+                                let line = String::from_utf8_lossy(&buf[..i]).to_string();
+                                unsafe { buf.advance_mut(i + 1); }
+                                line
+                            };
+                            
+                            yield Ok(line);
                         }
                     },
                     Err(e) => {
-                        yield Err(e);
+                        yield Err(FunctionsError::from(e));
                         break;
                     }
                 }
             }
             
-            // 残りのバッファがあれば行として返す
+            // 最後の行が改行で終わっていない場合も処理
             if !buf.is_empty() {
-                let remaining = String::from_utf8_lossy(&buf).to_string();
-                if !remaining.trim().is_empty() {
-                    yield Ok(remaining);
-                }
+                let line = String::from_utf8_lossy(&buf).to_string();
+                yield Ok(line);
             }
         })
     }

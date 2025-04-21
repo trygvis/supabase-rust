@@ -181,6 +181,97 @@ impl Supabase {
             self.http_client.clone()
         )
     }
+
+    /// eq演算子による簡便なフィルター追加メソッド
+    pub fn eq<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Eq,
+            value.into()
+        ))
+    }
+
+    /// neq演算子による簡便なフィルター追加メソッド
+    pub fn neq<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Neq,
+            value.into()
+        ))
+    }
+
+    /// gt演算子による簡便なフィルター追加メソッド
+    pub fn gt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(), 
+            FilterOperator::Gt,
+            value.into()
+        ))
+    }
+
+    /// gte演算子による簡便なフィルター追加メソッド
+    pub fn gte<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Gte,
+            value.into()
+        ))
+    }
+
+    /// lt演算子による簡便なフィルター追加メソッド
+    pub fn lt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Lt,
+            value.into()
+        ))
+    }
+
+    /// lte演算子による簡便なフィルター追加メソッド
+    pub fn lte<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Lte,
+            value.into()
+        ))
+    }
+
+    /// in演算子による簡便なフィルター追加メソッド（配列の中に含まれるか）
+    pub fn in_values<T: Into<serde_json::Value>>(self, column: &str, values: Vec<T>) -> Self {
+        let json_values = values.into_iter().map(|v| v.into()).collect();
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::In,
+            serde_json::Value::Array(json_values)
+        ))
+    }
+
+    /// contains演算子による簡便なフィルター追加メソッド（配列が値を含むか）
+    pub fn contains<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Contains,
+            value.into()
+        ))
+    }
+
+    /// like演算子による簡便なフィルター追加メソッド（ワイルドカード検索）
+    pub fn like(self, column: &str, pattern: &str) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::Like,
+            serde_json::Value::String(pattern.to_string())
+        ))
+    }
+
+    /// ilike演算子による簡便なフィルター追加メソッド（大文字小文字を区別しないワイルドカード検索）
+    pub fn ilike(self, column: &str, pattern: &str) -> Self {
+        self.filter(DatabaseFilter::new(
+            column.to_string(),
+            FilterOperator::ILike,
+            serde_json::Value::String(pattern.to_string())
+        ))
+    }
 }
 
 /// A convenience module for common imports
@@ -192,8 +283,7 @@ pub mod prelude {
 }
 
 /// フィルター演算子
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FilterOperator {
     /// 等しい
     Eq,
@@ -221,6 +311,48 @@ pub enum FilterOperator {
     Like,
     /// ILIKE演算子（大文字小文字を区別しないワイルドカード検索）
     ILike,
+}
+
+impl ToString for FilterOperator {
+    fn to_string(&self) -> String {
+        match self {
+            FilterOperator::Eq => "eq".to_string(),
+            FilterOperator::Neq => "neq".to_string(),
+            FilterOperator::Gt => "gt".to_string(),
+            FilterOperator::Gte => "gte".to_string(),
+            FilterOperator::Lt => "lt".to_string(),
+            FilterOperator::Lte => "lte".to_string(),
+            FilterOperator::In => "in".to_string(),
+            FilterOperator::NotIn => "not.in".to_string(),
+            FilterOperator::ContainedBy => "contained_by".to_string(),
+            FilterOperator::Contains => "contains".to_string(),
+            FilterOperator::ContainedByArray => "contained_by_array".to_string(),
+            FilterOperator::Like => "like".to_string(),
+            FilterOperator::ILike => "ilike".to_string(),
+        }
+    }
+}
+
+/// データベース変更に対するフィルター条件
+#[derive(Debug, Clone, Serialize)]
+pub struct DatabaseFilter {
+    /// フィルター対象のカラム名
+    pub column: String,
+    /// 比較演算子
+    #[serde(rename = "operator")]
+    pub operator_str: String,
+    /// 比較する値
+    pub value: serde_json::Value,
+}
+
+impl DatabaseFilter {
+    pub fn new(column: String, operator: FilterOperator, value: serde_json::Value) -> Self {
+        Self {
+            column,
+            operator_str: operator.to_string(),
+            value,
+        }
+    }
 }
 
 #[cfg(test)]
