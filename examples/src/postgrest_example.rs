@@ -211,14 +211,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 8: Transaction with savepoints (begin_transaction方式)
     println!("\nExample 8: Transaction with savepoints");
     
-    // Start a transaction
+    // Start a transaction with explicit options
     let transaction = postgrest.begin_transaction(
         Some(IsolationLevel::ReadCommitted),
         Some(TransactionMode::ReadWrite),
         Some(30) // timeout in seconds
     ).await?;
     
-    println!("Transaction started");
+    println!("Transaction started with isolation level: ReadCommitted, mode: ReadWrite");
     
     // Create a task in the transaction
     let transaction_task = Task {
@@ -240,7 +240,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let tx_task_id = tx_insert_result[0]["id"].as_i64().unwrap();
     println!("Created task in transaction with ID: {}", tx_task_id);
     
-    // Create a savepoint
+    // Create a savepoint after inserting
     transaction.savepoint("after_insert").await?;
     println!("Created savepoint 'after_insert'");
     
@@ -251,6 +251,22 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await?;
     
     println!("Updated task in transaction: {}", tx_update_result[0]["description"]);
+    
+    // Create another savepoint after updating
+    transaction.savepoint("after_update").await?;
+    println!("Created savepoint 'after_update'");
+    
+    // Update the task again
+    let tx_update_result2 = tasks_in_transaction
+        .eq("id", &tx_task_id.to_string())
+        .update(json!({ "description": "This update will be rolled back" }))
+        .await?;
+    
+    println!("Updated task again in transaction: {}", tx_update_result2[0]["description"]);
+    
+    // Now roll back to the previous savepoint
+    transaction.rollback_to_savepoint("after_update").await?;
+    println!("Rolled back to savepoint 'after_update'");
     
     // Commit the transaction
     transaction.commit().await?;
@@ -273,6 +289,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Tasks created in transaction:");
     for task in &tx_tasks {
         println!("  - Title: {}, Description: {}", task.title, task.description.as_ref().unwrap());
+        // Description should be "Updated in transaction" not "This update will be rolled back"
+        assert_eq!(task.description.as_ref().unwrap(), "Updated in transaction");
     }
     
     // Example 10: Transaction with rollback
@@ -297,11 +315,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     
     // Insert the task
     let tasks_in_transaction2 = transaction2.from("tasks");
-    let _ = tasks_in_transaction2
+    let roll_insert_result = tasks_in_transaction2
         .insert(json!(rollback_task))
         .await?;
     
-    println!("Created task in transaction2 (will be rolled back)");
+    let roll_task_id = roll_insert_result[0]["id"].as_i64().unwrap();
+    println!("Created task in transaction2 (will be rolled back) with ID: {}", roll_task_id);
     
     // Rollback the transaction
     transaction2.rollback().await?;
@@ -317,6 +336,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await?;
     
     println!("Tasks with title 'Rollback Task' (should be 0): {}", rollback_tasks_json.len());
+    assert_eq!(rollback_tasks_json.len(), 0, "Rollback wasn't successful, found tasks that should have been rolled back");
     
     // Example 12: Cleanup - delete all tasks for our test user
     println!("\nExample 12: Cleanup - delete all tasks for our test user");

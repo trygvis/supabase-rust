@@ -6,16 +6,39 @@ Rust クライアントライブラリ for [Supabase](https://supabase.com) - Ja
 [![Docs](https://docs.rs/supabase-rust/badge.svg)](https://docs.rs/supabase-rust)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## 機能
+## Features
 
-- 💾 **Database**: PostgreSQLデータベースへの接続とデータの操作（QueryBuilder, RPC）
-- 🔐 **Auth**: ユーザーの認証と管理（サインアップ、サインイン、セッション管理）
-- 📁 **Storage**: 大容量ファイルの保存と管理（アップロード、ダウンロード、一覧取得）
-- 🔄 **Realtime**: リアルタイムデータ変更の購読
-- 🔥 **Edge Functions**: サーバーレス関数の実行
-- 🔍 **PostgREST**: 高度なフィルタリングと関係性のクエリ
+- **Authentication**: Sign up, sign in, sign out, reset password, etc.
+- **Database**: Query, insert, update, delete, and filter data with PostgREST.
+- **Storage**: Upload, download, and manage files.
+- **Realtime**: Subscribe to database changes.
+- **Functions**: Call serverless functions.
 
-## インストール
+### Recently Completed Implementations
+
+The following features have been fully implemented with improved error handling and functionality:
+
+#### Storage
+- Image transformation with resize, format conversion, and quality control
+- Multipart uploads for large files
+- Public and signed URL generation for transformed images
+- S3-compatible API support
+
+#### Realtime
+- Enhanced channel subscriptions with automatic reconnection
+- Advanced filtering for database changes
+- Event-specific callbacks with typed payloads
+- Presence tracking for real-time user state
+
+#### PostgreST
+- Transaction support with savepoints and rollbacks
+- Advanced query building with joins and relationships
+- CSV export functionality
+- Comprehensive error handling for database operations
+
+## Installation
+
+Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]

@@ -1862,6 +1862,7 @@ dependencies = [
  "supabase-rust-postgrest 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "supabase-rust-realtime 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "supabase-rust-storage 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
