@@ -9,14 +9,13 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
-use url::Url;
 use futures_util::{StreamExt, SinkExt};
 use tokio::sync::mpsc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tokio::sync::{broadcast, RwLock};
 use std::time::Duration;
 use tokio::time::sleep;
-use std::collections::HashSet;
+use url::Url;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -79,7 +78,7 @@ pub struct DatabaseFilter {
 }
 
 /// フィルター演算子
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum FilterOperator {
     /// 等しい
     Eq,
@@ -539,172 +538,167 @@ impl RealtimeClient {
     }
     
     // WebSocketに接続
-    async fn connect(&self) -> Result<(), RealtimeError> {
-        // 手動で閉じられていたらリセット
-        if self.is_manually_closed.load(Ordering::SeqCst) {
-            self.is_manually_closed.store(false, Ordering::SeqCst);
-            self.reconnect_attempts.store(0, Ordering::SeqCst);
-        }
-        
-        // 接続状態を更新
-        self.set_connection_state(ConnectionState::Connecting).await;
-        
-        let ws_url = format!("{}/realtime/v1/websocket?apikey={}", self.url.replace("http", "ws"), self.key);
-        
-        // WebSocketに接続
-        let ws_stream_result = connect_async(ws_url).await;
-        
-        let ws_stream = match ws_stream_result {
-            Ok((stream, _)) => stream,
-            Err(e) => {
-                // 接続エラー
-                self.set_connection_state(ConnectionState::Disconnected).await;
-                
-                if self.options.auto_reconnect && !self.is_manually_closed.load(Ordering::SeqCst) {
-                    // 再接続を試みる
-                    self.schedule_reconnect().await;
-                }
-                
-                return Err(RealtimeError::ConnectionError(format!("Failed to connect: {}", e)));
+    fn connect(&self) -> impl std::future::Future<Output = Result<(), RealtimeError>> + Send + 'static {
+        let client_clone = self.clone();
+        async move {
+            if client_clone.get_connection_state().await == ConnectionState::Connected {
+                return Ok(());
             }
-        };
-        
-        // 接続成功
-        self.reconnect_attempts.store(0, Ordering::SeqCst);
-        self.set_connection_state(ConnectionState::Connected).await;
-        
-        let (mut write, read) = ws_stream.split();
-        
-        let (tx, mut rx) = mpsc::channel::<Message>(100);
-        
-        // 送信タスク
-        let manual_close = self.is_manually_closed.load(Ordering::SeqCst);
-        let auto_reconnect = self.options.auto_reconnect;
-        let client_state = self.state.clone();
-        let reconnect_fn = self.clone();
-        
-        tokio::spawn(async move {
-            while let Some(msg) = rx.recv().await {
-                if let Err(e) = write.send(msg).await {
-                    eprintln!("Error sending message: {}", e);
-                    
-                    // 手動で閉じられていない場合は再接続ステータスに変更
-                    if !manual_close && auto_reconnect {
-                        let mut state_guard = client_state.write().await;
-                        *state_guard = ConnectionState::Reconnecting;
-                        
-                        // 再接続を実行
-                        tokio::spawn(async move {
-                            reconnect_fn.reconnect().await;
-                        });
-                    }
-                    
-                    break;
-                }
-            }
-        });
-        
-        // 受信タスク
-        let channels = self.channels.clone();
-        let manual_close = self.is_manually_closed.load(Ordering::SeqCst);
-        let auto_reconnect = self.options.auto_reconnect;
-        let client_state = self.state.clone();
-        let reconnect_fn = self.clone();
-        
-        tokio::spawn(async move {
-            read.for_each(|message| async {
-                match message {
-                    Ok(Message::Text(text)) => {
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) {
-                            // メッセージを処理
-                            if let Some(topic) = value.get("topic").and_then(|t| t.as_str()) {
-                                let read_guard = channels.read().await;
-                                if let Some(channel) = read_guard.get(topic) {
-                                    if let Some(payload) = value.get("payload") {
-                                        let payload = Payload {
-                                            data: payload.clone(),
-                                            event_type: value.get("event").and_then(|e| e.as_str()).map(String::from),
-                                            timestamp: value.get("timestamp").and_then(|t| t.as_i64()),
-                                        };
+            
+            client_clone.set_connection_state(ConnectionState::Connecting).await;
+            
+            // WebSocket URL構築
+            let mut url = Url::parse(&client_clone.url)?;
+            url.query_pairs_mut().append_pair("apikey", &client_clone.key);
+            url.query_pairs_mut().append_pair("vsn", "1.0.0");
+            
+            // WebSocket接続
+            let (ws_stream, _) = connect_async(url).await?;
+            let (mut write, read) = ws_stream.split();
+            
+            // メッセージ送受信用のチャネル
+            let (tx, mut rx) = mpsc::channel::<Message>(32);
+            
+            // クローンしておく
+            let client_state = client_clone.state.clone();
+            let auto_reconnect = client_clone.options.auto_reconnect;
+            let manual_close = client_clone.is_manually_closed.load(Ordering::SeqCst);
+            let reconnect_fn = client_clone.clone();
+            
+            // 受信メッセージ処理タスク
+            tokio::task::spawn(async move {
+                read.for_each(|message| async {
+                    match message {
+                        Ok(msg) => {
+                            match msg {
+                                Message::Text(text) => {
+                                    // Jsonデコード
+                                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+                                        // トピックとイベント取得
+                                        let topic = json.get("topic").and_then(|v| v.as_str()).unwrap_or_default();
+                                        let event = json.get("event").and_then(|v| v.as_str()).unwrap_or_default();
+                                        let payload = json.get("payload").cloned().unwrap_or(serde_json::json!({}));
                                         
-                                        let callbacks = channel.callbacks.read().await;
-                                        for callback in callbacks.values() {
-                                            callback(payload.clone());
+                                        // 接続確認応答
+                                        if topic == "phoenix" && event == "phx_reply" {
+                                            let status = payload.get("status").and_then(|v| v.as_str()).unwrap_or_default();
+                                            
+                                            if status == "ok" {
+                                                let mut state_guard = client_state.write().await;
+                                                *state_guard = ConnectionState::Connected;
+                                                
+                                                // リセット
+                                                reconnect_fn.reconnect_attempts.store(0, Ordering::SeqCst);
+                                                
+                                                // 接続状態の変更を通知
+                                                let _ = reconnect_fn.state_change.send(ConnectionState::Connected);
+                                            }
+                                        }
+                                        // チャネルメッセージ
+                                        else if let Some(payload_data) = payload.get("data") {
+                                            let decoded_payload = Payload {
+                                                data: payload_data.clone(),
+                                                event_type: payload.get("type").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                                timestamp: payload.get("timestamp").and_then(|v| v.as_i64()),
+                                            };
+                                            
+                                            if let Ok(channels_guard) = reconnect_fn.channels.try_read() {
+                                                if let Some(channel) = channels_guard.get(topic) {
+                                                    if let Ok(callbacks_guard) = channel.callbacks.try_read() {
+                                                        for callback in callbacks_guard.values() {
+                                                            callback(decoded_payload.clone());
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
+                                Message::Close(_) => {
+                                    // WebSocket接続が正常に閉じられた
+                                    if !manual_close && auto_reconnect {
+                                        let mut state_guard = client_state.write().await;
+                                        *state_guard = ConnectionState::Reconnecting;
+                                        
+                                        // 再接続を実行
+                                        let reconnect_client = reconnect_fn.clone();
+                                        reconnect_client.reconnect().await;
+                                    } else {
+                                        let mut state_guard = client_state.write().await;
+                                        *state_guard = ConnectionState::Disconnected;
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("WebSocket error: {}", e);
+                            
+                            // エラー発生時、手動で閉じられていない場合は再接続
+                            if !manual_close && auto_reconnect {
+                                let mut state_guard = client_state.write().await;
+                                *state_guard = ConnectionState::Reconnecting;
+                                
+                                // 再接続を実行
+                                let reconnect_client = reconnect_fn.clone();
+                                reconnect_client.reconnect().await;
+                            } else {
+                                let mut state_guard = client_state.write().await;
+                                *state_guard = ConnectionState::Disconnected;
                             }
                         }
                     }
-                    Ok(Message::Close(_)) => {
-                        // WebSocket接続が正常に閉じられた
-                        if !manual_close && auto_reconnect {
-                            let mut state_guard = client_state.write().await;
-                            *state_guard = ConnectionState::Reconnecting;
-                            
-                            // 再接続を実行
-                            tokio::spawn(async move {
-                                reconnect_fn.reconnect().await;
-                            });
-                        } else {
-                            let mut state_guard = client_state.write().await;
-                            *state_guard = ConnectionState::Disconnected;
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("WebSocket error: {}", e);
+                }).await;
+            });
+            
+            // 送信タスク
+            tokio::task::spawn(async move {
+                while let Some(msg) = rx.recv().await {
+                    if let Err(e) = write.send(msg).await {
+                        eprintln!("Error sending message: {}", e);
                         
-                        // エラー発生時、手動で閉じられていない場合は再接続
-                        if !manual_close && auto_reconnect {
-                            let mut state_guard = client_state.write().await;
-                            *state_guard = ConnectionState::Reconnecting;
-                            
-                            // 再接続を実行
-                            tokio::spawn(async move {
-                                reconnect_fn.reconnect().await;
-                            });
-                        } else {
-                            let mut state_guard = client_state.write().await;
-                            *state_guard = ConnectionState::Disconnected;
+                        // エラー発生時に再接続
+                        if auto_reconnect && !manual_close {
+                            // 再接続を試みる
+                            break;
                         }
                     }
-                    _ => {}
                 }
-            }).await;
-        });
-        
-        // ソケットを保存
-        let mut socket_guard = self.socket.write().await;
-        *socket_guard = Some(tx.clone());
-        
-        // ハートビート送信タスク
-        let socket_clone = tx.clone();
-        let heartbeat_interval = self.options.heartbeat_interval;
-        let manual_close = self.is_manually_closed.load(Ordering::SeqCst);
-        
-        tokio::spawn(async move {
-            loop {
-                sleep(Duration::from_millis(heartbeat_interval)).await;
-                
-                if manual_close {
-                    break;
+            });
+            
+            // ソケットを保存
+            let mut socket_guard = client_clone.socket.write().await;
+            *socket_guard = Some(tx.clone());
+            
+            // ハートビート送信タスク
+            let socket_clone = tx.clone();
+            let heartbeat_interval = client_clone.options.heartbeat_interval;
+            let is_manually_closed = Arc::new(AtomicBool::new(client_clone.is_manually_closed.load(Ordering::SeqCst)));
+            
+            tokio::task::spawn(async move {
+                loop {
+                    sleep(Duration::from_millis(heartbeat_interval)).await;
+                    
+                    if is_manually_closed.load(Ordering::SeqCst) {
+                        break;
+                    }
+                    
+                    // ハートビートメッセージを送信
+                    let heartbeat_msg = serde_json::json!({
+                        "topic": "phoenix",
+                        "event": "heartbeat",
+                        "payload": {},
+                        "ref": null
+                    });
+                    
+                    if let Err(_) = socket_clone.send(Message::Text(heartbeat_msg.to_string())).await {
+                        break;
+                    }
                 }
-                
-                // ハートビートメッセージを送信
-                let heartbeat_msg = serde_json::json!({
-                    "topic": "phoenix",
-                    "event": "heartbeat",
-                    "payload": {},
-                    "ref": null
-                });
-                
-                if let Err(_) = socket_clone.send(Message::Text(heartbeat_msg.to_string())).await {
-                    break;
-                }
-            }
-        });
-        
-        Ok(())
+            });
+            
+            Ok(())
+        }
     }
     
     /// 手動で接続を閉じる
@@ -724,61 +718,54 @@ impl RealtimeClient {
     }
     
     // 再接続処理
-    async fn reconnect(&self) {
-        if !self.options.auto_reconnect || self.is_manually_closed.load(Ordering::SeqCst) {
-            return;
-        }
-        
-        self.set_connection_state(ConnectionState::Reconnecting).await;
-        
-        // 最大再接続試行回数をチェック
-        let current_attempt = self.reconnect_attempts.fetch_add(1, Ordering::SeqCst) + 1;
-        if let Some(max) = self.options.max_reconnect_attempts {
-            if current_attempt > max {
-                self.set_connection_state(ConnectionState::Disconnected).await;
+    fn reconnect(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
+        let client_clone = self.clone();
+        async move {
+            if !client_clone.options.auto_reconnect || client_clone.is_manually_closed.load(Ordering::SeqCst) {
                 return;
             }
-        }
-        
-        // 現在の再接続間隔を計算
-        let base_interval = self.options.reconnect_interval as f64;
-        let factor = self.options.reconnect_backoff_factor.powi(current_attempt as i32 - 1);
-        let interval = (base_interval * factor).min(self.options.max_reconnect_interval as f64) as u64;
-        
-        // 指定時間待機
-        sleep(Duration::from_millis(interval)).await;
-        
-        // 再接続を試みる
-        let _ = self.connect().await;
-        
-        // 再接続に成功したら既存のサブスクリプションを再登録
-        if self.get_connection_state().await == ConnectionState::Connected {
-            let channels_guard = self.channels.read().await;
             
-            for (topic, _channel) in channels_guard.iter() {
-                let join_msg = serde_json::json!({
-                    "topic": topic,
-                    "event": "phx_join",
-                    "payload": {},
-                    "ref": self.next_ref()
-                });
+            client_clone.set_connection_state(ConnectionState::Reconnecting).await;
+            
+            // 最大再接続試行回数をチェック
+            let current_attempt = client_clone.reconnect_attempts.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Some(max) = client_clone.options.max_reconnect_attempts {
+                if current_attempt > max {
+                    client_clone.set_connection_state(ConnectionState::Disconnected).await;
+                    return;
+                }
+            }
+            
+            // 現在の再接続間隔を計算
+            let base_interval = client_clone.options.reconnect_interval as f64;
+            let factor = client_clone.options.reconnect_backoff_factor.powi(current_attempt as i32 - 1);
+            let interval = (base_interval * factor).min(client_clone.options.max_reconnect_interval as f64) as u64;
+            
+            // 指定時間待機
+            sleep(Duration::from_millis(interval)).await;
+            
+            // 再接続を試みる
+            let _ = client_clone.connect().await;
+            
+            // 再接続に成功したら既存のサブスクリプションを再登録
+            if client_clone.get_connection_state().await == ConnectionState::Connected {
+                let channels_guard = client_clone.channels.read().await;
                 
-                let socket_guard = self.socket.read().await;
-                if let Some(tx) = &*socket_guard {
-                    let _ = tx.send(Message::Text(join_msg.to_string())).await;
+                for (topic, _channel) in channels_guard.iter() {
+                    let join_msg = serde_json::json!({
+                        "topic": topic,
+                        "event": "phx_join",
+                        "payload": {},
+                        "ref": client_clone.next_ref()
+                    });
+                    
+                    let socket_guard = client_clone.socket.read().await;
+                    if let Some(tx) = &*socket_guard {
+                        let _ = tx.send(Message::Text(join_msg.to_string())).await;
+                    }
                 }
             }
         }
-    }
-    
-    // 再接続をスケジュール
-    async fn schedule_reconnect(&self) {
-        tokio::spawn({
-            let client = self.clone();
-            async move {
-                client.reconnect().await;
-            }
-        });
     }
 }
 
