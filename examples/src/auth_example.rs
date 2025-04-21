@@ -2,9 +2,10 @@ use supabase_rust_gftd::Supabase;
 use dotenv::dotenv;
 use std::env;
 use uuid::Uuid;
+use serde_json::json;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     
@@ -31,6 +32,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_response = auth.sign_up(&test_email, test_password).await?;
     
     println!("User sign up response: {:?}", user_response);
+    
+    // サインイン機能をテスト
+    println!("\nTesting sign in with the new user");
+    
+    let sign_in_response = auth.sign_in_with_password(&test_email, test_password).await?;
+    
+    println!("User sign in response: {:?}", sign_in_response);
+    
+    // アクセストークンを取得
+    let access_token = sign_in_response.access_token;
+    println!("\nAccess token: {}", access_token);
+    
+    // ユーザー情報を取得
+    println!("\nGetting user information");
+    
+    let user_info = auth.get_user(&access_token).await?;
+    
+    println!("User info: {:?}", user_info);
+    
+    // メタデータを更新
+    println!("\nUpdating user metadata");
+    
+    let metadata = json!({
+        "preferred_language": "ja",
+        "last_login_device": "rust-client"
+    });
+    
+    let update_result = auth.update_user_metadata(&access_token, metadata).await?;
+    
+    println!("Update result: {:?}", update_result);
+    
+    // サインアウト
+    println!("\nSigning out");
+    
+    auth.sign_out(&access_token).await?;
+    
+    println!("User signed out successfully");
     
     println!("Auth example completed");
     

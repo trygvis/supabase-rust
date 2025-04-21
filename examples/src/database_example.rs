@@ -2,7 +2,7 @@ use supabase_rust_gftd::Supabase;
 use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,7 +16,7 @@ struct Task {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     
@@ -44,16 +44,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get the PostgreSQL client for the "tasks" table
     let postgrest_client = supabase.from("tasks");
     
-    // Example 1: Select all tasks
-    println!("\nExample 1: Selecting tasks");
+    // Example 1: Create a new task
+    println!("\nExample 1: Creating a new task");
     
-    let select_result: Vec<Value> = postgrest_client
+    let new_task = Task {
+        id: None,
+        title: "Supabase Rust 学習".to_string(),
+        description: Some("Rustでのデータベース操作を学ぶ".to_string()),
+        is_complete: false,
+        created_at: None,
+        user_id: user_id.clone(),
+    };
+    
+    // APIに合わせて修正: executeメソッドは単独で呼び出す必要がある
+    let insert_query = postgrest_client
+        .insert(serde_json::json!(new_task));
+    
+    let insert_result = insert_query.execute().await?;
+    
+    println!("Task created: {:?}", insert_result);
+    
+    // Example 2: Select all tasks for the current user
+    println!("\nExample 2: Selecting user's tasks");
+    
+    let select_query = postgrest_client
         .select("*")
-        .execute()
-        .await?;
+        .eq("user_id", &user_id);
     
-    println!("Found {} tasks", select_result.len());
-    println!("Select result: {:?}", select_result);
+    let user_tasks: Vec<Value> = select_query.execute().await?;
+    
+    println!("Found {} tasks for user", user_tasks.len());
+    for (i, task) in user_tasks.iter().enumerate() {
+        println!("Task {}: {:?}", i + 1, task);
+    }
+    
+    // Example 3: Update a task
+    if let Some(task) = user_tasks.first() {
+        println!("\nExample 3: Updating a task");
+        
+        if let Some(task_id) = task.get("id") {
+            let update_query = postgrest_client
+                .update(serde_json::json!({"is_complete": true}))
+                .eq("id", task_id.to_string());
+            
+            let update_result = update_query.execute().await?;
+            println!("Task updated: {:?}", update_result);
+        }
+    }
+    
+    // Example 4: Delete all tasks for this test user
+    println!("\nExample 4: Cleaning up - deleting user's tasks");
+    
+    let delete_query = postgrest_client
+        .delete()
+        .eq("user_id", &user_id);
+    
+    let delete_result = delete_query.execute().await?;
+    println!("Deleted tasks: {:?}", delete_result);
     
     println!("Database example completed");
     
