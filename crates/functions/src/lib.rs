@@ -368,21 +368,169 @@ impl FunctionsClient {
         Ok(response.data)
     }
 
-    /// バイナリデータを返すファンクションを呼び出す（シンプルなラッパー）
+    /// バイナリ形式で関数レスポンスを取得
     pub async fn invoke_binary<B: Serialize>(
         &self,
         function_name: &str,
         body: Option<B>,
-    ) -> Result<String> {
-        let options = FunctionOptions {
+        options: Option<FunctionOptions>,
+    ) -> Result<Bytes> {
+        let options = options.unwrap_or_else(|| FunctionOptions {
             response_type: ResponseType::Binary,
             ..Default::default()
-        };
+        });
 
-        let response = self
-            .invoke::<String, B>(function_name, body, Some(options))
-            .await?;
-        Ok(response.data)
+        // URLの構築
+        let mut url = Url::parse(&self.base_url)?;
+        url.path_segments_mut()
+            .map_err(|_| FunctionsError::UrlError(url::ParseError::EmptyHost))?
+            .push("functions")
+            .push("v1")
+            .push(function_name);
+
+        // リクエストの構築
+        let mut request_builder = self
+            .http_client
+            .post(url)
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", &self.api_key));
+
+        // リクエストタイムアウトの設定
+        if let Some(timeout) = options.timeout_seconds {
+            request_builder = request_builder.timeout(Duration::from_secs(timeout));
+        }
+
+        // コンテンツタイプの設定
+        if let Some(content_type) = options.content_type {
+            request_builder = request_builder.header("Content-Type", content_type);
+        } else {
+            // デフォルトはJSON
+            request_builder = request_builder.header("Content-Type", "application/json");
+        }
+
+        // Accept ヘッダーを設定
+        request_builder = request_builder.header("Accept", "application/octet-stream");
+
+        // カスタムヘッダーの追加
+        if let Some(headers) = options.headers {
+            for (key, value) in headers {
+                request_builder = request_builder.header(key, value);
+            }
+        }
+
+        // リクエストボディの追加
+        if let Some(body_data) = body {
+            request_builder = request_builder.json(&body_data);
+        }
+
+        // リクエストの送信
+        let response = request_builder.send().await.map_err(|e| {
+            if e.is_timeout() {
+                FunctionsError::TimeoutError
+            } else {
+                FunctionsError::from(e)
+            }
+        })?;
+
+        // ステータスコードの確認
+        let status = response.status();
+        if !status.is_success() {
+            // エラーレスポンスのパース
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+            if let Ok(error_details) = serde_json::from_str::<FunctionErrorDetails>(&error_body) {
+                return Err(FunctionsError::FunctionError {
+                    message: error_details.message.as_ref().map_or_else(
+                        || format!("Function returned error status: {}", status),
+                        |msg| msg.clone(),
+                    ),
+                    status,
+                    details: Some(error_details),
+                });
+            } else {
+                return Err(FunctionsError::FunctionError {
+                    message: error_body,
+                    status,
+                    details: None,
+                });
+            }
+        }
+
+        // バイナリデータを返す
+        response.bytes().await.map_err(FunctionsError::from)
+    }
+
+    /// バイナリストリームを取得するメソッド（大きなバイナリデータに最適）
+    pub async fn invoke_binary_stream<B: Serialize>(
+        &self,
+        function_name: &str,
+        body: Option<B>,
+        options: Option<FunctionOptions>,
+    ) -> Result<ByteStream> {
+        let opts = options.unwrap_or_else(|| FunctionOptions {
+            response_type: ResponseType::Stream,
+            content_type: Some("application/octet-stream".to_string()),
+            ..Default::default()
+        });
+
+        let mut custom_opts = opts;
+        let mut headers = custom_opts.headers.unwrap_or_default();
+        headers.insert("Accept".to_string(), "application/octet-stream".to_string());
+        custom_opts.headers = Some(headers);
+
+        self.invoke_stream(function_name, body, Some(custom_opts)).await
+    }
+
+    /// チャンク単位でバイナリを処理する補助メソッド
+    pub fn process_binary_chunks<F>(
+        &self,
+        stream: ByteStream,
+        chunk_size: usize,
+        mut processor: F,
+    ) -> Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + '_>>
+    where
+        F: FnMut(&[u8]) -> std::result::Result<Bytes, String> + Send + 'static,
+    {
+        Box::pin(async_stream::stream! {
+            let mut buffer = BytesMut::new();
+            
+            tokio::pin!(stream);
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        // バッファに追加
+                        buffer.extend_from_slice(&chunk);
+                        
+                        // chunk_sizeを超えたら処理
+                        while buffer.len() >= chunk_size {
+                            let chunk_to_process = buffer.split_to(chunk_size);
+                            match processor(&chunk_to_process) {
+                                Ok(processed) => yield Ok(processed),
+                                Err(err) => {
+                                    yield Err(FunctionsError::InvalidResponse(err));
+                                    return;
+                                }
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        yield Err(e);
+                        return;
+                    }
+                }
+            }
+            
+            // 残りのバッファを処理
+            if !buffer.is_empty() {
+                match processor(&buffer) {
+                    Ok(processed) => yield Ok(processed),
+                    Err(err) => yield Err(FunctionsError::InvalidResponse(err)),
+                }
+            }
+        })
     }
 
     /// ストリーミングレスポンスを取得するメソッド
