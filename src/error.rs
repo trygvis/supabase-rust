@@ -2,67 +2,62 @@
 
 use thiserror::Error;
 
-/// The main error type for the Supabase Rust client
+/// Error types for the Supabase client
 #[derive(Error, Debug)]
 pub enum Error {
-    /// API related errors
-    #[error("API error: {message} (code: {code})")]
-    ApiError {
-        code: String,
-        message: String,
-    },
+    /// HTTP error from reqwest
+    #[error("HTTP error: {0}")]
+    Http(#[from] reqwest::Error),
     
-    /// Authentication errors
-    #[error("Authentication error: {0}")]
-    AuthError(#[from] supabase_auth::AuthError),
-    
-    /// PostgreREST errors
-    #[error("PostgreREST error: {0}")]
-    PostgrestError(#[from] supabase_postgrest::PostgrestError),
-    
-    /// Storage errors
-    #[error("Storage error: {0}")]
-    StorageError(#[from] supabase_storage::StorageError),
-    
-    /// Realtime errors
-    #[error("Realtime error: {0}")]
-    RealtimeError(#[from] supabase_realtime::RealtimeError),
-    
-    /// Functions errors
-    #[error("Functions error: {0}")]
-    FunctionsError(#[from] supabase_functions::FunctionsError),
-    
-    /// Network errors
-    #[error("Network error: {0}")]
-    NetworkError(#[from] reqwest::Error),
-    
-    /// JSON serialization errors
-    #[error("JSON error: {0}")]
-    JsonError(#[from] serde_json::Error),
-    
-    /// URL parsing errors
+    /// URL parse error
     #[error("URL parse error: {0}")]
-    UrlParseError(#[from] url::ParseError),
+    UrlParse(#[from] url::ParseError),
     
-    /// General errors
-    #[error("General error: {0}")]
-    GeneralError(String),
+    /// Authentication error
+    #[error("Authentication error: {0}")]
+    AuthError(#[from] supabase_rust_auth::AuthError),
+    
+    /// PostgreSQL REST API error
+    #[error("PostgreSQL REST error: {0}")]
+    PostgrestError(#[from] supabase_rust_postgrest::PostgrestError),
+    
+    /// Storage error
+    // #[error("Storage error: {0}")]
+    // StorageError(#[from] supabase_rust_storage::StorageError),
+    
+    /// Realtime subscription error
+    // #[error("Realtime error: {0}")]
+    // RealtimeError(#[from] supabase_rust_realtime::RealtimeError),
+    
+    /// Edge Functions error
+    // #[error("Functions error: {0}")]
+    // FunctionsError(#[from] supabase_rust_functions::FunctionsError),
+    
+    /// JSON serialization/deserialization error
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+    
+    /// Generic error
+    #[error("{0}")]
+    Other(String),
 }
 
-/// Result type for Supabase operations
+/// Result type for the Supabase client
 pub type Result<T> = std::result::Result<T, Error>;
 
 impl Error {
     /// Create a new API error
     pub fn api_error(code: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::ApiError {
-            code: code.into(),
-            message: message.into(),
-        }
+        Self::Other(format!("API error: {message} (code: {code})"))
     }
     
     /// Create a new general error
     pub fn general(message: impl Into<String>) -> Self {
-        Self::GeneralError(message.into())
+        Self::Other(message.into())
     }
+}
+
+/// Prints an API error from the Supabase API
+pub fn api_error<E: std::fmt::Display>(error: E) -> Error {
+    Error::Other(format!("API error: {}", error))
 }

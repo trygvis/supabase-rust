@@ -7,11 +7,11 @@
 //! a unified and convenient API that matches the JavaScript supabase-js client.
 
 // 各コンポーネントクレートの再エクスポート
-pub use supabase_auth as auth;
-pub use supabase_postgrest as postgrest;
-pub use supabase_storage as storage;
-pub use supabase_realtime as realtime;
-pub use supabase_functions as functions;
+pub use supabase_rust_auth as auth;
+pub use supabase_rust_postgrest as postgrest;
+// pub use supabase_rust_storage as storage;
+// pub use supabase_rust_realtime as realtime;
+// pub use supabase_rust_functions as functions;
 
 // 内部モジュール
 mod config;
@@ -22,15 +22,17 @@ pub use config::ClientOptions;
 pub use error::{Error, Result};
 
 use reqwest::Client;
-use reqwest::header::{HeaderMap, HeaderValue, HeaderName};
-use serde::{Serialize, Deserialize};
-use serde_json::Value;
-use std::collections::HashMap;
-use thiserror::Error;
-use url::Url;
-use serde_json::json;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+// 使われていないインポートを削除
+// use reqwest::header::{HeaderMap, HeaderValue, HeaderName};
+// use serde::{Serialize, Deserialize};
+// use serde_json::Value;
+// use std::collections::HashMap;
+// use thiserror::Error;
+// use url::Url;
+// use serde_json::json;
+// use std::sync::Arc;
+// use std::sync::atomic::{AtomicBool, Ordering};
+use serde::Serialize;
 
 /// The main entry point for the Supabase Rust client
 pub struct Supabase {
@@ -133,46 +135,25 @@ impl Supabase {
         )
     }
     
-    /// Get a storage client for file operations
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use supabase_rust::Supabase;
-    ///
-    /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
-    /// let storage = supabase.storage();
-    /// ```
-    pub fn storage(&self) -> storage::StorageClient {
-        storage::StorageClient::new(&self.url, &self.key, self.http_client.clone())
+    /// Create a client for the Storage API
+    pub fn storage(&self) -> /* storage::StorageClient */ () {
+        /* storage::StorageClient::new(&self.url, &self.key, self.http_client.clone()) */
+        // Storage client is temporarily disabled until the crate is published
+        panic!("Storage client is not available in this version")
     }
     
-    /// Get a realtime client for subscription operations
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use supabase_rust::Supabase;
-    ///
-    /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
-    /// let realtime = supabase.realtime();
-    /// ```
-    pub fn realtime(&self) -> realtime::RealtimeClient {
-        realtime::RealtimeClient::new(&self.url, &self.key)
+    /// Create a client for the Realtime API
+    pub fn realtime(&self) -> /* realtime::RealtimeClient */ () {
+        /* realtime::RealtimeClient::new(&self.url, &self.key) */
+        // Realtime client is temporarily disabled until the crate is published
+        panic!("Realtime client is not available in this version")
     }
     
-    /// Get a functions client for edge function operations
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// use supabase_rust::Supabase;
-    ///
-    /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
-    /// let functions = supabase.functions();
-    /// ```
-    pub fn functions(&self) -> functions::FunctionsClient {
-        functions::FunctionsClient::new(&self.url, &self.key, self.http_client.clone())
+    /// Create a client for the Edge Functions API
+    pub fn functions(&self) -> /* functions::FunctionsClient */ () {
+        /* functions::FunctionsClient::new(&self.url, &self.key, self.http_client.clone()) */
+        // Functions client is temporarily disabled until the crate is published
+        panic!("Functions client is not available in this version")
     }
     
     /// Execute a Postgres function via RPC
@@ -211,7 +192,7 @@ pub mod prelude {
 }
 
 /// フィルター演算子
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum FilterOperator {
     /// 等しい
@@ -240,27 +221,6 @@ pub enum FilterOperator {
     Like,
     /// ILIKE演算子（大文字小文字を区別しないワイルドカード検索）
     ILike,
-}
-
-impl FilterOperator {
-    /// Serializeトレイトを実装
-    #[derive(Serialize)]
-    #[serde(rename_all = "lowercase")]
-    pub enum SerializedOperator {
-        Eq,
-        Neq,
-        Gt,
-        Gte,
-        Lt,
-        Lte,
-        In,
-        NotIn,
-        ContainedBy,
-        Contains,
-        ContainedByArray,
-        Like,
-        ILike,
-    }
 }
 
 #[cfg(test)]
@@ -334,24 +294,3 @@ mod tests {
         assert_eq!(buckets[0].name, "test-bucket");
     }
 }
-
-async fn reconnect_safely(&self) {
-    let _ = self.connect().await;
-}
-
-// 596行目の修正
-// tokio::spawn(async move {
-//     reconnect_fn.reconnect().await;
-// });
-// 代わりに
-reconnect_fn.reconnect().await;
-
-// 775行目の修正
-// tokio::spawn({
-//     let client = self.clone();
-//     async move {
-//         client.reconnect().await;
-//     }
-// });
-// 代わりに
-self.reconnect().await;
