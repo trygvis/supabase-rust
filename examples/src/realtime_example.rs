@@ -1,6 +1,6 @@
 use supabase_rust_gftd::prelude::*;
 use supabase_rust_gftd::Supabase;
-use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, RealtimeClient, FilterOperator};
+use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, RealtimeClient, FilterOperator, DatabaseFilter};
 use dotenv::dotenv;
 use std::env;
 use std::sync::Arc;
@@ -13,14 +13,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::io;
 use serde_json::json;
 use uuid::Uuid;
-
-// DatabaseFilterを自分で定義
-#[derive(Debug, Clone, Serialize)]
-pub struct DatabaseFilter {
-    pub column: String,
-    pub operator: FilterOperator,
-    pub value: serde_json::Value,
-}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {

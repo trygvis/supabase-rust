@@ -37,6 +37,9 @@ pub enum PostgrestError {
 
     #[error("Transaction error: {0}")]
     TransactionError(String),
+    
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
 }
 
 /// ソート方向
@@ -408,7 +411,7 @@ impl PostgrestClient {
         }
         
         response.json::<Vec<T>>().await
-            .map_err(|e| PostgrestError::SerializationError(e))
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
     
     /// RPC関数を実行
@@ -421,9 +424,18 @@ impl PostgrestClient {
             .send()
             .await?;
             
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+        // ステータスコードを事前に取得
+        let status = response.status();
+        
+        if !status.is_success() {
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::ApiError(format!(
+                "API error: {} (Status: {})",
+                error_text,
+                status
+            )));
         }
         
         let data = response.json::<Value>().await?;
@@ -458,7 +470,7 @@ impl PostgrestClient {
         }
         
         response.json::<Value>().await
-            .map_err(|e| PostgrestError::SerializationError(e))
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
     
     /// データを更新
@@ -488,7 +500,7 @@ impl PostgrestClient {
         }
         
         response.json::<Value>().await
-            .map_err(|e| PostgrestError::SerializationError(e))
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
     
     /// データを削除
@@ -517,7 +529,7 @@ impl PostgrestClient {
         }
         
         response.json::<Value>().await
-            .map_err(|e| PostgrestError::SerializationError(e))
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
     
     // URLを構築
@@ -580,7 +592,7 @@ impl PostgrestClient {
         }
         
         let response_data = response.json::<TransactionResponse>().await
-            .map_err(|e| PostgrestError::SerializationError(e))?;
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))?;
             
         // トランザクションオブジェクトを作成して返す
         Ok(PostgrestTransaction::new(
@@ -634,10 +646,10 @@ impl PostgrestTransaction {
         
         // トランザクションヘッダーを設定
         for (key, value) in self.headers.iter() {
-            if let Some(key_str) = key.as_str() {
-                if let Ok(value_str) = value.to_str() {
-                    client = client.with_header(key_str, value_str).unwrap_or(client);
-                }
+            // HeaderNameをStr形式に変換
+            let key_str = key.as_str();
+            if let Ok(value_str) = value.to_str() {
+                client = client.with_header(key_str, value_str).unwrap_or(client);
             }
         }
         
@@ -830,6 +842,8 @@ impl Drop for PostgrestTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::matchers::{method, path, body_json, header};
     
     #[tokio::test]
     async fn test_select() {

@@ -4,6 +4,7 @@ use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use reqwest::Client;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
@@ -49,51 +50,52 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .from("tasks")
         .with_auth(&access_token)?;
     
-    // Example 1: Basic INSERT with RLS
-    println!("\nExample 1: Basic INSERT with RLS");
+    // Example 1: Basic operations
+    println!("Example 1: Basic operations");
     
-    // Create a new task
-    let task = Task {
-        id: None,
-        title: "Learn Supabase Rust".to_string(),
-        description: Some("Master the Supabase Rust client".to_string()),
-        is_complete: false,
-        created_at: None,
-        user_id: user_id.clone(),
-    };
+    // PostgreStを初期化
+    let base_url = "https://api.supabase.io";
+    let api_key = "your_api_key";
+    let http_client = Client::new();
     
-    // Insert task
-    let insert_result = postgrest
-        .insert(json!(task))
-        .await?;
+    // PostgreStクライアントを作成
+    let supabase = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
     
-    let inserted_task: Task = serde_json::from_value(insert_result[0].clone())?;
-    println!("Inserted task: {:?}", inserted_task);
+    // 新しいユーザーIDを生成
+    let user_id = uuid::Uuid::new_v4().to_string();
+    println!("Using user_id: {}", user_id);
     
-    // Example 2: SELECT with filters
-    println!("\nExample 2: SELECT with filters");
+    // Example 2: INSERT and SELECT - タスクを作成して取得
+    println!("\nExample 2: INSERT and SELECT");
     
-    // Insert a few more tasks for our examples
-    for i in 1..4 {
+    // タスクを作成
+    for i in 1..6 {
         let task = Task {
             id: None,
             title: format!("Task {}", i),
             description: Some(format!("Description for task {}", i)),
-            is_complete: i % 2 == 0, // Every second task is complete
+            is_complete: i % 2 == 0, // 偶数番号のタスクは完了済み
             created_at: None,
             user_id: user_id.clone(),
         };
         
-        postgrest
+        // INSERTリクエストを構築して実行
+        let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+        
+        client
             .insert(json!(task))
             .await?;
     }
     
-    // Query for incomplete tasks
-    let incomplete_tasks_json = postgrest
+    println!("Created 5 tasks");
+    
+    // 未完了のタスクを取得
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let incomplete_tasks_json = client
         .select("*")
-        .eq("is_complete", "false")
         .eq("user_id", &user_id)
+        .eq("is_complete", "false")
         .execute::<serde_json::Value>()
         .await?;
     
@@ -112,7 +114,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nExample 3: Complex filters and order");
     
     // Query with filters and ordering (OR条件の代わりにin_listを使用)
-    let filtered_tasks_json = postgrest
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let filtered_tasks_json = client
         .select("*")
         .in_list("title", &["Task 1", "Task 2"]) // Title is either "Task 1" or "Task 2"
         .order("created_at", SortOrder::Ascending) // Order by created_at ascending
@@ -135,7 +139,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nExample 4: UPDATE with filters");
     
     // Update all tasks to be complete
-    let update_result = postgrest
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let update_result = client
         .eq("user_id", &user_id)
         .eq("is_complete", "false")
         .update(json!({ "is_complete": true }))
@@ -158,13 +164,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             user_id: user_id.clone(),
         };
         
-        postgrest
+        let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+        client
             .insert(json!(task))
             .await?;
     }
     
     // Query for a range of IDs
-    let range_tasks_json = postgrest
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let range_tasks_json = client
         .select("*")
         .gte("id", "100")
         .lte("id", "102")
@@ -187,7 +196,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     
     // Count the total number of tasks
     // count関数を使用して直接カウント結果を取得
-    let count_result = postgrest
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let count_result = client
         .select("count")
         .count(true)
         .execute::<serde_json::Value>()
@@ -200,7 +211,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nExample 7: DELETE with filters");
     
     // Delete tasks that match specific criteria
-    let delete_result = postgrest
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let delete_result = client
         .eq("user_id", &user_id)
         .gte("id", "100")
         .lte("id", "102")
@@ -214,7 +227,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nExample 8: Transaction with savepoints");
     
     // Start a transaction with explicit options
-    let transaction = postgrest.begin_transaction(
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let transaction = client.begin_transaction(
         Some(IsolationLevel::ReadCommitted),
         Some(TransactionMode::ReadWrite),
         Some(30) // timeout in seconds
@@ -232,6 +247,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         user_id: user_id.clone(),
     };
     
+    // For each transaction operation, get a new client for that operation
     let tasks_in_transaction = transaction.from("tasks");
     
     // Insert the task
@@ -246,8 +262,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     transaction.savepoint("after_insert").await?;
     println!("Created savepoint 'after_insert'");
     
-    // Update the task
-    let tx_update_result = tasks_in_transaction
+    // Update the task - get a fresh client
+    let tasks_in_transaction_update1 = transaction.from("tasks");
+    let tx_update_result = tasks_in_transaction_update1
         .eq("id", &tx_task_id.to_string())
         .update(json!({ "description": "Updated in transaction" }))
         .await?;
@@ -258,8 +275,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     transaction.savepoint("after_update").await?;
     println!("Created savepoint 'after_update'");
     
-    // Update the task again
-    let tx_update_result2 = tasks_in_transaction
+    // Update the task again - get a fresh client
+    let tasks_in_transaction_update2 = transaction.from("tasks");
+    let tx_update_result2 = tasks_in_transaction_update2
         .eq("id", &tx_task_id.to_string())
         .update(json!({ "description": "This update will be rolled back" }))
         .await?;
@@ -277,7 +295,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 9: Select the task created in transaction
     println!("\nExample 9: Verify task created in transaction");
     
-    let tx_tasks_json = postgrest
+    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    
+    let tx_tasks_json = client
         .select("*")
         .eq("title", "Transaction Task")
         .execute::<serde_json::Value>()
@@ -299,7 +319,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nExample 10: Transaction with rollback");
     
     // Start another transaction
-    let transaction2 = postgrest.begin_transaction(
+    let transaction2 = client.begin_transaction(
         Some(IsolationLevel::ReadCommitted),
         Some(TransactionMode::ReadWrite),
         None
@@ -331,7 +351,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 11: Verify task was not created after rollback
     println!("\nExample 11: Verify task was not created after rollback");
     
-    let rollback_tasks_json = postgrest
+    let rollback_tasks_json = client
         .select("*")
         .eq("title", "Rollback Task")
         .execute::<serde_json::Value>()

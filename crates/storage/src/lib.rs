@@ -817,12 +817,16 @@ impl<'a> StorageBucketClient<'a> {
             .await
             .map_err(|e| StorageError::NetworkError(e))?;
         
-        if !res.status().is_success() {
-            let error_text = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        // ステータスコードを事前に取得
+        let status = res.status();
+        
+        if !status.is_success() {
+            let error_text = res.text().await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(StorageError::ApiError(format!(
                 "Failed to transform image: {} (Status: {})",
                 error_text,
-                res.status()
+                status
             )));
         }
         
@@ -875,12 +879,16 @@ impl<'a> StorageBucketClient<'a> {
             .await
             .map_err(|e| StorageError::NetworkError(e))?;
             
-        if !res.status().is_success() {
-            let error_text = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        // ステータスコードを事前に取得
+        let status = res.status();
+        
+        if !status.is_success() {
+            let error_text = res.text().await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(StorageError::ApiError(format!(
                 "Failed to create signed transform URL: {} (Status: {})",
                 error_text,
-                res.status()
+                status
             )));
         }
         
@@ -890,7 +898,7 @@ impl<'a> StorageBucketClient<'a> {
         }
         
         let response = res.json::<SignedUrlResponse>().await
-            .map_err(|e| StorageError::SerializationError(e))?;
+            .map_err(|e| StorageError::DeserializationError(e.to_string()))?;
             
         Ok(response.signed_url)
     }
