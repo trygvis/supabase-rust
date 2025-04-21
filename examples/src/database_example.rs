@@ -3,6 +3,7 @@ use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use std::fs;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Task {
@@ -33,322 +34,190 @@ impl Default for Task {
     }
 }
 
+mod advanced_examples {
+    use supabase_rust::prelude::*;
+    use serde::{Deserialize, Serialize};
+    use std::fs;
+    use std::env;
+    
+    // 高度なPostgreSQL機能の例
+    pub async fn run_advanced_examples() -> Result<(), Box<dyn std::error::Error>> {
+        // Supabaseのクレデンシャルを環境変数から取得
+        let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
+        let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
+        
+        // Supabaseクライアントの初期化
+        let supabase = Supabase::new(&supabase_url, &supabase_key);
+        
+        println!("\n=== 高度なPostgreSQL機能の例 ===\n");
+        
+        // 結合クエリの例
+        run_join_queries(&supabase).await?;
+        
+        // 全文検索の例
+        run_text_search(&supabase).await?;
+        
+        // CSVエクスポートの例
+        run_csv_export(&supabase).await?;
+        
+        Ok(())
+    }
+    
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Post {
+        id: i32,
+        title: String,
+        content: String,
+        #[serde(rename = "user_id")]
+        user_id: i32,
+        #[serde(rename = "created_at")]
+        created_at: String,
+        user: Option<User>,
+        comments: Option<Vec<Comment>>,
+    }
+    
+    #[derive(Debug, Serialize, Deserialize)]
+    struct User {
+        id: i32,
+        name: String,
+        email: String,
+    }
+    
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Comment {
+        id: i32,
+        content: String,
+        #[serde(rename = "post_id")]
+        post_id: i32,
+        #[serde(rename = "user_id")]
+        user_id: i32,
+        #[serde(rename = "created_at")]
+        created_at: String,
+    }
+    
+    async fn run_join_queries(supabase: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+        println!("結合クエリの例:");
+        
+        // 投稿とそれに関連するユーザー情報を取得
+        let posts_with_users = supabase
+            .from("posts")
+            .select("*")
+            .inner_join("users", "user_id", "id")
+            .limit(5)
+            .execute::<Post>()
+            .await?;
+        
+        println!("Posts with users (inner join):");
+        for post in &posts_with_users {
+            println!("Post: {}, User: {:?}", post.title, post.user);
+        }
+        
+        // 投稿とそれに関連するコメントを取得
+        let posts_with_comments = supabase
+            .from("posts")
+            .select("*")
+            .include("comments", "post_id", Some("*"))
+            .limit(3)
+            .execute::<Post>()
+            .await?;
+        
+        println!("\nPosts with comments (include):");
+        for post in &posts_with_comments {
+            println!("Post: {}, Comments count: {}", 
+                post.title, 
+                post.comments.as_ref().map(|c| c.len()).unwrap_or(0)
+            );
+        }
+        
+        Ok(())
+    }
+    
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Article {
+        id: i32,
+        title: String,
+        content: String,
+        #[serde(rename = "created_at")]
+        created_at: String,
+    }
+    
+    async fn run_text_search(supabase: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+        println!("\n全文検索の例:");
+        
+        // 記事の内容を全文検索
+        let search_term = "database";
+        let articles = supabase
+            .from("articles")
+            .select("*")
+            .text_search("content", search_term, Some("english"))
+            .execute::<Article>()
+            .await?;
+        
+        println!("Articles containing '{}' (text search):", search_term);
+        for article in &articles {
+            println!("Title: {}", article.title);
+            println!("Content preview: {}", &article.content[..std::cmp::min(50, article.content.len())]);
+            println!("---");
+        }
+        
+        Ok(())
+    }
+    
+    async fn run_csv_export(supabase: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+        println!("\nCSVエクスポートの例:");
+        
+        // ユーザーテーブルをCSVとしてエクスポート
+        let csv_data = supabase
+            .from("users")
+            .select("id,name,email,created_at")
+            .limit(100)
+            .export_csv()
+            .await?;
+        
+        // CSVデータを出力
+        let preview_lines: Vec<&str> = csv_data.lines().take(5).collect();
+        println!("CSV export preview (first {} lines of {} total):", 
+            preview_lines.len(), 
+            csv_data.lines().count()
+        );
+        
+        for line in preview_lines {
+            println!("{}", line);
+        }
+        
+        // CSVファイルとして保存
+        let file_path = "users_export.csv";
+        fs::write(file_path, csv_data)?;
+        println!("\nCSV data saved to: {}", file_path);
+        
+        Ok(())
+    }
+}
+
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     
-    // Get Supabase URL and key from environment variables
-    let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
-    let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
+    println!("=== Supabase Database Examples ===");
     
-    // Initialize the Supabase client
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    // 基本的なCRUD操作の例を実行
+    basic_examples::run_basic_examples().await?;
     
-    println!("Starting Database example");
+    // RPC呼び出しの例を実行
+    rpc_examples::run_rpc_examples().await?;
     
-    // First, sign up a test user for our example to test RLS policies
-    let test_email = format!("test-db-{}@example.com", Uuid::new_v4());
-    let test_password = "password123";
+    // 高度なフィルタリングの例を実行
+    filter_examples::run_filter_examples().await?;
     
-    let sign_up_result = supabase
-        .auth()
-        .sign_up(&test_email, test_password)
-        .await?;
+    // 高度なPostgreSQL機能の例を実行
+    println!("\n高度なPostgreSQL機能の例を実行しますか？(y/n)");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
     
-    let user_id = sign_up_result.user.id;
-    println!("Created test user with ID: {}", user_id);
-    
-    // Example 1: Creating a task record using insert
-    println!("\nExample 1: Creating a task record");
-    
-    let task = Task {
-        title: "Complete Supabase Rust example".to_string(),
-        description: Some("Write a comprehensive database example for the Supabase Rust library".to_string()),
-        status: "in_progress".to_string(),
-        priority: 2,
-        due_date: Some("2023-12-31".to_string()),
-        user_id: user_id.clone(),
-        ..Default::default()
-    };
-    
-    // Insert the task
-    let created_task: Task = supabase
-        .from("tasks")
-        .insert(&task)
-        .execute_one()
-        .await?;
-    
-    println!("Created task with ID: {:?}", created_task.id);
-    
-    // Example 2: Creating multiple tasks with a batch insert
-    println!("\nExample 2: Creating multiple tasks in a batch");
-    
-    let task1 = Task {
-        title: "Research Supabase features".to_string(),
-        description: Some("Look into all the features available in Supabase".to_string()),
-        status: "pending".to_string(),
-        priority: 1,
-        user_id: user_id.clone(),
-        ..Default::default()
-    };
-    
-    let task2 = Task {
-        title: "Test RLS policies".to_string(),
-        description: Some("Ensure that row level security is working correctly".to_string()),
-        status: "pending".to_string(),
-        priority: 3,
-        user_id: user_id.clone(),
-        ..Default::default()
-    };
-    
-    // Batch insert
-    let created_tasks: Vec<Task> = supabase
-        .from("tasks")
-        .insert(&[task1, task2])
-        .execute()
-        .await?;
-    
-    println!("Created {} tasks in batch", created_tasks.len());
-    for task in &created_tasks {
-        println!("  - Task: {} (ID: {:?})", task.title, task.id);
+    if input.trim().to_lowercase() == "y" {
+        advanced_examples::run_advanced_examples().await?;
     }
-    
-    // Example 3: Retrieving tasks with select
-    println!("\nExample 3: Retrieving tasks with select");
-    
-    let tasks: Vec<Task> = supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", &user_id)
-        .execute()
-        .await?;
-    
-    println!("Retrieved {} tasks for user", tasks.len());
-    for task in &tasks {
-        println!(
-            "  - Task: {} (Status: {}, Priority: {})",
-            task.title, task.status, task.priority
-        );
-    }
-    
-    // Example 4: Retrieving a single task by ID
-    println!("\nExample 4: Retrieving a single task by ID");
-    
-    if let Some(first_task_id) = tasks.first().and_then(|t| t.id) {
-        let task: Task = supabase
-            .from("tasks")
-            .select("*")
-            .eq("id", &first_task_id.to_string())
-            .execute_one()
-            .await?;
-        
-        println!(
-            "Retrieved task: {} (Status: {}, Priority: {})",
-            task.title, task.status, task.priority
-        );
-    }
-    
-    // Example 5: Updating a task
-    println!("\nExample 5: Updating a task");
-    
-    if let Some(task_to_update) = tasks.first() {
-        let task_id = task_to_update.id.expect("Task should have an ID");
-        
-        let updated_task: Task = supabase
-            .from("tasks")
-            .update(json!({
-                "status": "completed",
-                "updated_at": "now()"
-            }))
-            .eq("id", &task_id.to_string())
-            .execute_one()
-            .await?;
-        
-        println!(
-            "Updated task '{}' status to '{}'",
-            updated_task.title, updated_task.status
-        );
-    }
-    
-    // Example 6: Filtering and ordering tasks
-    println!("\nExample 6: Filtering and ordering tasks");
-    
-    let filtered_tasks: Vec<Task> = supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", &user_id)
-        .eq("status", "pending")
-        .gt("priority", 0)
-        .order("priority", Some(true)) // true = descending order
-        .limit(10)
-        .execute()
-        .await?;
-    
-    println!(
-        "Retrieved {} high priority pending tasks",
-        filtered_tasks.len()
-    );
-    for task in &filtered_tasks {
-        println!(
-            "  - Task: {} (Priority: {}, Status: {})",
-            task.title, task.priority, task.status
-        );
-    }
-    
-    // Example 7: Counting tasks
-    println!("\nExample 7: Counting tasks");
-    
-    let count = supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", &user_id)
-        .count(CountMethod::Exact)
-        .execute_count()
-        .await?;
-    
-    println!("Total task count for user: {}", count);
-    
-    // Example 8: Retrieving specific columns
-    println!("\nExample 8: Retrieving specific columns");
-    
-    #[derive(Debug, Deserialize)]
-    struct TaskSummary {
-        id: Uuid,
-        title: String,
-        status: String,
-    }
-    
-    let task_summaries: Vec<TaskSummary> = supabase
-        .from("tasks")
-        .select("id,title,status")
-        .eq("user_id", &user_id)
-        .execute()
-        .await?;
-    
-    println!("Retrieved {} task summaries", task_summaries.len());
-    for summary in &task_summaries {
-        println!("  - Task: {} (Status: {})", summary.title, summary.status);
-    }
-    
-    // Example 9: Using OR conditions
-    println!("\nExample 9: Using OR conditions");
-    
-    let or_tasks: Vec<Task> = supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", &user_id)
-        .or("status.eq.completed,status.eq.in_progress")
-        .execute()
-        .await?;
-    
-    println!(
-        "Retrieved {} tasks that are either completed or in progress",
-        or_tasks.len()
-    );
-    for task in &or_tasks {
-        println!("  - Task: {} (Status: {})", task.title, task.status);
-    }
-    
-    // Example 10: Using IS conditions (for NULL values)
-    println!("\nExample 10: Finding tasks with no due date");
-    
-    let no_due_date_tasks: Vec<Task> = supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", &user_id)
-        .is("due_date", "null")
-        .execute()
-        .await?;
-    
-    println!("Retrieved {} tasks with no due date", no_due_date_tasks.len());
-    for task in &no_due_date_tasks {
-        println!("  - Task: {}", task.title);
-    }
-    
-    // Example 11: Text search
-    println!("\nExample 11: Text search");
-    
-    let search_tasks: Vec<Task> = supabase
-        .from("tasks")
-        .select("*")
-        .eq("user_id", &user_id)
-        .ilike("title", "%supabase%")
-        .execute()
-        .await?;
-    
-    println!(
-        "Retrieved {} tasks with 'supabase' in the title",
-        search_tasks.len()
-    );
-    for task in &search_tasks {
-        println!("  - Task: {}", task.title);
-    }
-    
-    // Example 12: Deleting a task
-    println!("\nExample 12: Deleting a task");
-    
-    if let Some(task_to_delete) = tasks.first() {
-        let task_id = task_to_delete.id.expect("Task should have an ID");
-        
-        let deleted_task: Task = supabase
-            .from("tasks")
-            .delete()
-            .eq("id", &task_id.to_string())
-            .execute_one()
-            .await?;
-        
-        println!("Deleted task: {}", deleted_task.title);
-        
-        // Verify deletion
-        let remaining_tasks: Vec<Task> = supabase
-            .from("tasks")
-            .select("*")
-            .eq("user_id", &user_id)
-            .execute()
-            .await?;
-        
-        println!(
-            "Remaining tasks after deletion: {}",
-            remaining_tasks.len()
-        );
-    }
-    
-    // Example 13: Using custom queries with RPC
-    println!("\nExample 13: Using RPC for a custom function");
-    
-    // Note: This assumes you have created a function named 'get_task_count_by_status'
-    // in your Supabase database that accepts a user_id and status parameter
-    /*
-    #[derive(Debug, Deserialize)]
-    struct TaskCount {
-        count: i64,
-    }
-    
-    let task_count: TaskCount = supabase
-        .rpc("get_task_count_by_status", json!({
-            "p_user_id": user_id,
-            "p_status": "pending"
-        }))
-        .execute_one()
-        .await?;
-    
-    println!("Task count via RPC: {}", task_count.count);
-    */
-    
-    // Example 14: Deleting all test data
-    println!("\nExample 14: Cleaning up - deleting all test tasks");
-    
-    let _: Vec<Task> = supabase
-        .from("tasks")
-        .delete()
-        .eq("user_id", &user_id)
-        .execute()
-        .await?;
-    
-    println!("Deleted all test tasks for user");
-    
-    println!("\nDatabase example completed");
     
     Ok(())
 }

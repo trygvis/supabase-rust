@@ -13,6 +13,9 @@ use bytes::Bytes;
 use std::path::Path;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+use wiremock::{MockServer, Mock, ResponseTemplate};
+use wiremock::matchers::{method, path, query_param};
+use serde_json::json;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -140,6 +143,84 @@ impl ToString for SortBy {
 pub enum SortOrder {
     Asc,
     Desc,
+}
+
+/// 画像変換オプション
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ImageTransformOptions {
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub resize: Option<String>,
+    pub format: Option<String>,
+    pub quality: Option<u32>,
+}
+
+impl ImageTransformOptions {
+    /// 新しい画像変換オプションを作成
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    /// 幅を設定
+    pub fn with_width(mut self, width: u32) -> Self {
+        self.width = Some(width);
+        self
+    }
+    
+    /// 高さを設定
+    pub fn with_height(mut self, height: u32) -> Self {
+        self.height = Some(height);
+        self
+    }
+    
+    /// リサイズモードを設定 (cover, contain, fill)
+    pub fn with_resize(mut self, resize: &str) -> Self {
+        self.resize = Some(resize.to_string());
+        self
+    }
+    
+    /// 出力フォーマットを設定 (webp, png, jpeg, etc)
+    pub fn with_format(mut self, format: &str) -> Self {
+        self.format = Some(format.to_string());
+        self
+    }
+    
+    /// 画質を設定 (1-100)
+    pub fn with_quality(mut self, quality: u32) -> Self {
+        self.quality = Some(quality.min(100));
+        self
+    }
+    
+    /// URLクエリパラメータに変換
+    fn to_query_params(&self) -> String {
+        let mut params = Vec::new();
+        
+        if let Some(width) = self.width {
+            params.push(format!("width={}", width));
+        }
+        
+        if let Some(height) = self.height {
+            params.push(format!("height={}", height));
+        }
+        
+        if let Some(resize) = &self.resize {
+            params.push(format!("resize={}", resize));
+        }
+        
+        if let Some(format) = &self.format {
+            params.push(format!("format={}", format));
+        }
+        
+        if let Some(quality) = self.quality {
+            params.push(format!("quality={}", quality));
+        }
+        
+        if params.is_empty() {
+            String::new()
+        } else {
+            format!("?{}", params.join("&"))
+        }
+    }
 }
 
 /// ファイル情報
@@ -703,6 +784,82 @@ impl<'a> StorageBucketClient<'a> {
         
         Ok(file_object)
     }
+    
+    /// 画像を変換して取得
+    pub async fn transform_image(&self, path: &str, options: ImageTransformOptions) -> Result<Bytes, StorageError> {
+        let url = format!(
+            "{}/storage/v1/object/transform/{}/{}{}",
+            self.parent.base_url,
+            self.bucket_id,
+            path,
+            options.to_query_params()
+        );
+        
+        let response = self.parent.http_client.get(&url)
+            .header("apikey", &self.parent.api_key)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(StorageError::ApiError(error_text));
+        }
+        
+        let data = response.bytes().await?;
+        
+        Ok(data)
+    }
+    
+    /// 変換された画像のURLを取得（公開バケットの場合）
+    pub fn get_public_transform_url(&self, path: &str, options: ImageTransformOptions) -> String {
+        format!(
+            "{}/storage/v1/object/public/transform/{}/{}{}",
+            self.parent.base_url,
+            self.bucket_id,
+            path,
+            options.to_query_params()
+        )
+    }
+    
+    /// 変換された画像の署名付きURLを取得
+    pub async fn create_signed_transform_url(
+        &self,
+        path: &str,
+        options: ImageTransformOptions,
+        expires_in: i32
+    ) -> Result<String, StorageError> {
+        let transform_path = format!("transform/{}/{}{}", self.bucket_id, path, options.to_query_params());
+        
+        let url = format!(
+            "{}/storage/v1/object/sign/{}",
+            self.parent.base_url,
+            transform_path,
+        );
+        
+        let params = serde_json::json!({
+            "expiresIn": expires_in
+        });
+        
+        let response = self.parent.http_client.post(&url)
+            .header("apikey", &self.parent.api_key)
+            .json(&params)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(StorageError::ApiError(error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct SignedUrlResponse {
+            signed_url: String,
+        }
+        
+        let result = response.json::<SignedUrlResponse>().await?;
+        
+        Ok(result.signed_url)
+    }
 }
 
 #[cfg(test)]
@@ -718,5 +875,89 @@ mod tests {
     async fn test_multipart_upload() {
         // このテストは実際のAPIと通信するため、モックサーバーを使用するべきですが、
         // 簡略化のため省略しています。実際の実装ではモックサーバーを使用してください。
+    }
+    
+    #[tokio::test]
+    async fn test_transform_image() {
+        let mock_server = MockServer::start().await;
+        
+        // 画像変換のモック
+        Mock::given(method("GET"))
+            .and(path("/storage/v1/object/transform/test-bucket/image.jpg"))
+            .and(query_param("width", "300"))
+            .and(query_param("height", "200"))
+            .and(query_param("format", "webp"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_bytes(vec![0, 1, 2, 3, 4]) // ダミー画像データ
+                .append_header("Content-Type", "image/webp")
+            )
+            .mount(&mock_server)
+            .await;
+        
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client);
+        let bucket_client = storage_client.from("test-bucket");
+        
+        let options = ImageTransformOptions::new()
+            .with_width(300)
+            .with_height(200)
+            .with_format("webp");
+        
+        let result = bucket_client.transform_image("image.jpg", options).await;
+        
+        assert!(result.is_ok());
+        let image_data = result.unwrap();
+        assert_eq!(image_data.len(), 5);
+    }
+    
+    #[tokio::test]
+    async fn test_get_public_transform_url() {
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new("https://example.com", "fake-key", http_client);
+        let bucket_client = storage_client.from("test-bucket");
+        
+        let options = ImageTransformOptions::new()
+            .with_width(300)
+            .with_height(200)
+            .with_format("webp");
+        
+        let url = bucket_client.get_public_transform_url("image.jpg", options);
+        
+        assert!(url.contains("https://example.com/storage/v1/object/public/transform/test-bucket/image.jpg"));
+        assert!(url.contains("width=300"));
+        assert!(url.contains("height=200"));
+        assert!(url.contains("format=webp"));
+    }
+    
+    #[tokio::test]
+    async fn test_create_signed_transform_url() {
+        let mock_server = MockServer::start().await;
+        
+        // 署名付きURL生成のモック
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/object/sign/transform/test-bucket/image.jpg"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "signed_url": "https://example.com/storage/v1/object/signed/transform/test-bucket/image.jpg?width=300&height=200&format=webp&token=abc123"
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client);
+        let bucket_client = storage_client.from("test-bucket");
+        
+        let options = ImageTransformOptions::new()
+            .with_width(300)
+            .with_height(200)
+            .with_format("webp");
+        
+        let result = bucket_client.create_signed_transform_url("image.jpg", options, 60).await;
+        
+        assert!(result.is_ok());
+        let url = result.unwrap();
+        assert!(url.contains("https://example.com/storage/v1/object/signed/transform/test-bucket/image.jpg"));
+        assert!(url.contains("token=abc123"));
     }
 }

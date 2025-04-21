@@ -63,6 +63,34 @@ let filtered_data = supabase
     .execute()
     .await?;
 
+// 複雑な結合クエリ
+let joined_data = supabase
+    .from("posts")
+    .select("id, title, content")
+    .include("comments", "post_id", Some("id, text, user_id"))
+    .inner_join("users", "user_id", "id")
+    .execute()
+    .await?;
+
+// 全文検索
+let search_results = supabase
+    .from("articles")
+    .select("id, title, content")
+    .text_search("content", "search terms", Some("english"))
+    .execute()
+    .await?;
+
+// CSVエクスポート
+let csv_data = supabase
+    .from("large_table")
+    .select("*")
+    .limit(1000)
+    .export_csv()
+    .await?;
+
+// ファイルとして保存
+std::fs::write("export.csv", csv_data)?;
+
 // データの挿入
 let new_record = serde_json::json!({
     "name": "New Item",
@@ -190,6 +218,34 @@ let signed_url = supabase
     .storage()
     .from("bucket-name")
     .create_signed_url("folder/file.txt", 60)
+    .await?;
+
+// 画像変換
+let transform_options = ImageTransformOptions::new()
+    .with_width(300)
+    .with_height(200)
+    .with_resize("cover")
+    .with_format("webp")
+    .with_quality(90);
+
+// 変換された画像を取得
+let transformed_image = supabase
+    .storage()
+    .from("bucket-name")
+    .transform_image("folder/image.png", transform_options.clone())
+    .await?;
+
+// 変換された画像の公開URLを取得
+let public_transform_url = supabase
+    .storage()
+    .from("bucket-name")
+    .get_public_transform_url("folder/image.png", transform_options.clone());
+
+// 変換された画像の署名付きURLを取得
+let signed_transform_url = supabase
+    .storage()
+    .from("bucket-name")
+    .create_signed_transform_url("folder/image.png", transform_options, 60)
     .await?;
 
 // ファイルの削除
@@ -402,9 +458,9 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 - ✅ 基本的なフィルタリング
 - ✅ RPC関数呼び出し
 - ✅ 基本的なリレーションシップクエリ
-- 🔄 複雑な結合クエリ（実装中）
-- 🔄 高度なPostgREST機能（実装中）
-- ❌ CSVエクスポート機能（未実装）
+- ✅ 複雑な結合クエリ
+- ✅ 高度なPostgREST機能（全文検索、地理空間データ等）
+- ✅ CSVエクスポート機能
 
 #### 認証 (85%)
 - ✅ メール・パスワード認証
@@ -424,7 +480,7 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 - ✅ 公開URL生成
 - ✅ 基本的な署名付きURL
 - ✅ 大容量ファイルのチャンクアップロード
-- ❌ 画像変換機能（未実装）
+- ✅ 画像変換機能
 
 #### リアルタイム (80%)
 - ✅ データベース変更監視
@@ -444,9 +500,9 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 ### 今後の開発予定
 
 1. **データベース機能の強化**:
-   - 複雑な結合クエリのサポート向上
-   - 高度なPostgREST機能（全文検索、地理空間データ等）
-   - CSVエクスポート機能の実装
+   - 複雑な結合クエリの最適化
+   - 高度なFilteringとOrderingの組み合わせ
+   - トランザクション処理のサポート
 
 2. **認証の拡張**:
    - メール確認機能の実装
@@ -454,7 +510,7 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
    - 組織機能のサポート
 
 3. **ストレージの拡張**:
-   - 画像変換機能の実装
+   - 画像変換機能の最適化
    - S3互換APIのサポート
    - コピー・移動操作の拡張
 
