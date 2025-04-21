@@ -1,6 +1,6 @@
 [package]
 name = "supabase-rust-gftd"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Jun Kawasaki"]
 description = "Rust client for Supabase"
@@ -20,11 +20,11 @@ url = "2.3"
 base64 = "0.21"
 async-trait = "0.1"
 jsonwebtoken = "9.1"
-supabase-rust-auth = { version = "0.1.0" }
-supabase-rust-postgrest = { version = "0.1.0" }
-supabase-rust-storage = { version = "0.1.0" }
-supabase-rust-realtime = { version = "0.1.0" }
-supabase-rust-functions = { version = "0.1.0" }
+supabase-rust-auth = { version = "0.1.1" }
+supabase-rust-postgrest = { version = "0.1.1" }
+supabase-rust-storage = { version = "0.1.1" }
+supabase-rust-realtime = { version = "0.1.1" }
+supabase-rust-functions = { version = "0.1.1" }
 
 [workspace]
 members = [

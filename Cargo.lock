@@ -1742,7 +1742,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "supabase-rust-auth"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1765,9 +1765,9 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-auth"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9de263595019fe6db7cbac18368fbbaf95aeb8aa287b19353f2003f801fdd8b"
+checksum = "aa329dc28ebd9a2dbb1d6c51fcdbacc2c3432620c67bfb05233b2cdae5d4a58f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1804,7 +1804,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-functions"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1826,9 +1826,9 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-functions"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f26c6000aac88130bbcc48ff14d09e460e77165edcf68ffc31d5dd0138196b8"
+checksum = "371b0fe1bed989f7cfe7dccffdc99ab35750ca29c58b547050b43c59f4e880de"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1848,7 +1848,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-gftd"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
@@ -1858,11 +1858,11 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "supabase-rust-auth 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-functions 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-postgrest 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-realtime 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-storage 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-auth 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-functions 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-postgrest 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-realtime 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-storage 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -1874,7 +1874,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-postgrest"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1892,9 +1892,9 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-postgrest"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35d2b008464b9f7b6391e838b48c5dbad0f462d8641bb3cd0d3e584a67d2ac38"
+checksum = "141b1ddc32024e6600dff1a7662ade7de7328ecd551865a3699a98c11ba75bfe"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1910,7 +1910,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-realtime"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1930,9 +1930,9 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-realtime"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c015e057f75935944b39d765fda08cffd4a5b45ac14c39b24521bc360e1ca8f5"
+checksum = "16adde8d8b55b533093e70f0fc5bdc0e97fa4bd5109c2fc05e954135fad68738"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1950,7 +1950,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-storage"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1971,9 +1971,9 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-storage"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6e98a4f24043341bf8a75f6ab8a4e54c9380209d772be64f58b8c2c1280eca6"
+checksum = "af28558f877cccf166005d448e54f755b2fd6c83d756768b6d2c36f11bbed0a4"
 dependencies = [
  "anyhow",
  "async-trait",

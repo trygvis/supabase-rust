@@ -1,6 +1,6 @@
 [package]
 name = "supabase-rust-functions"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Jun Kawasaki"]
 description = "Edge Functions client for Supabase"
