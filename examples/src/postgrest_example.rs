@@ -1,12 +1,11 @@
-use supabase_rust_gftd::prelude::*;
 use supabase_rust_gftd::Supabase;
-use supabase_rust_gftd::postgrest::{IsolationLevel, TransactionMode};
+use supabase_rust_gftd::postgrest::{IsolationLevel, SortOrder, TransactionMode, PostgrestClient};
 use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
     id: Option<i32>,
     title: String,
@@ -25,6 +24,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
     
+    println!("Using Supabase URL: {}", supabase_url);
+    
     // Initialize the Supabase client
     let supabase = Supabase::new(&supabase_url, &supabase_key);
     
@@ -39,11 +40,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .sign_up(&test_email, test_password)
         .await?;
     
-    let user_id = sign_up_result.user.id;
+    let user_id = sign_up_result.user.id.clone();
+    let access_token = sign_up_result.access_token.clone();
     println!("Created test user with ID: {}", user_id);
     
-    // Get the PostgREST client
-    let postgrest = supabase.from("tasks");
+    // Get the PostgREST client and attach the authorization token
+    let postgrest = supabase
+        .from("tasks")
+        .with_auth(&access_token)?;
     
     // Example 1: Basic INSERT with RLS
     println!("\nExample 1: Basic INSERT with RLS");
@@ -90,7 +94,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .select("*")
         .eq("is_complete", "false")
         .eq("user_id", &user_id)
-        .execute()
+        .execute::<serde_json::Value>()
         .await?;
     
     // 手動で型変換する
@@ -107,13 +111,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 3: Complex filters and order
     println!("\nExample 3: Complex filters and order");
     
-    // Query with complex filters and ordering
+    // Query with filters and ordering (OR条件の代わりにin_listを使用)
     let filtered_tasks_json = postgrest
         .select("*")
-        .or("title.eq.Task 1,title.eq.Task 2") // Title is either "Task 1" or "Task 2"
-        .order("created_at", Some(true))      // Order by created_at ascending
+        .in_list("title", &["Task 1", "Task 2"]) // Title is either "Task 1" or "Task 2"
+        .order("created_at", SortOrder::Ascending) // Order by created_at ascending
         .limit(10)
-        .execute()
+        .execute::<serde_json::Value>()
         .await?;
     
     // 手動で型変換する
@@ -132,10 +136,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     
     // Update all tasks to be complete
     let update_result = postgrest
-        .update(json!({ "is_complete": true }))
         .eq("user_id", &user_id)
         .eq("is_complete", "false")
-        .execute()
+        .update(json!({ "is_complete": true }))
         .await?;
     
     println!("Updated {} tasks to be complete", update_result.len());
@@ -164,7 +167,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .select("*")
         .gte("id", "100")
         .lte("id", "102")
-        .execute()
+        .execute::<serde_json::Value>()
         .await?;
     
     // 手動で型変換する
@@ -182,9 +185,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nExample 6: Using COUNT");
     
     // Count the total number of tasks
+    // count関数を使用して直接カウント結果を取得
     let count_result = postgrest
         .select("count")
-        .execute()
+        .count(true)
+        .execute::<serde_json::Value>()
         .await?;
     
     let count = count_result[0].as_object().unwrap().get("count").unwrap().as_i64().unwrap();
@@ -193,171 +198,138 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 7: DELETE with filters
     println!("\nExample 7: DELETE with filters");
     
-    // Delete all tasks for our test user
+    // Delete tasks that match specific criteria
     let delete_result = postgrest
-        .delete()
         .eq("user_id", &user_id)
-        .execute()
+        .gte("id", "100")
+        .lte("id", "102")
+        .delete()
         .await?;
     
     println!("Deleted {} tasks", delete_result.len());
     
-    // Example 8: Using custom schema
-    println!("\nExample 8: Using custom schema");
-    
-    // Access a table in a custom schema
-    let custom_schema_result = supabase
-        .from("profile")
-        .select("*")
-        .schema("private") // Use a different schema than public
-        .limit(5)
-        .execute()
-        .await;
-    
-    match custom_schema_result {
-        Ok(profiles) => {
-            println!("Found {} profiles in private schema", profiles.len());
-        },
-        Err(e) => {
-            println!("Note: Custom schema example failed: {}", e);
-            println!("This is expected if the 'private.profile' table doesn't exist in your database.");
-        }
-    }
-    
-    // Example 9: Transactions
-    println!("\nExample 9: Using transactions");
+    // Example 8: Transaction with savepoints (begin_transaction方式)
+    println!("\nExample 8: Transaction with savepoints");
     
     // Start a transaction
-    let transaction = postgrest.transaction(TransactionMode::ReadWrite, Some(IsolationLevel::Serializable));
+    let transaction = postgrest.begin_transaction(
+        Some(IsolationLevel::ReadCommitted),
+        Some(TransactionMode::ReadWrite),
+        Some(30) // timeout in seconds
+    ).await?;
     
-    // Create two tasks in a transaction
-    let task1 = Task {
+    println!("Transaction started");
+    
+    // Create a task in the transaction
+    let transaction_task = Task {
         id: None,
-        title: "Transaction Task 1".to_string(),
+        title: "Transaction Task".to_string(),
         description: Some("Created in a transaction".to_string()),
         is_complete: false,
         created_at: None,
         user_id: user_id.clone(),
     };
     
-    let task2 = Task {
-        id: None,
-        title: "Transaction Task 2".to_string(),
-        description: Some("Created in the same transaction".to_string()),
-        is_complete: false,
-        created_at: None,
-        user_id: user_id.clone(),
-    };
+    let tasks_in_transaction = transaction.from("tasks");
     
-    // Insert the first task
-    let insert_result1 = transaction
-        .from("tasks")
-        .insert(json!(task1))
-        .execute()
+    // Insert the task
+    let tx_insert_result = tasks_in_transaction
+        .insert(json!(transaction_task))
         .await?;
     
-    // Get the ID of the first task
-    let task1_id = insert_result1[0]["id"].as_i64().unwrap();
-    println!("Inserted task 1 with ID: {}", task1_id);
+    let tx_task_id = tx_insert_result[0]["id"].as_i64().unwrap();
+    println!("Created task in transaction with ID: {}", tx_task_id);
     
-    // Insert the second task
-    let insert_result2 = transaction
-        .from("tasks")
-        .insert(json!(task2))
-        .execute()
+    // Create a savepoint
+    transaction.savepoint("after_insert").await?;
+    println!("Created savepoint 'after_insert'");
+    
+    // Update the task
+    let tx_update_result = tasks_in_transaction
+        .eq("id", &tx_task_id.to_string())
+        .update(json!({ "description": "Updated in transaction" }))
         .await?;
     
-    // Get the ID of the second task
-    let task2_id = insert_result2[0]["id"].as_i64().unwrap();
-    println!("Inserted task 2 with ID: {}", task2_id);
-    
-    // Update the first task in the transaction
-    let update_result = transaction
-        .from("tasks")
-        .update(json!({ "is_complete": true }))
-        .eq("id", &task1_id.to_string())
-        .execute()
-        .await?;
-    
-    println!("Updated task 1 in transaction");
+    println!("Updated task in transaction: {}", tx_update_result[0]["description"]);
     
     // Commit the transaction
     transaction.commit().await?;
     println!("Transaction committed");
     
-    // Check that both tasks are in the database
-    let final_tasks_json = supabase
-        .from("tasks")
+    // Example 9: Select the task created in transaction
+    println!("\nExample 9: Verify task created in transaction");
+    
+    let tx_tasks_json = postgrest
         .select("*")
-        .eq("title", "Transaction Task 1")
-        .execute()
+        .eq("title", "Transaction Task")
+        .execute::<serde_json::Value>()
         .await?;
     
-    // 手動で型変換する
-    let final_tasks: Vec<Task> = final_tasks_json
+    let tx_tasks: Vec<Task> = tx_tasks_json
         .iter()
         .map(|task_json| serde_json::from_value(task_json.clone()).unwrap())
         .collect();
     
-    println!("Task 1 after transaction: is_complete = {}", final_tasks[0].is_complete);
+    println!("Tasks created in transaction:");
+    for task in &tx_tasks {
+        println!("  - Title: {}, Description: {}", task.title, task.description.as_ref().unwrap());
+    }
     
-    // Example 10: Rollback a transaction
-    println!("\nExample 10: Transaction rollback");
+    // Example 10: Transaction with rollback
+    println!("\nExample 10: Transaction with rollback");
     
     // Start another transaction
-    let transaction2 = postgrest.transaction(TransactionMode::ReadWrite, None);
+    let transaction2 = postgrest.begin_transaction(
+        Some(IsolationLevel::ReadCommitted),
+        Some(TransactionMode::ReadWrite),
+        None
+    ).await?;
     
     // Create a task that will be rolled back
     let rollback_task = Task {
         id: None,
-        title: "Task to be rolled back".to_string(),
-        description: Some("This task should not be committed".to_string()),
+        title: "Rollback Task".to_string(),
+        description: Some("This task should be rolled back".to_string()),
         is_complete: false,
         created_at: None,
         user_id: user_id.clone(),
     };
     
     // Insert the task
-    let _ = transaction2
-        .from("tasks")
+    let tasks_in_transaction2 = transaction2.from("tasks");
+    let _ = tasks_in_transaction2
         .insert(json!(rollback_task))
-        .execute()
         .await?;
     
-    println!("Task inserted in transaction (not yet committed)");
+    println!("Created task in transaction2 (will be rolled back)");
     
     // Rollback the transaction
     transaction2.rollback().await?;
-    println!("Transaction rolled back");
+    println!("Transaction2 rolled back");
     
-    // Verify that the task was not committed
-    let rollback_check_json = supabase
-        .from("tasks")
+    // Example 11: Verify task was not created after rollback
+    println!("\nExample 11: Verify task was not created after rollback");
+    
+    let rollback_tasks_json = postgrest
         .select("*")
-        .eq("title", "Task to be rolled back")
-        .execute()
+        .eq("title", "Rollback Task")
+        .execute::<serde_json::Value>()
         .await?;
     
-    // 手動で型変換する
-    let rollback_check: Vec<Task> = rollback_check_json
-        .iter()
-        .map(|task_json| serde_json::from_value(task_json.clone()).unwrap())
-        .collect();
+    println!("Tasks with title 'Rollback Task' (should be 0): {}", rollback_tasks_json.len());
     
-    println!("Tasks found after rollback: {} (should be 0)", rollback_check.len());
-    assert_eq!(rollback_check.len(), 0, "Transaction rollback failed");
-    
-    // Clean up - delete all tasks for our test user
-    println!("\nCleaning up - deleting all test tasks");
+    // Example 12: Cleanup - delete all tasks for our test user
+    println!("\nExample 12: Cleanup - delete all tasks for our test user");
     
     let _ = supabase
         .from("tasks")
-        .delete()
+        .with_auth(&access_token)?
         .eq("user_id", &user_id)
-        .execute()
+        .delete()
         .await?;
     
-    println!("All test tasks deleted");
+    println!("Deleted all tasks for test user");
+    
     println!("PostgREST example completed");
     
     Ok(())

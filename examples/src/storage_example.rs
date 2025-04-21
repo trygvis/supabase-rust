@@ -1,15 +1,18 @@
 use supabase_rust_gftd::prelude::*;
 use supabase_rust_gftd::Supabase;
-use supabase_rust_gftd::storage::ImageTransformOptions;
+use supabase_rust_gftd::storage::{ImageTransformOptions, FileOptions, ListOptions};
 use dotenv::dotenv;
 use std::env;
-use std::path::PathBuf;
-use std::io::Cursor;
+use std::path::{Path, PathBuf};
+use std::io::{Cursor, Write};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 use mime;
 use bytes::Bytes;
 use serde_json::json;
+use std::fs::File as StdFile;
+use std::io::Read;
+use tempfile::NamedTempFile;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FileObject {
@@ -21,15 +24,19 @@ struct FileObject {
     created_at: String,
     last_accessed_at: Option<String>,
     metadata: serde_json::Value,
+    mime_type: Option<String>,
+    size: i64,
 }
 
 mod image_transform_examples {
     use std::env;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tokio::fs;
     use supabase_rust_gftd::prelude::*;
     use supabase_rust_gftd::Supabase;
-    use supabase_rust_gftd::storage::ImageTransformOptions;
+    use supabase_rust_gftd::storage::{ImageTransformOptions, FileOptions};
+    use tempfile::NamedTempFile;
+    use std::io::Write;
     
     pub async fn run_image_transform_examples() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // Supabaseの認証情報を環境変数から取得
@@ -38,15 +45,20 @@ mod image_transform_examples {
         
         // バケット名とテスト画像のパスを設定
         let bucket_name = "test-images";
-        let local_image_path = PathBuf::from("./test-image.jpg");
-        let upload_path = "test-transform-image.jpg";
         
-        // テスト用の画像が存在するか確認
-        if !local_image_path.exists() {
-            println!("テスト用の画像が見つかりません: {:?}", local_image_path);
-            println!("テスト画像を用意して再実行してください。");
-            return Ok(());
-        }
+        // テスト用の一時画像ファイルを作成
+        let mut temp_file = NamedTempFile::new()?;
+        // ダミー画像データを書き込む (1x1 PNG)
+        let dummy_png_data: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+            0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+            0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60, 0x00, 0x00, 0x00,
+            0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
+            0x42, 0x60, 0x82
+        ];
+        temp_file.write_all(dummy_png_data)?;
+        let local_image_path = temp_file.path().to_path_buf();
+        let upload_path = "test-transform-image.jpg";
         
         // Supabaseクライアントの初期化
         let supabase = Supabase::new(&supabase_url, &supabase_key);
@@ -66,11 +78,10 @@ mod image_transform_examples {
         
         // 画像をアップロード
         println!("画像をアップロードしています...");
-        let file_data = fs::read(&local_image_path).await.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-        
+        // Path型を使用するようにアップロード処理を修正
         let upload_result = storage
             .from(bucket_name)
-            .upload(upload_path, file_data, None)
+            .upload(upload_path, local_image_path.as_path(), None)
             .await?;
             
         println!("画像をアップロードしました: {}", upload_result.name);
@@ -124,20 +135,14 @@ mod image_transform_examples {
             println!("署名付きURL (有効期限60秒): {}", signed_url);
         }
         
-        // クリーンアップ（必要に応じて）
-        println!("\nテスト画像を削除しますか？(y/n)");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-        
-        if input.trim().to_lowercase() == "y" {
-            println!("テスト画像を削除します...");
-            storage
-                .from(bucket_name)
-                .remove(vec![upload_path])
-                .await?;
-                
-            println!("テスト画像を削除しました。");
-        }
+        // クリーンアップ
+        println!("\nテスト画像を削除します...");
+        storage
+            .from(bucket_name)
+            .remove(vec![upload_path])
+            .await?;
+            
+        println!("テスト画像を削除しました。");
         
         Ok(())
     }
@@ -162,9 +167,21 @@ async fn run_s3_compatible_example(supabase: &Supabase) -> std::result::Result<(
     
     // テキストファイルをアップロード
     let text_content = "This is a test file uploaded via S3 compatible API";
-    let text_bytes = Bytes::from(text_content.as_bytes().to_vec());
+    
+    // 一時ファイルを作成してテキストを書き込む
+    let mut temp_file = NamedTempFile::new()?;
+    temp_file.write_all(text_content.as_bytes())?;
+    let file_path = temp_file.path();
     
     println!("Uploading text file via S3 compatible API...");
+    
+    // 一時ファイルのパスから読み込んだデータをバイトに変換
+    let mut file_data = Vec::new();
+    let mut file = StdFile::open(file_path)?;
+    file.read_to_end(&mut file_data)?;
+    
+    let text_bytes = Bytes::from(file_data);
+    
     s3_client.put_object(
         "s3-test/test.txt", 
         text_bytes.clone(), 
@@ -200,52 +217,16 @@ async fn run_s3_compatible_example(supabase: &Supabase) -> std::result::Result<(
             None
         ).await?;
     }
-    println!("Multiple files uploaded");
     
-    // ファイルをコピー
-    println!("Copying file...");
-    s3_client.copy_object(
-        "s3-test/test.txt",
-        "s3-test/test-copy.txt"
-    ).await?;
-    println!("File copied successfully");
+    // オブジェクト一覧を取得
+    println!("Listing objects...");
+    let objects = s3_client.list_objects(Some("s3-test/multiple/"), None, None).await?;
+    println!("Objects in directory: {:?}", objects);
     
-    // コピーされたファイルをダウンロードして確認
-    let copied_data = s3_client.get_object("s3-test/test-copy.txt").await?;
-    let copied_text = String::from_utf8_lossy(&copied_data);
-    println!("Copied file content: {}", copied_text);
-    
-    // ファイルを削除
-    println!("Would you like to delete the test files? (y/n)");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-    
-    if input.trim().to_lowercase() == "y" {
-        println!("Deleting test files...");
-        let objects_to_delete = vec![
-            "s3-test/test.txt", 
-            "s3-test/test-copy.txt"
-        ];
-        
-        for object in &objects_to_delete {
-            s3_client.delete_object(object).await?;
-        }
-        
-        println!("Test files deleted");
-        
-        // multiple ディレクトリのファイルも削除
-        println!("Would you like to delete the multiple files too? (y/n)");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-        
-        if input.trim().to_lowercase() == "y" {
-            for i in 1..4 {
-                let path = format!("s3-test/multiple/file{}.txt", i);
-                s3_client.delete_object(&path).await?;
-            }
-            println!("Multiple files deleted");
-        }
-    }
+    // オブジェクトを削除
+    println!("Deleting objects...");
+    s3_client.delete_object("s3-test/test.txt").await?;
+    println!("Object deleted");
     
     Ok(())
 }
@@ -254,203 +235,213 @@ async fn run_s3_compatible_example(supabase: &Supabase) -> std::result::Result<(
 async fn run_basic_storage_operations(supabase: &Supabase) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 基本的なストレージ操作の例 ===\n");
     
+    // テストバケットの名前
+    let bucket_name = "test-bucket";
+    
     // ストレージクライアントを取得
     let storage = supabase.storage();
     
-    // 1. バケットの一覧を取得
-    println!("バケットの一覧を取得しています...");
+    // バケット操作
+    println!("バケット一覧を取得中...");
     let buckets = storage.list_buckets().await?;
+    println!("バケット一覧: {:?}", buckets);
     
-    println!("バケット一覧:");
-    for bucket in &buckets {
-        println!("  - {}: {}", bucket.id, bucket.name);
+    // テストバケットが存在するか確認
+    let bucket_exists = buckets.iter().any(|b| b.name == bucket_name);
+    
+    if !bucket_exists {
+        println!("バケット '{}' を作成します...", bucket_name);
+        storage.create_bucket(bucket_name, true).await?;
+        println!("バケットを作成しました: {}", bucket_name);
+    } else {
+        println!("バケット '{}' は既に存在します", bucket_name);
     }
     
-    // 2. 新しいバケットを作成
-    let test_bucket_name = format!("test-bucket-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
-    println!("\n新しいバケット '{}' を作成しています...", test_bucket_name);
-    
-    let new_bucket = storage.create_bucket(&test_bucket_name, false).await?;
-    println!("バケットを作成しました: {}", new_bucket.name);
-    
-    // 3. テキストファイルをアップロード
+    // テキストファイルのアップロード
     println!("\nテキストファイルをアップロードしています...");
-    let text_content = "This is a test file uploaded from Rust client";
+    
+    // 一時ファイルを作成
+    let mut temp_file = NamedTempFile::new()?;
+    let text_content = "This is a test file for storage operations.";
+    temp_file.write_all(text_content.as_bytes())?;
     
     let upload_result = storage
-        .from(&test_bucket_name)
-        .upload("test.txt", text_content.as_bytes().to_vec(), None)
+        .from(bucket_name)
+        .upload("test.txt", temp_file.path(), None)
         .await?;
-        
+    
     println!("ファイルをアップロードしました: {}", upload_result.name);
     
-    // 4. ファイルの一覧を取得
-    println!("\nファイルの一覧を取得しています...");
-    let files = storage
-        .from(&test_bucket_name)
-        .list(Some(""), Some(100), Some("/"), Some("."))
-        .await?;
+    // ファイル一覧の取得
+    println!("\nファイル一覧を取得しています...");
+    
+    let list_options = ListOptions::new()
+        .limit(100);
         
-    println!("ファイル一覧:");
+    let files = storage
+        .from(bucket_name)
+        .list("", Some(list_options))
+        .await?;
+    
+    println!("バケット内のファイル:");
     for file in &files {
-        println!("  - {}: {} bytes", file.name, file.metadata.size);
+        println!("  - {}: {} bytes", file.name, file.size);
     }
     
-    // 5. ファイルの公開URLを取得
-    println!("\nファイルの公開URLを取得しています...");
+    // 公開URLの取得
+    println!("\n公開URLを取得しています...");
     let public_url = storage
-        .from(&test_bucket_name)
+        .from(bucket_name)
         .get_public_url("test.txt");
-        
+    
     println!("公開URL: {}", public_url);
     
-    // 6. 署名付きURLを作成
-    println!("\n署名付きURLを作成しています...");
+    // 署名付きURLの取得
+    println!("\n署名付きURLを取得しています...");
     let signed_url = storage
-        .from(&test_bucket_name)
+        .from(bucket_name)
         .create_signed_url("test.txt", 60)
         .await?;
-        
+    
     println!("署名付きURL (有効期限60秒): {}", signed_url);
     
-    // 7. ファイルをダウンロード
+    // ファイルのダウンロード
     println!("\nファイルをダウンロードしています...");
     let downloaded_data = storage
-        .from(&test_bucket_name)
+        .from(bucket_name)
         .download("test.txt")
         .await?;
-        
+    
     let downloaded_text = String::from_utf8_lossy(&downloaded_data);
-    println!("ダウンロードしたファイルの内容: {}", downloaded_text);
+    println!("ダウンロードしたテキスト: {}", downloaded_text);
     
-    // 8. クリーンアップ
-    println!("\nクリーンアップを行いますか？(y/n)");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    // ファイルの削除
+    println!("\nファイルを削除しています...");
+    storage
+        .from(bucket_name)
+        .remove(vec!["test.txt"])
+        .await?;
     
-    if input.trim().to_lowercase() == "y" {
-        println!("ファイルを削除しています...");
-        storage
-            .from(&test_bucket_name)
-            .remove(vec!["test.txt"])
-            .await?;
-            
-        println!("バケットを削除しています...");
-        storage.delete_bucket(&test_bucket_name).await?;
-        
-        println!("クリーンアップ完了");
-    }
+    println!("ファイルを削除しました");
+    
+    // バケットの削除（オプション）
+    /*
+    println!("\nバケットを削除しています...");
+    storage.delete_bucket(bucket_name).await?;
+    println!("バケットを削除しました: {}", bucket_name);
+    */
     
     Ok(())
 }
 
-/// 大きなファイルのアップロード例を実行
+/// 大容量ファイルのアップロード例を実行
 async fn run_large_file_upload(supabase: &Supabase) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    println!("\n=== 大きなファイルのアップロード例 ===\n");
+    println!("\n=== 大容量ファイルのアップロード例 ===\n");
     
-    // この例では実際の大きなファイルではなく、生成したデータを使用します
-    println!("生成したデータを使った大きなファイルのアップロード例です。");
+    // テストバケットの名前
+    let bucket_name = "test-bucket";
     
     // ストレージクライアントを取得
     let storage = supabase.storage();
     
-    // テスト用バケットの名前
-    let test_bucket_name = format!("large-file-test-{}", uuid::Uuid::new_v4().to_string().split('-').next().unwrap());
+    // バケットが存在するか確認し、なければ作成
+    let buckets = storage.list_buckets().await?;
+    let bucket_exists = buckets.iter().any(|b| b.name == bucket_name);
     
-    // バケットを作成
-    println!("テスト用バケット '{}' を作成しています...", test_bucket_name);
-    storage.create_bucket(&test_bucket_name, false).await?;
+    if !bucket_exists {
+        println!("バケット '{}' を作成します...", bucket_name);
+        storage.create_bucket(bucket_name, true).await?;
+        println!("バケットを作成しました: {}", bucket_name);
+    }
     
-    // 1MBのランダムデータを生成
-    println!("1MBのテストデータを生成しています...");
-    let data_size = 1024 * 1024; // 1MB
-    let mut large_data = Vec::with_capacity(data_size);
+    // 大きなテストファイルを作成 (5MB)
+    println!("テスト用の大容量ファイルを作成しています...");
+    let file_size = 5 * 1024 * 1024; // 5MB
     
-    for i in 0..data_size {
+    // 一時ファイルを作成
+    let mut temp_file = NamedTempFile::new()?;
+    
+    // ランダムデータを生成して書き込む
+    let mut large_data = Vec::with_capacity(file_size);
+    for i in 0..file_size {
         large_data.push((i % 256) as u8);
     }
+    temp_file.write_all(&large_data)?;
     
-    // 大きなファイルをアップロード
-    println!("大きなファイルをアップロードしています...");
-    let start_time = std::time::Instant::now();
+    // マルチパートアップロードでファイルをアップロード
+    println!("\nマルチパートアップロードを開始しています...");
     
+    let file_path = temp_file.path();
+    
+    // アップロードオプションを設定
+    let upload_options = FileOptions::new()
+        .with_content_type("application/octet-stream");
+    
+    // マルチパートアップロードを実行（大きなファイルのため）
     let upload_result = storage
-        .from(&test_bucket_name)
-        .upload("large-file.bin", large_data, None)
+        .from(bucket_name)
+        .upload_large_file(
+            "large-file.bin",
+            file_path,
+            1024 * 1024, // 1MBチャンク
+            Some(upload_options)
+        )
         .await?;
-        
-    let duration = start_time.elapsed();
-    println!("アップロード完了: {}", upload_result.name);
-    println!("アップロード時間: {:.2}秒", duration.as_secs_f64());
     
-    // クリーンアップ
-    println!("\nクリーンアップを行いますか？(y/n)");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+    println!("大容量ファイルのアップロードが完了しました: {}", upload_result.name);
     
-    if input.trim().to_lowercase() == "y" {
-        println!("ファイルを削除しています...");
-        storage
-            .from(&test_bucket_name)
-            .remove(vec!["large-file.bin"])
-            .await?;
-            
-        println!("バケットを削除しています...");
-        storage.delete_bucket(&test_bucket_name).await?;
-        
-        println!("クリーンアップ完了");
-    }
+    // ファイルを削除（クリーンアップ）
+    println!("\nファイルを削除しています...");
+    storage
+        .from(bucket_name)
+        .remove(vec!["large-file.bin"])
+        .await?;
+    
+    println!("ファイルを削除しました");
     
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // Load environment variables from .env file
+    // 環境変数を.envファイルから読み込む
     dotenv().ok();
     
-    // Get Supabase URL and key from environment variables
+    // Supabaseの認証情報を環境変数から取得
     let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
     
-    // Initialize the Supabase client
+    println!("Using Supabase URL: {}", supabase_url);
+    
+    // Supabaseクライアントの初期化
     let supabase = Supabase::new(&supabase_url, &supabase_key);
     
-    println!("Starting storage example");
+    println!("==== Supabase Storage Examples ====");
     
-    // First, sign up a test user for our examples
-    let test_email = format!("test-storage-{}@example.com", uuid::Uuid::new_v4());
-    let test_password = "password123";
-    
-    let sign_up_result = supabase
-        .auth()
-        .sign_up(&test_email, test_password)
-        .await?;
-    
-    println!("Created test user with ID: {}", sign_up_result.user.id);
-    
-    // 基本的なストレージ操作の例を実行
-    if let Err(e) = run_basic_storage_operations(&supabase).await {
-        println!("基本的なストレージ操作の例でエラーが発生しました: {}", e);
+    // S3ドキュメントを処理...
+    match run_basic_storage_operations(&supabase).await {
+        Ok(_) => println!("\n基本的なストレージ操作の例が完了しました"),
+        Err(e) => println!("\n基本的なストレージ操作の例でエラーが発生しました: {:?}", e),
     }
     
-    // S3互換APIの例を実行
-    if let Err(e) = run_s3_compatible_example(&supabase).await {
-        println!("S3互換APIの例でエラーが発生しました: {}", e);
-    }
-    
-    // 大きなファイルのアップロード例を実行
-    if let Err(e) = run_large_file_upload(&supabase).await {
-        println!("大きなファイルのアップロード例でエラーが発生しました: {}", e);
+    match run_large_file_upload(&supabase).await {
+        Ok(_) => println!("\n大容量ファイルのアップロード例が完了しました"),
+        Err(e) => println!("\n大容量ファイルのアップロード例でエラーが発生しました: {:?}", e),
     }
     
     // 画像変換の例を実行
-    // 注：テスト画像のパスを適切に設定する必要があります
-    if let Err(e) = image_transform_examples::run_image_transform_examples().await {
-        println!("画像変換の例でエラーが発生しました: {}", e);
+    match image_transform_examples::run_image_transform_examples().await {
+        Ok(_) => println!("\n画像変換機能の例が完了しました"),
+        Err(e) => println!("\n画像変換機能の例でエラーが発生しました: {:?}", e),
     }
     
-    println!("Storage example completed");
+    // S3互換APIの例を実行
+    match run_s3_compatible_example(&supabase).await {
+        Ok(_) => println!("\nS3互換APIの例が完了しました"),
+        Err(e) => println!("\nS3互換APIの例でエラーが発生しました: {:?}", e),
+    }
+    
+    println!("\n全ての例が実行されました。");
     
     Ok(())
 }

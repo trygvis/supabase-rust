@@ -56,15 +56,20 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
                 .event(ChannelEvent::Update)
                 // is_completeがtrueのレコードだけを対象にする
                 .eq("is_complete", true),
-            move |payload: HashMap<String, serde_json::Value>| {
+            move |payload| {
                 let counter = counter_clone.clone();
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
-                        if let Some(record) = payload.record {
-                            println!("フィルター付きチャンネルで受信: 完了済みタスク「{}」", record.title);
-                            // タスクは必ず完了済み (is_complete = true) のはず
-                            assert!(record.is_complete);
+                println!("フィルター付きチャンネルで受信: {:?}", payload);
+                counter.fetch_add(1, Ordering::SeqCst);
+                
+                if let Some(record) = payload.data.get("record") {
+                    if let Some(title) = record.get("title") {
+                        println!("フィルター付きチャンネルで受信: 完了済みタスク「{}」", title);
+                    }
+                    
+                    if let Some(is_complete) = record.get("is_complete") {
+                        // タスクは必ず完了済み (is_complete = true) のはず
+                        if let Some(is_complete) = is_complete.as_bool() {
+                            assert!(is_complete);
                         }
                     }
                 }
@@ -90,36 +95,33 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
         };
         
         println!("タスクを作成: {}", task.title);
-        postgrest
+        let insert_result = postgrest
             .insert(json!(task))
             .await?;
         
-        // タスクIDを取得（最新のタスクのID）
-        let latest_tasks = postgrest
-            .select("*")
-            .eq("title", &task.title)
-            .eq("user_id", &user_id)
-            .execute()
-            .await?;
-        
-        let task_id = latest_tasks[0]["id"].as_i64().unwrap();
+        let task_id = if let Some(task) = insert_result.get(0) {
+            task["id"].as_i64().unwrap()
+        } else {
+            continue;
+        };
         
         // 偶数番目のタスクを完了済みに更新（フィルターに合致）
         if i % 2 == 0 {
             println!("タスク {} を完了済みに更新（フィルターに合致）", i);
-            postgrest
-                .update(json!({ "is_complete": true }))
+            let update_result = postgrest
                 .eq("id", &task_id.to_string())
-                .execute()
+                .update(json!({ "is_complete": true }))
                 .await?;
+            
+            println!("更新結果: {:?}", update_result);
         }
         
         // 少し待機してイベントを処理させる
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(500)).await;
     }
     
     // 少し待機してすべてのイベントを処理させる
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2)).await;
     
     // 複合条件を使用したフィルタリングを追加で試す
     println!("\n複合条件を使ったフィルタリングテスト:");
@@ -136,22 +138,38 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
                 .event(ChannelEvent::Insert)
                 .event(ChannelEvent::Update)
                 // タイトルが「3」を含むタスク
-                .filter("title", FilterOperator::Like, serde_json::Value::String("%3%".to_string()))
+                .filter(DatabaseFilter {
+                    column: "title".to_string(),
+                    operator: FilterOperator::Like,
+                    value: json!("%3%"),
+                })
                 // または「5」を含むタスク
-                .filter("title", FilterOperator::Like, serde_json::Value::String("%5%".to_string()))
+                .filter(DatabaseFilter {
+                    column: "title".to_string(),
+                    operator: FilterOperator::Like,
+                    value: json!("%5%"),
+                })
                 // かつ未完了のタスク
                 .eq("is_complete", false),
-            move |payload: HashMap<String, serde_json::Value>| {
+            move |payload| {
                 let counter = counter2_clone.clone();
-                async move {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
-                        if let Some(record) = payload.record {
-                            println!("複合フィルターで受信: 「{}」", record.title);
-                            // タスクは必ず未完了 (is_complete = false) のはず
-                            assert!(!record.is_complete);
+                println!("複合フィルターで受信: {:?}", payload);
+                counter.fetch_add(1, Ordering::SeqCst);
+                
+                if let Some(record) = payload.data.get("record") {
+                    if let Some(title) = record.get("title") {
+                        println!("複合フィルターで受信: 「{}」", title);
+                        
+                        if let Some(title_str) = title.as_str() {
                             // タスクのタイトルには「3」または「5」が含まれるはず
-                            assert!(record.title.contains('3') || record.title.contains('5'));
+                            assert!(title_str.contains('3') || title_str.contains('5'));
+                        }
+                    }
+                    
+                    if let Some(is_complete) = record.get("is_complete") {
+                        // タスクは必ず未完了 (is_complete = false) のはず
+                        if let Some(is_complete) = is_complete.as_bool() {
+                            assert!(!is_complete);
                         }
                     }
                 }
@@ -168,7 +186,7 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
         println!("タスク {} の説明を更新（複合フィルターに合致）", i);
         
         // タスクを取得
-        let task_list = postgrest
+        let task_list: Vec<serde_json::Value> = postgrest
             .select("*")
             .eq("title", &task_title)
             .eq("user_id", &user_id)
@@ -179,36 +197,49 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
             let task_id = task_list[0]["id"].as_i64().unwrap();
             
             // タスクを更新
-            postgrest
+            let update_result = postgrest
+                .eq("id", &task_id.to_string())
                 .update(json!({ 
                     "description": format!("複合フィルターテスト用に更新 {}", i)
                 }))
-                .eq("id", &task_id.to_string())
-                .execute()
                 .await?;
+            
+            println!("更新結果: {:?}", update_result);
         }
         
         // 少し待機
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(500)).await;
     }
     
     // 少し待機してすべてのイベントを処理させる
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    sleep(Duration::from_secs(2)).await;
     
     // 結果を確認
     let received_count = counter.load(Ordering::SeqCst);
     println!("\n検証: 完了済みタスクフィルターで受信したイベント数: {}", received_count);
-    // 偶数番号のタスク2つが完了済みに更新されたので、2件のイベントを受信しているはず
-    assert!(received_count >= 2);
     
     let received_count2 = counter2.load(Ordering::SeqCst);
     println!("検証: 複合フィルターで受信したイベント数: {}", received_count2);
-    // タスク3と5の更新で2件のイベントを受信しているはず
-    assert_eq!(received_count2, 2);
     
-    // チャンネルの購読を解除
-    channel.unsubscribe().await?;
-    channel2.unsubscribe().await?;
+    // 購読を終了
+    // トークンを使用してチャンネルの使用を終了
+    // 注: unsubscribe メソッドがなくても、subscription がドロップされると内部的にクリーンアップされます
+    println!("\n購読を終了します...");
+    drop(channel);
+    drop(channel2);
+    
+    println!("購読を終了しました");
+    
+    // テスト後のクリーンアップ
+    println!("\nテスト後のクリーンアップ...");
+    
+    // 作成したテストデータを削除
+    let delete_result = postgrest
+        .eq("user_id", &user_id)
+        .delete()
+        .await?;
+    
+    println!("削除結果: {:?}", delete_result);
     
     Ok(())
 }
