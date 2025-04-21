@@ -13,6 +13,9 @@ use url::Url;
 use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path, query_param};
 use serde_json::json;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -31,6 +34,9 @@ pub enum PostgrestError {
     
     #[error("Invalid parameters: {0}")]
     InvalidParameters(String),
+
+    #[error("Transaction error: {0}")]
+    TransactionError(String),
 }
 
 /// ソート方向
@@ -38,6 +44,51 @@ pub enum PostgrestError {
 pub enum SortOrder {
     Ascending,
     Descending,
+}
+
+/// トランザクションの分離レベル
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IsolationLevel {
+    ReadCommitted,
+    RepeatableRead,
+    Serializable,
+}
+
+impl IsolationLevel {
+    /// 分離レベルを文字列に変換
+    fn to_string(&self) -> &'static str {
+        match self {
+            IsolationLevel::ReadCommitted => "read committed",
+            IsolationLevel::RepeatableRead => "repeatable read",
+            IsolationLevel::Serializable => "serializable",
+        }
+    }
+}
+
+/// トランザクションの読み取り/書き込みモード
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransactionMode {
+    ReadWrite,
+    ReadOnly,
+}
+
+impl TransactionMode {
+    /// トランザクションモードを文字列に変換
+    fn to_string(&self) -> &'static str {
+        match self {
+            TransactionMode::ReadWrite => "read write",
+            TransactionMode::ReadOnly => "read only",
+        }
+    }
+}
+
+/// トランザクションの状態
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransactionState {
+    Inactive,
+    Active,
+    Committed,
+    RolledBack,
 }
 
 /// PostgreST クライアント
@@ -447,6 +498,243 @@ impl PostgrestClient {
         
         Ok(url.to_string())
     }
+
+    /// トランザクションを開始
+    pub async fn begin_transaction(
+        &self,
+        isolation_level: Option<IsolationLevel>,
+        transaction_mode: Option<TransactionMode>,
+        timeout_seconds: Option<u64>
+    ) -> Result<PostgrestTransaction, PostgrestError> {
+        let url = format!("{}/rest/v1/rpc/begin_transaction", self.base_url);
+        
+        // トランザクションオプションの設定
+        let mut transaction_options = serde_json::Map::new();
+        
+        if let Some(level) = isolation_level {
+            transaction_options.insert(
+                "isolation_level".to_string(),
+                serde_json::Value::String(level.to_string().to_string())
+            );
+        }
+        
+        if let Some(mode) = transaction_mode {
+            transaction_options.insert(
+                "read_only".to_string(),
+                serde_json::Value::Bool(mode == TransactionMode::ReadOnly)
+            );
+        }
+        
+        if let Some(timeout) = timeout_seconds {
+            transaction_options.insert(
+                "timeout_seconds".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(timeout))
+            );
+        }
+        
+        let response = self.http_client.post(url)
+            .headers(self.headers.clone())
+            .json(&json!({ "options": transaction_options }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(PostgrestError::ApiError(error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct TransactionResponse {
+            transaction_id: String,
+        }
+        
+        let transaction_data = response.json::<TransactionResponse>().await?;
+        
+        Ok(PostgrestTransaction::new(
+            &self.base_url,
+            &self.api_key,
+            self.http_client.clone(),
+            self.headers.clone(),
+            transaction_data.transaction_id
+        ))
+    }
+}
+
+/// トランザクションクライアント
+pub struct PostgrestTransaction {
+    base_url: String,
+    api_key: String,
+    http_client: Client,
+    headers: HeaderMap,
+    transaction_id: String,
+    state: Arc<AtomicBool>, // トランザクションがアクティブかどうか
+}
+
+impl PostgrestTransaction {
+    /// 新しいトランザクションクライアントを作成
+    fn new(
+        base_url: &str,
+        api_key: &str,
+        http_client: Client,
+        headers: HeaderMap,
+        transaction_id: String
+    ) -> Self {
+        Self {
+            base_url: base_url.to_string(),
+            api_key: api_key.to_string(),
+            http_client,
+            headers,
+            transaction_id,
+            state: Arc::new(AtomicBool::new(true)),
+        }
+    }
+
+    /// テーブルに対する操作を開始
+    pub fn from(&self, table: &str) -> PostgrestClient {
+        let mut client = PostgrestClient::new(
+            &self.base_url,
+            &self.api_key,
+            table,
+            self.http_client.clone(),
+        );
+        
+        // トランザクションヘッダーを追加
+        let mut headers = self.headers.clone();
+        headers.insert(
+            HeaderName::from_static("x-postgresql-transaction-id"),
+            HeaderValue::from_str(&self.transaction_id).unwrap(),
+        );
+        client.headers = headers;
+        
+        client
+    }
+
+    /// トランザクションをコミット
+    pub async fn commit(&self) -> Result<(), PostgrestError> {
+        if !self.state.load(Ordering::SeqCst) {
+            return Err(PostgrestError::TransactionError(
+                "Transaction is not active".to_string()
+            ));
+        }
+
+        let url = format!("{}/rest/v1/rpc/commit_transaction", self.base_url);
+        
+        let response = self.http_client.post(url)
+            .headers(self.headers.clone())
+            .json(&json!({ "transaction_id": self.transaction_id }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(PostgrestError::ApiError(error_text));
+        }
+        
+        // トランザクション状態を非アクティブに設定
+        self.state.store(false, Ordering::SeqCst);
+        
+        Ok(())
+    }
+
+    /// トランザクションをロールバック
+    pub async fn rollback(&self) -> Result<(), PostgrestError> {
+        if !self.state.load(Ordering::SeqCst) {
+            return Err(PostgrestError::TransactionError(
+                "Transaction is not active".to_string()
+            ));
+        }
+
+        let url = format!("{}/rest/v1/rpc/rollback_transaction", self.base_url);
+        
+        let response = self.http_client.post(url)
+            .headers(self.headers.clone())
+            .json(&json!({ "transaction_id": self.transaction_id }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(PostgrestError::ApiError(error_text));
+        }
+        
+        // トランザクション状態を非アクティブに設定
+        self.state.store(false, Ordering::SeqCst);
+        
+        Ok(())
+    }
+
+    /// セーブポイントを作成
+    pub async fn savepoint(&self, name: &str) -> Result<(), PostgrestError> {
+        if !self.state.load(Ordering::SeqCst) {
+            return Err(PostgrestError::TransactionError(
+                "Transaction is not active".to_string()
+            ));
+        }
+
+        let url = format!("{}/rest/v1/rpc/create_savepoint", self.base_url);
+        
+        let response = self.http_client.post(url)
+            .headers(self.headers.clone())
+            .json(&json!({
+                "transaction_id": self.transaction_id,
+                "savepoint_name": name
+            }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(PostgrestError::ApiError(error_text));
+        }
+        
+        Ok(())
+    }
+
+    /// セーブポイントにロールバック
+    pub async fn rollback_to_savepoint(&self, name: &str) -> Result<(), PostgrestError> {
+        if !self.state.load(Ordering::SeqCst) {
+            return Err(PostgrestError::TransactionError(
+                "Transaction is not active".to_string()
+            ));
+        }
+
+        let url = format!("{}/rest/v1/rpc/rollback_to_savepoint", self.base_url);
+        
+        let response = self.http_client.post(url)
+            .headers(self.headers.clone())
+            .json(&json!({
+                "transaction_id": self.transaction_id,
+                "savepoint_name": name
+            }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(PostgrestError::ApiError(error_text));
+        }
+        
+        Ok(())
+    }
+}
+
+// デストラクタに相当する実装（トランザクションが終了するとロールバック）
+impl Drop for PostgrestTransaction {
+    fn drop(&mut self) {
+        // トランザクションがまだアクティブな場合は自動ロールバック
+        if self.state.load(Ordering::SeqCst) {
+            eprintln!("Warning: Active transaction is being dropped without commit or rollback. Performing automatic rollback.");
+            
+            // ブロッキング呼び出しが推奨されませんが、Dropコンテキストでは非同期関数を呼び出せないため
+            let url = format!("{}/rest/v1/rpc/rollback_transaction", self.base_url);
+            
+            let client = reqwest::blocking::Client::new();
+            let _ = client.post(url)
+                .headers(self.headers.clone())
+                .json(&json!({ "transaction_id": self.transaction_id }))
+                .send();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -571,5 +859,243 @@ mod tests {
         assert!(csv_data.contains("id,name,email"));
         assert!(csv_data.contains("User 1"));
         assert!(csv_data.contains("User 2"));
+    }
+
+    #[tokio::test]
+    async fn test_transaction() {
+        let mock_server = MockServer::start().await;
+        
+        // BEGIN トランザクションのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/begin_transaction"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "transaction_id": "tx-12345"
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // トランザクション内のINSERTのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/users"))
+            .and(wiremock::matchers::header("x-postgresql-transaction-id", "tx-12345"))
+            .respond_with(ResponseTemplate::new(201)
+                .set_body_json(json!([{
+                    "id": 1,
+                    "name": "テストユーザー"
+                }]))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // トランザクション内のSELECTのモック
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/users"))
+            .and(wiremock::matchers::header("x-postgresql-transaction-id", "tx-12345"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!([{
+                    "id": 1,
+                    "name": "テストユーザー"
+                }]))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // COMMITのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/commit_transaction"))
+            .and(wiremock::matchers::body_json(json!({
+                "transaction_id": "tx-12345"
+            })))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // テスト実行
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "users",
+            reqwest::Client::new()
+        );
+        
+        // トランザクション開始
+        let transaction = client
+            .begin_transaction(
+                Some(IsolationLevel::ReadCommitted),
+                Some(TransactionMode::ReadWrite),
+                Some(30)
+            )
+            .await;
+            
+        assert!(transaction.is_ok());
+        let transaction = transaction.unwrap();
+        
+        // トランザクション内で挿入
+        let insert_result = transaction
+            .from("users")
+            .insert(json!({
+                "name": "テストユーザー"
+            }))
+            .await;
+            
+        assert!(insert_result.is_ok());
+        
+        // トランザクション内でクエリ
+        let query_result = transaction
+            .from("users")
+            .select("id, name")
+            .execute::<serde_json::Value>()
+            .await;
+            
+        assert!(query_result.is_ok());
+        assert_eq!(query_result.unwrap()[0]["name"], "テストユーザー");
+        
+        // トランザクションをコミット
+        let commit_result = transaction.commit().await;
+        assert!(commit_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_transaction_rollback() {
+        let mock_server = MockServer::start().await;
+        
+        // BEGIN トランザクションのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/begin_transaction"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "transaction_id": "tx-67890"
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // ROLLBACKのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/rollback_transaction"))
+            .and(wiremock::matchers::body_json(json!({
+                "transaction_id": "tx-67890"
+            })))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // テスト実行
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "users",
+            reqwest::Client::new()
+        );
+        
+        // トランザクション開始
+        let transaction = client
+            .begin_transaction(None, None, None)
+            .await;
+            
+        assert!(transaction.is_ok());
+        let transaction = transaction.unwrap();
+        
+        // トランザクションをロールバック
+        let rollback_result = transaction.rollback().await;
+        assert!(rollback_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_transaction_savepoint() {
+        let mock_server = MockServer::start().await;
+        
+        // BEGIN トランザクションのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/begin_transaction"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "transaction_id": "tx-savepoint"
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // SAVEPOINTのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/create_savepoint"))
+            .and(wiremock::matchers::body_json(json!({
+                "transaction_id": "tx-savepoint",
+                "savepoint_name": "sp1"
+            })))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // ROLLBACK TO SAVEPOINTのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/rollback_to_savepoint"))
+            .and(wiremock::matchers::body_json(json!({
+                "transaction_id": "tx-savepoint",
+                "savepoint_name": "sp1"
+            })))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // COMMITのモック
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/commit_transaction"))
+            .and(wiremock::matchers::body_json(json!({
+                "transaction_id": "tx-savepoint"
+            })))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "success": true
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // テスト実行
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "users",
+            reqwest::Client::new()
+        );
+        
+        // トランザクション開始
+        let transaction = client
+            .begin_transaction(None, None, None)
+            .await;
+            
+        assert!(transaction.is_ok());
+        let transaction = transaction.unwrap();
+        
+        // セーブポイント作成
+        let savepoint_result = transaction.savepoint("sp1").await;
+        assert!(savepoint_result.is_ok());
+        
+        // セーブポイントにロールバック
+        let rollback_to_savepoint_result = transaction.rollback_to_savepoint("sp1").await;
+        assert!(rollback_to_savepoint_result.is_ok());
+        
+        // トランザクションをコミット
+        let commit_result = transaction.commit().await;
+        assert!(commit_result.is_ok());
     }
 }

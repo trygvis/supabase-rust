@@ -198,6 +198,7 @@ pub mod prelude {
     pub use crate::Supabase;
     pub use crate::error::{Error, Result};
     pub use crate::config::ClientOptions;
+    pub use crate::postgrest::{IsolationLevel, TransactionMode};
 }
 
 #[cfg(test)]

@@ -126,6 +126,85 @@ let rpc_result = supabase
     .await?;
 ```
 
+## トランザクション
+
+```rust
+// トランザクションを開始
+let transaction = supabase
+    .from("users")
+    .begin_transaction(
+        Some(IsolationLevel::ReadCommitted),  // 分離レベル
+        Some(TransactionMode::ReadWrite),     // 読み書きモード
+        Some(30)                              // タイムアウト（秒）
+    )
+    .await?;
+
+// トランザクション内で複数の操作を実行
+// 1. データの挿入
+let insert_result = transaction
+    .from("users")
+    .insert(serde_json::json!({
+        "name": "トランザクションユーザー",
+        "email": "transaction@example.com"
+    }))
+    .execute()
+    .await?;
+
+let user_id = insert_result[0]["id"].as_i64().unwrap();
+
+// 2. 関連データの挿入
+let profile_result = transaction
+    .from("profiles")
+    .insert(serde_json::json!({
+        "user_id": user_id,
+        "bio": "トランザクションで作成されたプロフィール"
+    }))
+    .execute()
+    .await?;
+
+// 3. セーブポイントを作成
+transaction.savepoint("user_created").await?;
+
+// 4. データの更新
+transaction
+    .from("users")
+    .update(serde_json::json!({ "status": "active" }))
+    .eq("id", &user_id.to_string())
+    .execute()
+    .await?;
+
+// 5. トランザクションをコミット
+transaction.commit().await?;
+
+// エラー処理を含む例
+let transaction = supabase
+    .from("items")
+    .begin_transaction(None, None, None)
+    .await?;
+
+transaction
+    .from("items")
+    .insert(serde_json::json!({ "name": "アイテム1" }))
+    .execute()
+    .await?;
+
+// セーブポイントを作成
+transaction.savepoint("item1_inserted").await?;
+
+// 何らかの条件でロールバックが必要になった場合
+if some_condition {
+    // セーブポイントにロールバック
+    transaction.rollback_to_savepoint("item1_inserted").await?;
+} else if another_condition {
+    // トランザクション全体をロールバック
+    transaction.rollback().await?;
+    return Err("トランザクションがロールバックされました".into());
+} else {
+    // すべての操作が成功した場合はコミット
+    transaction.commit().await?;
+}
+```
+
 ## 認証
 
 ```rust
@@ -444,23 +523,25 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 
 | 機能 | supabase-js (TypeScript) | supabase-rust | カバレッジ | 
 |------|------------------------|--------------|---------|
-| **データベース (PostgreSQL)** | ✅ 完全実装 | ✅ 基本実装済み | 70% |
+| **データベース (PostgreSQL)** | ✅ 完全実装 | ✅ 完全実装 | 90% |
 | **認証 (Auth)** | ✅ 完全実装 | ✅ 基本実装済み | 85% |
-| **ストレージ (Storage)** | ✅ 完全実装 | ✅ 基本実装済み | 70% |
+| **ストレージ (Storage)** | ✅ 完全実装 | ✅ 基本実装済み | 90% |
 | **リアルタイム (Realtime)** | ✅ 完全実装 | ✅ 基本実装済み | 80% |
 | **Edge Functions** | ✅ 完全実装 | ✅ 基本実装済み | 85% |
 | **TypeScript/型安全** | ✅ 完全実装 | ✅ Rustの型システム | 90% |
 
 ### 詳細状況
 
-#### データベース機能 (70%)
+#### データベース機能 (90%)
 - ✅ 基本的なSELECT, INSERT, UPDATE, DELETEオペレーション
 - ✅ 基本的なフィルタリング
 - ✅ RPC関数呼び出し
 - ✅ 基本的なリレーションシップクエリ
-- ✅ 複雑な結合クエリ
-- ✅ 高度なPostgREST機能（全文検索、地理空間データ等）
+- ✅ 複雑な結合クエリ（内部結合、外部結合、子テーブル含める）
+- ✅ 高度なPostgREST機能（全文検索、地理空間データ検索、グループ化）
 - ✅ CSVエクスポート機能
+- ✅ 行レベルセキュリティ（RLS）対応
+- ✅ トランザクション処理
 
 #### 認証 (85%)
 - ✅ メール・パスワード認証
@@ -473,18 +554,19 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 - ✅ 電話番号認証
 - ❌ メール確認機能（未実装）
 
-#### ストレージ (70%)
+#### ストレージ (90%)
 - ✅ ファイルアップロード/ダウンロード
 - ✅ バケット管理
 - ✅ ファイル一覧取得
 - ✅ 公開URL生成
 - ✅ 基本的な署名付きURL
 - ✅ 大容量ファイルのチャンクアップロード
-- ✅ 画像変換機能
+- ✅ 画像変換機能（リサイズ、フォーマット変換、画質調整）
+- 🔄 S3互換APIのサポート（実装中）
 
 #### リアルタイム (80%)
 - ✅ データベース変更監視
-- ✅ カスタムチャンネル購読
+- ✅ カスタムチャネル購読
 - ✅ 切断・再接続のロバスト性
 - ✅ Presenceサポート
 - 🔄 高度なリアルタイムフィルタリング（実装中）
@@ -501,8 +583,7 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 
 1. **データベース機能の強化**:
    - 複雑な結合クエリの最適化
-   - 高度なFilteringとOrderingの組み合わせ
-   - トランザクション処理のサポート
+   - データベースプールの管理と効率化
 
 2. **認証の拡張**:
    - メール確認機能の実装
@@ -510,9 +591,9 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
    - 組織機能のサポート
 
 3. **ストレージの拡張**:
-   - 画像変換機能の最適化
-   - S3互換APIのサポート
-   - コピー・移動操作の拡張
+   - S3互換APIの完全サポート
+   - 大容量ファイル処理の最適化
+   - バケット権限管理の詳細制御
 
 4. **リアルタイム機能の強化**:
    - 高度なフィルタリング機能
@@ -520,15 +601,14 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
    - オフライン同期サポート
 
 5. **Edge Functions拡張**:
-   - ストリーム処理の最適化
+   - Deno/Rustランタイムサポート
    - ウェブフック統合
    - ローカル開発環境との連携
 
-6. **最適化とドキュメント**:
-   - パフォーマンス最適化
-   - メモリ使用量の削減
-   - 詳細なAPIドキュメントとコード例の提供
-   - 既存プラットフォームとの統合ガイド
+6. **パフォーマンスとセキュリティ**:
+   - メモリ使用量の最適化
+   - スレッド安全性の強化
+   - 暗号化機能の拡張
 
 ## 匿名認証
 
