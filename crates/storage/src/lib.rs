@@ -14,8 +14,6 @@ use thiserror::Error;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use url::Url;
-use wiremock::matchers::{method, path, query_param};
-use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// 結果型
 pub type Result<T> = std::result::Result<T, StorageError>;
@@ -721,7 +719,7 @@ impl<'a> StorageBucketClient<'a> {
             .post(&url)
             .header("apikey", &self.parent.api_key)
             .header("Content-Type", "application/json")
-            .query(&[("bucket", &self.bucket_id), ("key", path.to_string())])
+            .query(&[("bucket", &self.bucket_id), ("key", path)])
             .json(&payload)
             .send()
             .await?;
