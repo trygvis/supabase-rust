@@ -39,6 +39,142 @@ Rust クライアントライブラリ for [Supabase](https://supabase.com) - Ja
 - ✅ JWT検証 - 基本実装済み、高度な検証機能開発中
 - ✅ 管理者用メソッド - v0.1.2で実装済み (ユーザー管理、一覧表示、更新、削除など)
 
+## Auth Admin API
+
+管理者APIを使用して、ユーザーアカウントの管理や詳細な認証操作を行うことができます。
+
+```rust
+// 管理者APIを使用するには管理者キーが必要です
+let admin_client = supabase.with_admin_key("your-admin-key");
+
+// ユーザー一覧の取得
+let users = admin_client
+    .auth()
+    .admin()
+    .list_users(Some(UserListOptions {
+        page: Some(1),
+        per_page: Some(100),
+        ..Default::default()
+    }))
+    .await?;
+
+println!("Total users: {}", users.total);
+for user in users.users {
+    println!("User: {} ({})", user.email.unwrap_or_default(), user.id);
+}
+
+// 新しいユーザーの作成
+let created_user = admin_client
+    .auth()
+    .admin()
+    .create_user(CreateUserOptions {
+        email: Some("newuser@example.com".to_string()),
+        password: Some("securepassword".to_string()),
+        email_confirm: Some(true),  // メール確認をスキップ
+        user_metadata: Some(serde_json::json!({
+            "full_name": "New User",
+            "role": "customer"
+        })),
+        ..Default::default()
+    })
+    .await?;
+
+println!("Created user with ID: {}", created_user.id);
+
+// ユーザーの検索
+let found_users = admin_client
+    .auth()
+    .admin()
+    .search_users("john", UserSearchOptions::default())
+    .await?;
+
+println!("Found {} users", found_users.total);
+
+// ユーザー情報の取得
+let user_info = admin_client
+    .auth()
+    .admin()
+    .get_user_by_id("user-uuid")
+    .await?;
+
+println!("User details: {:?}", user_info);
+
+// ユーザー情報の更新
+let updated_user = admin_client
+    .auth()
+    .admin()
+    .update_user("user-uuid", UpdateUserOptions {
+        email: Some("updated@example.com".to_string()),
+        password: Some("newpassword".to_string()),
+        email_confirm: Some(true),
+        user_metadata: Some(serde_json::json!({
+            "full_name": "Updated Name",
+            "role": "admin"
+        })),
+        app_metadata: Some(serde_json::json!({
+            "plan": "premium",
+            "subscription_id": "sub_123456"
+        })),
+        ..Default::default()
+    })
+    .await?;
+
+println!("Updated user: {:?}", updated_user);
+
+// ユーザーの削除
+admin_client
+    .auth()
+    .admin()
+    .delete_user("user-uuid")
+    .await?;
+
+// 複数ユーザーの削除
+admin_client
+    .auth()
+    .admin()
+    .delete_users(vec!["user-uuid-1", "user-uuid-2"])
+    .await?;
+
+// 特定ユーザーにパスワードリセットメールを送信
+admin_client
+    .auth()
+    .admin()
+    .send_reset_password_email("user@example.com")
+    .await?;
+
+// 特定ユーザーの全セッションを取得
+let sessions = admin_client
+    .auth()
+    .admin()
+    .list_user_sessions("user-uuid")
+    .await?;
+
+println!("User has {} active sessions", sessions.len());
+
+// ユーザーのMFAファクターを管理
+let mfa_factors = admin_client
+    .auth()
+    .admin()
+    .list_factors("user-uuid")
+    .await?;
+
+println!("User has {} MFA factors", mfa_factors.len());
+
+// ユーザーの特定のMFAファクターを削除
+admin_client
+    .auth()
+    .admin()
+    .delete_factor("user-uuid", "factor-id")
+    .await?;
+
+// ユーザーのすべてのMFAファクターを削除
+admin_client
+    .auth()
+    .admin()
+    .delete_all_factors("user-uuid")
+    .await?;
+```
+
 #### PostgresT (`@supabase/postgrest-js`)
 
 **互換API**: 25/30 (85%) 
@@ -53,6 +189,121 @@ Rust クライアントライブラリ for [Supabase](https://supabase.com) - Ja
 - ✅ 単一/複数行処理の最適化
 - ⚠️ 関係性自動展開 - 基本実装済み、ネスト関係は開発中
 - ❌ Row Level Security(RLS)向け高度なポリシー対応 - 開発中
+
+### PostgresT RLS (Row Level Security)
+
+Row Level Security (RLS) は PostgreSQL の強力なセキュリティ機能で、データベースのテーブルに対するアクセス制御を行単位で実現します。Supabase Rust クライアントでは、以下のように RLS を操作できます。
+
+#### RLS を無視する (管理者権限)
+
+管理者ロールを使用して RLS ポリシーを無視する場合：
+
+```rust
+// 注意: このメソッドを使用するには、サービスロールキーが必要です
+let service_client = supabase.with_service_key("your-service-role-key");
+
+// RLS を無視してすべてのユーザーデータにアクセス
+let all_users = service_client
+    .from("users")
+    .select("*")
+    .ignore_rls()  // RLS ポリシーを無視
+    .execute()
+    .await?;
+```
+
+#### RLS ポリシーの利用例
+
+ユーザーが自分のデータだけにアクセスできるようにする典型的な RLS 設定：
+
+1. まず PostgreSQL でポリシーを設定します:
+
+```sql
+-- テーブルで RLS を有効化
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+-- デフォルトで全アクセスを拒否するポリシーを設定
+CREATE POLICY "プロファイルは所有者のみが表示可能" 
+ON profiles 
+FOR SELECT 
+USING (auth.uid() = user_id);
+
+-- 所有者のみが更新可能
+CREATE POLICY "プロファイルは所有者のみが更新可能" 
+ON profiles 
+FOR UPDATE 
+USING (auth.uid() = user_id);
+```
+
+2. Rust クライアントでは、JWTを使ってアクセスします:
+
+```rust
+// ユーザー認証
+let session = supabase
+    .auth()
+    .sign_in_with_password(SignInWithPasswordCredentials {
+        email: "user@example.com".to_string(),
+        password: "password123".to_string(),
+        ..Default::default()
+    })
+    .await?;
+
+// セッションのJWTトークンを使用してデータにアクセス
+// RLS ポリシーが自動的に適用される
+let my_profile = supabase
+    .from("profiles")
+    .select("*")
+    .with_auth(&session.access_token)  // JWT トークンを設定
+    .execute()
+    .await?;
+
+// 結果には、現在のユーザーが所有するプロファイルのみが含まれる
+```
+
+#### 動的な RLS フィルタリング
+
+より複雑なユースケースでは、関数やJSONBデータを使った動的なフィルタリングも可能です：
+
+```sql
+-- ユーザーの役割に基づくアクセス制御
+CREATE POLICY "管理者はすべてのデータにアクセス可能"
+ON documents
+FOR ALL
+USING (
+  auth.jwt() ->> 'role' = 'admin' 
+  OR auth.uid() = owner_id
+);
+```
+
+```rust
+// 管理者ロールを持つユーザーは、すべてのドキュメントを見ることができる
+// 一般ユーザーは自分のドキュメントのみ見ることができる
+let documents = supabase
+    .from("documents")
+    .select("*")
+    .with_auth(&session.access_token)  // JWT トークンを設定
+    .execute()
+    .await?;
+```
+
+#### セキュリティのベストプラクティス
+
+1. **常にRLSを有効化**: すべての重要なテーブルでRLSを有効にし、デフォルトで拒否ポリシーを設定します
+2. **最小権限の原則**: 各ユーザーに必要最小限のアクセス権限のみを付与します
+3. **サービスロールの限定使用**: `ignore_rls()`はバックエンドサーバーのみで使用し、クライアントには公開しないでください
+4. **JWT検証**: 偽造されたJWTを防ぐため、JWTの署名を常に検証します
+
+```rust
+// 必ず検証済みのトークンを使用
+if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? {
+    // 検証済みトークンを使用してデータにアクセス
+    let data = supabase
+        .from("secured_table")
+        .select("*")
+        .with_auth(&verified_token)
+        .execute()
+        .await?;
+}
+```
 
 #### Storage (`@supabase/storage-js`)
 
