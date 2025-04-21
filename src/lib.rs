@@ -126,24 +126,18 @@ impl Supabase {
     }
     
     /// Create a client for the Storage API
-    pub fn storage(&self) -> /* storage::StorageClient */ () {
-        /* storage::StorageClient::new(&self.url, &self.key, self.http_client.clone()) */
-        // Storage client is temporarily disabled until the crate is published
-        panic!("Storage client is not available in this version")
+    pub fn storage(&self) -> storage::StorageClient {
+        storage::StorageClient::new(&self.url, &self.key, self.http_client.clone())
     }
     
     /// Create a client for the Realtime API
-    pub fn realtime(&self) -> /* realtime::RealtimeClient */ () {
-        /* realtime::RealtimeClient::new(&self.url, &self.key) */
-        // Realtime client is temporarily disabled until the crate is published
-        panic!("Realtime client is not available in this version")
+    pub fn realtime(&self) -> realtime::RealtimeClient {
+        realtime::RealtimeClient::new(&self.url, &self.key)
     }
     
     /// Create a client for the Edge Functions API
-    pub fn functions(&self) -> /* functions::FunctionsClient */ () {
-        /* functions::FunctionsClient::new(&self.url, &self.key, self.http_client.clone()) */
-        // Functions client is temporarily disabled until the crate is published
-        panic!("Functions client is not available in this version")
+    pub fn functions(&self) -> functions::FunctionsClient {
+        functions::FunctionsClient::new(&self.url, &self.key, self.http_client.clone())
     }
     
     /// Execute a Postgres function via RPC

@@ -1,6 +1,5 @@
-use supabase_rust_gftd::prelude::*;
-use supabase_rust_gftd::{Supabase, DatabaseFilter, FilterOperator};
-use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges};
+use supabase_rust_gftd::Supabase;
+use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, RealtimeClient, FilterOperator};
 use dotenv::dotenv;
 use std::env;
 use std::sync::Arc;
@@ -35,7 +34,7 @@ struct RealtimePayload<T> {
 }
 
 /// 高度なフィルタリング機能の例
-async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 高度なリアルタイムフィルタリングの例 ===\n");
     
     // リアルタイムクライアントを取得
@@ -91,20 +90,26 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Resu
         };
         
         println!("タスクを作成: {}", task.title);
-        let result = postgrest
+        postgrest
             .insert(json!(task))
+            .await?;
+        
+        // タスクIDを取得（最新のタスクのID）
+        let latest_tasks = postgrest
+            .select("*")
+            .eq("title", &task.title)
+            .eq("user_id", &user_id)
             .execute()
             .await?;
         
-        // タスクIDを取得
-        let task_id = result[0]["id"].as_i64().unwrap();
+        let task_id = latest_tasks[0]["id"].as_i64().unwrap();
         
         // 偶数番目のタスクを完了済みに更新（フィルターに合致）
         if i % 2 == 0 {
             println!("タスク {} を完了済みに更新（フィルターに合致）", i);
             postgrest
                 .update(json!({ "is_complete": true }))
-                .eq("id", task_id)
+                .eq("id", &task_id.to_string())
                 .execute()
                 .await?;
         }
@@ -130,17 +135,10 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Resu
             DatabaseChanges::new("tasks")
                 .event(ChannelEvent::Insert)
                 .event(ChannelEvent::Update)
-                // タイトルが「3」を含むか「5」を含む
-                .filter(DatabaseFilter {
-                    column: "title".to_string(),
-                    operator: FilterOperator::Like,
-                    value: serde_json::Value::String("%3%".to_string()),
-                })
-                .filter(DatabaseFilter {
-                    column: "title".to_string(), 
-                    operator: FilterOperator::Like,
-                    value: serde_json::Value::String("%5%".to_string()),
-                })
+                // タイトルが「3」を含むタスク
+                .filter("title", FilterOperator::Like, serde_json::Value::String("%3%".to_string()))
+                // または「5」を含むタスク
+                .filter("title", FilterOperator::Like, serde_json::Value::String("%5%".to_string()))
                 // かつ未完了のタスク
                 .eq("is_complete", false),
             move |payload: HashMap<String, serde_json::Value>| {
@@ -169,13 +167,26 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Resu
         let task_title = format!("フィルタリングテスト用タスク {}", i);
         println!("タスク {} の説明を更新（複合フィルターに合致）", i);
         
-        let update_result = postgrest
-            .update(json!({ 
-                "description": format!("複合フィルターテスト用に更新 {}", i)
-            }))
-            .like("title", &task_title)
+        // タスクを取得
+        let task_list = postgrest
+            .select("*")
+            .eq("title", &task_title)
+            .eq("user_id", &user_id)
             .execute()
             .await?;
+        
+        if !task_list.is_empty() {
+            let task_id = task_list[0]["id"].as_i64().unwrap();
+            
+            // タスクを更新
+            postgrest
+                .update(json!({ 
+                    "description": format!("複合フィルターテスト用に更新 {}", i)
+                }))
+                .eq("id", &task_id.to_string())
+                .execute()
+                .await?;
+        }
         
         // 少し待機
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -199,13 +210,11 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Resu
     channel.unsubscribe().await?;
     channel2.unsubscribe().await?;
     
-    println!("\n高度なリアルタイムフィルタリングの例が完了しました");
-    
     Ok(())
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     
@@ -218,7 +227,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("Starting Realtime example");
     
-    // First, sign up a test user for our example
+    // First, sign up a test user for our examples
     let test_email = format!("test-realtime-{}@example.com", uuid::Uuid::new_v4());
     let test_password = "password123";
     
@@ -230,121 +239,176 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_id = sign_up_result.user.id;
     println!("Created test user with ID: {}", user_id);
     
-    // Store received messages in a thread-safe vector
-    let messages = Arc::new(Mutex::new(Vec::new()));
-    let messages_clone = messages.clone();
+    // タスクテーブルの準備
+    println!("\n基本的なリアルタイム購読のデモを開始します");
     
-    // Setup realtime client to listen to the 'tasks' table
+    // リアルタイムクライアントを取得
     let realtime = supabase.realtime();
     
-    // Create channel for 'tasks' table changes
+    // シンプルなチャンネルを作成
+    println!("Tasksテーブルに対する基本的なチャンネルを作成します...");
+    
+    // メッセージを受信するカウンター
+    let message_counter = Arc::new(AtomicU32::new(0));
+    let counter_clone = message_counter.clone();
+    
+    // チャンネルを作成し、tasksテーブルの変更を購読
     let channel = realtime
         .channel("public:tasks")
-        .on_insert(move |payload: HashMap<String, serde_json::Value>| {
-            let messages = messages_clone.clone();
-            async move {
-                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
-                    if let Some(record) = payload.record {
-                        let mut messages = messages.lock().await;
-                        messages.push(format!("INSERT: {}", record.title));
-                        println!("Received INSERT event: {:?}", record);
+        .on(
+            DatabaseChanges::new("tasks")
+                .event(ChannelEvent::Insert)
+                .event(ChannelEvent::Update)
+                .event(ChannelEvent::Delete),
+            move |payload: HashMap<String, serde_json::Value>| {
+                let counter = counter_clone.clone();
+                async move {
+                    // 受信メッセージをカウント
+                    counter.fetch_add(1, Ordering::SeqCst);
+                    
+                    // JSONペイロードをパース
+                    if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
+                        match payload.event_type.as_str() {
+                            "INSERT" => {
+                                if let Some(record) = payload.record {
+                                    println!("INSERT イベント: タスク「{}」が作成されました", record.title);
+                                }
+                            },
+                            "UPDATE" => {
+                                if let (Some(record), Some(old)) = (payload.record, payload.old_record) {
+                                    println!("UPDATE イベント: タスク「{}」が更新されました", record.title);
+                                    println!("  更新前: is_complete = {}", old.is_complete);
+                                    println!("  更新後: is_complete = {}", record.is_complete);
+                                }
+                            },
+                            "DELETE" => {
+                                if let Some(old) = payload.old_record {
+                                    println!("DELETE イベント: タスク「{}」が削除されました", old.title);
+                                }
+                            },
+                            _ => println!("Unknown event type: {}", payload.event_type),
+                        }
+                    } else {
+                        println!("Failed to parse payload: {:?}", payload);
                     }
                 }
-            }
-        })
-        .on_update(|payload: HashMap<String, serde_json::Value>| {
-            async move {
-                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
-                    if let Some(record) = payload.record {
-                        println!("Received UPDATE event: {:?}", record);
-                    }
-                }
-            }
-        })
-        .on_delete(|payload: HashMap<String, serde_json::Value>| {
-            async move {
-                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
-                    if let Some(old_record) = payload.old_record {
-                        println!("Received DELETE event: {:?}", old_record);
-                    }
-                }
-            }
-        });
+            },
+        )
+        .subscribe()
+        .await?;
     
-    // Subscribe to the channel
-    let subscription = channel.subscribe().await?;
-    println!("Subscribed to realtime changes on public:tasks");
+    println!("チャンネルの購読を開始しました");
     
-    // Create a task through PostgREST
+    // いくつかのタスクを作成して更新・削除し、リアルタイムイベントをテスト
     let postgrest = supabase.from("tasks");
     
-    // Insert tasks with some delay to observe realtime events
-    for i in 1..5 {
+    // 1. タスクを作成
+    println!("\nテスト用タスクを作成します");
+    
+    for i in 1..4 {
         let task = Task {
             id: None,
             title: format!("Realtime Task {}", i),
-            description: Some(format!("Description for realtime task {}", i)),
+            description: Some(format!("Test task for realtime #{}", i)),
             is_complete: false,
             created_at: None,
             user_id: user_id.clone(),
         };
         
-        println!("Inserting task: {}", task.title);
         postgrest
             .insert(json!(task))
-            .execute()
             .await?;
         
-        // Wait a bit to see the realtime event
-        sleep(Duration::from_secs(1)).await;
+        println!("タスク {} を作成しました", i);
+        
+        // イベントが処理される時間を確保
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
     
-    // Update a task
-    println!("\nUpdating tasks...");
-    postgrest
-        .update(json!({ "is_complete": true }))
-        .like("title", "Realtime Task 1")
+    // 2. タスクを更新
+    println!("\nタスク1を「完了」に更新します");
+    
+    // タスク1を検索
+    let task1_list = postgrest
+        .select("*")
+        .eq("title", "Realtime Task 1")
+        .eq("user_id", &user_id)
         .execute()
         .await?;
     
-    sleep(Duration::from_secs(1)).await;
+    if !task1_list.is_empty() {
+        let task1_id = task1_list[0]["id"].as_i64().unwrap();
+        
+        // タスクを更新
+        postgrest
+            .update(json!({ "is_complete": true }))
+            .eq("id", &task1_id.to_string())
+            .execute()
+            .await?;
+    }
     
-    // Delete a task
-    println!("\nDeleting a task...");
-    postgrest
-        .delete()
-        .like("title", "Realtime Task 2")
+    println!("タスク1を更新しました");
+    
+    // イベントが処理される時間を確保
+    tokio::time::sleep(Duration::from_seconds(1)).await;
+    
+    // 3. タスクを削除
+    println!("\nタスク2を削除します");
+    
+    // タスク2を検索
+    let task2_list = postgrest
+        .select("*")
+        .eq("title", "Realtime Task 2")
+        .eq("user_id", &user_id)
         .execute()
         .await?;
     
-    // Wait a bit to receive all events
-    sleep(Duration::from_secs(2)).await;
+    if !task2_list.is_empty() {
+        let task2_id = task2_list[0]["id"].as_i64().unwrap();
+        
+        // タスクを削除
+        postgrest
+            .delete()
+            .eq("id", &task2_id.to_string())
+            .execute()
+            .await?;
+    }
     
-    // Check received messages
-    let message_count = messages.lock().await.len();
-    println!("\nReceived {} insert notifications", message_count);
+    println!("タスク2を削除しました");
     
-    // Unsubscribe from realtime updates
-    subscription.unsubscribe().await?;
-    println!("Unsubscribed from realtime updates");
+    // イベントが処理される時間を確保
+    tokio::time::sleep(Duration::from_seconds(1)).await;
     
-    // Clean up - delete all tasks for our test user
+    // 結果を表示
+    let received_count = message_counter.load(Ordering::SeqCst);
+    println!("\n受信したリアルタイムイベント数: {}", received_count);
+    println!("期待値: 5 (作成イベント3件 + 更新イベント1件 + 削除イベント1件)");
+    
+    // 高度なフィルタリングの例を実行
+    if let Err(e) = run_advanced_filter_example(&supabase, &user_id).await {
+        println!("フィルタリング例でエラーが発生しました: {}", e);
+    }
+    
+    // クリーンアップ - 作成したすべてのタスクを削除
+    println!("\nクリーンアップ - すべてのテストタスクを削除");
+    
     postgrest
         .delete()
         .eq("user_id", &user_id)
         .execute()
         .await?;
     
-    println!("Realtime example completed");
+    println!("すべてのテストタスクを削除しました");
     
-    // 高度なフィルタリング機能のテストを実行
-    println!("\n高度なリアルタイムフィルタリング機能をテストしますか？(y/n)");
+    // チャンネルの購読を解除
+    println!("\n続行するには何かキーを押してください...");
     let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+    io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
     
-    if input.trim().to_lowercase() == "y" {
-        run_advanced_filter_example(&supabase, &user_id).await?;
-    }
+    channel.unsubscribe().await?;
+    println!("チャンネルの購読を解除しました");
+    
+    println!("Realtime example completed");
     
     Ok(())
 }

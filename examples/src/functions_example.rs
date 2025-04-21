@@ -5,6 +5,7 @@ use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
 struct HelloRequest {
@@ -108,10 +109,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
     
     let function_request = functions.create_request::<HelloResponse>("hello-world");
+    
+    // Create a HashMap for headers
+    let mut headers = HashMap::new();
+    headers.insert("Authorization".to_string(), format!("Bearer {}", access_token));
+    
     let options = FunctionOptions {
-        headers: Some(json!({
-            "Authorization": format!("Bearer {}", access_token)
-        })),
+        headers: Some(headers),
         ..Default::default()
     };
     
@@ -130,11 +134,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Invoking function with custom headers");
     
     let function_request = functions.create_request::<HelloResponse>("hello-world");
+    
+    // Create a HashMap for custom headers
+    let mut headers = HashMap::new();
+    headers.insert("x-custom-header".to_string(), "custom-value".to_string());
+    headers.insert("x-client-info".to_string(), "supabase-rust-client".to_string());
+    
     let options = FunctionOptions {
-        headers: Some(json!({
-            "x-custom-header": "custom-value",
-            "x-client-info": "supabase-rust-client"
-        })),
+        headers: Some(headers),
         ..Default::default()
     };
     

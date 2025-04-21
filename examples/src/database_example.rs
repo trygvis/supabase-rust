@@ -44,19 +44,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 1: Create a new task
     println!("\nExample 1: Creating a new task");
     
-    let new_task = Task {
-        id: None,
-        title: "Supabase Rust 学習".to_string(),
-        description: Some("Rustでのデータベース操作を学ぶ".to_string()),
-        is_complete: false,
-        created_at: None,
-        user_id: user_id.clone(),
-    };
-    
-    // 正しい方法でデータを挿入
+    // JSONオブジェクトを使用してidフィールドを除外
     let insert_result = supabase
         .from("tasks")
-        .insert(new_task)
+        .insert(serde_json::json!({
+            "title": "Supabase Rust 学習",
+            "description": "Rustでのデータベース操作を学ぶ",
+            "is_complete": false,
+            "user_id": user_id
+        }))
         .await?;
     
     println!("Task created: {:?}", insert_result);
