@@ -10,8 +10,8 @@ use serde_json::Value;
 use std::collections::HashMap;
 use thiserror::Error;
 use url::Url;
-use wiremock::{MockServer, Mock, ResponseTemplate};
-use wiremock::matchers::{method, path, query_param};
+
+
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -728,7 +728,7 @@ impl Drop for PostgrestTransaction {
             // ブロッキング呼び出しが推奨されませんが、Dropコンテキストでは非同期関数を呼び出せないため
             let url = format!("{}/rest/v1/rpc/rollback_transaction", self.base_url);
             
-            let client = reqwest::blocking::Client::new();
+            let client = Client::new();
             let _ = client.post(url)
                 .headers(self.headers.clone())
                 .json(&json!({ "transaction_id": self.transaction_id }))
@@ -879,7 +879,7 @@ mod tests {
         // トランザクション内のINSERTのモック
         Mock::given(method("POST"))
             .and(path("/rest/v1/users"))
-            .and(wiremock::matchers::header("x-postgresql-transaction-id", "tx-12345"))
+            .and(header("x-postgresql-transaction-id", "tx-12345"))
             .respond_with(ResponseTemplate::new(201)
                 .set_body_json(json!([{
                     "id": 1,
@@ -892,7 +892,7 @@ mod tests {
         // トランザクション内のSELECTのモック
         Mock::given(method("GET"))
             .and(path("/rest/v1/users"))
-            .and(wiremock::matchers::header("x-postgresql-transaction-id", "tx-12345"))
+            .and(header("x-postgresql-transaction-id", "tx-12345"))
             .respond_with(ResponseTemplate::new(200)
                 .set_body_json(json!([{
                     "id": 1,
@@ -905,7 +905,7 @@ mod tests {
         // COMMITのモック
         Mock::given(method("POST"))
             .and(path("/rest/v1/rpc/commit_transaction"))
-            .and(wiremock::matchers::body_json(json!({
+            .and(body_json(json!({
                 "transaction_id": "tx-12345"
             })))
             .respond_with(ResponseTemplate::new(200)
@@ -979,7 +979,7 @@ mod tests {
         // ROLLBACKのモック
         Mock::given(method("POST"))
             .and(path("/rest/v1/rpc/rollback_transaction"))
-            .and(wiremock::matchers::body_json(json!({
+            .and(body_json(json!({
                 "transaction_id": "tx-67890"
             })))
             .respond_with(ResponseTemplate::new(200)
@@ -1029,7 +1029,7 @@ mod tests {
         // SAVEPOINTのモック
         Mock::given(method("POST"))
             .and(path("/rest/v1/rpc/create_savepoint"))
-            .and(wiremock::matchers::body_json(json!({
+            .and(body_json(json!({
                 "transaction_id": "tx-savepoint",
                 "savepoint_name": "sp1"
             })))
@@ -1044,7 +1044,7 @@ mod tests {
         // ROLLBACK TO SAVEPOINTのモック
         Mock::given(method("POST"))
             .and(path("/rest/v1/rpc/rollback_to_savepoint"))
-            .and(wiremock::matchers::body_json(json!({
+            .and(body_json(json!({
                 "transaction_id": "tx-savepoint",
                 "savepoint_name": "sp1"
             })))
@@ -1059,7 +1059,7 @@ mod tests {
         // COMMITのモック
         Mock::given(method("POST"))
             .and(path("/rest/v1/rpc/commit_transaction"))
-            .and(wiremock::matchers::body_json(json!({
+            .and(body_json(json!({
                 "transaction_id": "tx-savepoint"
             })))
             .respond_with(ResponseTemplate::new(200)

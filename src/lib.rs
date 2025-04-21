@@ -22,6 +22,15 @@ pub use config::ClientOptions;
 pub use error::{Error, Result};
 
 use reqwest::Client;
+use reqwest::header::{HeaderMap, HeaderValue, HeaderName};
+use serde::{Serialize, Deserialize};
+use serde_json::Value;
+use std::collections::HashMap;
+use thiserror::Error;
+use url::Url;
+use serde_json::json;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The main entry point for the Supabase Rust client
 pub struct Supabase {
@@ -201,11 +210,64 @@ pub mod prelude {
     pub use crate::postgrest::{IsolationLevel, TransactionMode};
 }
 
+/// フィルター演算子
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FilterOperator {
+    /// 等しい
+    Eq,
+    /// 等しくない
+    Neq,
+    /// より大きい
+    Gt,
+    /// より大きいか等しい
+    Gte,
+    /// より小さい
+    Lt,
+    /// より小さいか等しい
+    Lte,
+    /// 含む
+    In,
+    /// 含まない
+    NotIn,
+    /// 近い値（配列内の値に対して）
+    ContainedBy,
+    /// 含む（配列が対象の値を含む）
+    Contains,
+    /// 完全に含む（配列が対象の配列のすべての要素を含む）
+    ContainedByArray,
+    /// LIKE演算子（ワイルドカード検索）
+    Like,
+    /// ILIKE演算子（大文字小文字を区別しないワイルドカード検索）
+    ILike,
+}
+
+impl FilterOperator {
+    /// Serializeトレイトを実装
+    #[derive(Serialize)]
+    #[serde(rename_all = "lowercase")]
+    pub enum SerializedOperator {
+        Eq,
+        Neq,
+        Gt,
+        Gte,
+        Lt,
+        Lte,
+        In,
+        NotIn,
+        ContainedBy,
+        Contains,
+        ContainedByArray,
+        Like,
+        ILike,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{method, path, query_param};
     use serde_json::json;
     
     #[tokio::test]
@@ -272,3 +334,24 @@ mod tests {
         assert_eq!(buckets[0].name, "test-bucket");
     }
 }
+
+async fn reconnect_safely(&self) {
+    let _ = self.connect().await;
+}
+
+// 596行目の修正
+// tokio::spawn(async move {
+//     reconnect_fn.reconnect().await;
+// });
+// 代わりに
+reconnect_fn.reconnect().await;
+
+// 775行目の修正
+// tokio::spawn({
+//     let client = self.clone();
+//     async move {
+//         client.reconnect().await;
+//     }
+// });
+// 代わりに
+self.reconnect().await;

@@ -12,12 +12,10 @@ use thiserror::Error;
 use url::Url;
 use futures_util::{StreamExt, SinkExt};
 use tokio::sync::mpsc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use tokio::sync::RwLock;
-use std::time::Duration;
-use tokio::time::sleep;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tokio::sync::{broadcast, RwLock};
+use std::time::Duration;
+use tokio::time::sleep;
 use std::collections::HashSet;
 
 /// エラー型
@@ -58,7 +56,19 @@ pub enum ChannelEvent {
     All,
 }
 
+impl std::fmt::Display for ChannelEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Insert => write!(f, "INSERT"),
+            Self::Update => write!(f, "UPDATE"),
+            Self::Delete => write!(f, "DELETE"),
+            Self::All => write!(f, "ALL"),
+        }
+    }
+}
+
 /// データベース変更に対するフィルター条件
+#[derive(Debug, Clone, Serialize)]
 pub struct DatabaseFilter {
     /// フィルター対象のカラム名
     pub column: String,
@@ -568,7 +578,7 @@ impl RealtimeClient {
         let (tx, mut rx) = mpsc::channel::<Message>(100);
         
         // 送信タスク
-        let manual_close = self.is_manually_closed.clone();
+        let manual_close = self.is_manually_closed.load(Ordering::SeqCst);
         let auto_reconnect = self.options.auto_reconnect;
         let client_state = self.state.clone();
         let reconnect_fn = self.clone();
@@ -579,7 +589,7 @@ impl RealtimeClient {
                     eprintln!("Error sending message: {}", e);
                     
                     // 手動で閉じられていない場合は再接続ステータスに変更
-                    if !manual_close.load(Ordering::SeqCst) && auto_reconnect {
+                    if !manual_close && auto_reconnect {
                         let mut state_guard = client_state.write().await;
                         *state_guard = ConnectionState::Reconnecting;
                         
@@ -596,7 +606,7 @@ impl RealtimeClient {
         
         // 受信タスク
         let channels = self.channels.clone();
-        let manual_close = self.is_manually_closed.clone();
+        let manual_close = self.is_manually_closed.load(Ordering::SeqCst);
         let auto_reconnect = self.options.auto_reconnect;
         let client_state = self.state.clone();
         let reconnect_fn = self.clone();
@@ -628,7 +638,7 @@ impl RealtimeClient {
                     }
                     Ok(Message::Close(_)) => {
                         // WebSocket接続が正常に閉じられた
-                        if !manual_close.load(Ordering::SeqCst) && auto_reconnect {
+                        if !manual_close && auto_reconnect {
                             let mut state_guard = client_state.write().await;
                             *state_guard = ConnectionState::Reconnecting;
                             
@@ -645,7 +655,7 @@ impl RealtimeClient {
                         eprintln!("WebSocket error: {}", e);
                         
                         // エラー発生時、手動で閉じられていない場合は再接続
-                        if !manual_close.load(Ordering::SeqCst) && auto_reconnect {
+                        if !manual_close && auto_reconnect {
                             let mut state_guard = client_state.write().await;
                             *state_guard = ConnectionState::Reconnecting;
                             
@@ -670,13 +680,13 @@ impl RealtimeClient {
         // ハートビート送信タスク
         let socket_clone = tx.clone();
         let heartbeat_interval = self.options.heartbeat_interval;
-        let manual_close = self.is_manually_closed.clone();
+        let manual_close = self.is_manually_closed.load(Ordering::SeqCst);
         
         tokio::spawn(async move {
             loop {
                 sleep(Duration::from_millis(heartbeat_interval)).await;
                 
-                if manual_close.load(Ordering::SeqCst) {
+                if manual_close {
                     break;
                 }
                 
@@ -745,7 +755,7 @@ impl RealtimeClient {
         if self.get_connection_state().await == ConnectionState::Connected {
             let channels_guard = self.channels.read().await;
             
-            for (topic, channel) in channels_guard.iter() {
+            for (topic, _channel) in channels_guard.iter() {
                 let join_msg = serde_json::json!({
                     "topic": topic,
                     "event": "phx_join",
@@ -952,6 +962,12 @@ impl Channel {
         }
         
         Ok(())
+    }
+}
+
+impl From<tokio::sync::mpsc::error::SendError<Message>> for RealtimeError {
+    fn from(err: tokio::sync::mpsc::error::SendError<Message>) -> Self {
+        RealtimeError::ChannelError(format!("Failed to send message: {}", err))
     }
 }
 
