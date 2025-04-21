@@ -932,3 +932,132 @@ match supabase.functions().invoke_json::<serde_json::Value, _>("function-name", 
     }
 }
 ```
+
+## S3互換APIの使用
+
+```rust
+// S3互換APIの使用例
+use supabase_rust::storage::s3::S3Options;
+use std::collections::HashMap;
+use bytes::Bytes;
+
+// S3互換オプションを設定
+let s3_options = S3Options {
+    access_key_id: "your-access-key".to_string(),
+    secret_access_key: "your-secret-key".to_string(),
+    region: Some("auto".to_string()),
+    ..Default::default()
+};
+
+// S3互換クライアントを取得
+let storage_client = supabase.storage();
+let bucket_client = storage_client.from("test-bucket");
+let s3_client = bucket_client.s3_compatible(s3_options);
+
+// オブジェクトをアップロード
+let content = "This is a test file";
+let data = Bytes::from(content.as_bytes());
+s3_client.put_object(
+    "path/to/file.txt",
+    data,
+    Some("text/plain".to_string()),
+    Some({
+        let mut metadata = HashMap::new();
+        metadata.insert("description".to_string(), "Test file".to_string());
+        metadata
+    })
+).await?;
+
+// オブジェクトをダウンロード
+let downloaded_data = s3_client.get_object("path/to/file.txt").await?;
+let text = String::from_utf8_lossy(&downloaded_data);
+
+// メタデータを取得
+let metadata = s3_client.head_object("path/to/file.txt").await?;
+
+// オブジェクト一覧を取得
+let objects = s3_client.list_objects(
+    Some("path/to/"),  // プレフィックス
+    Some("/"),         // デリミタ
+    Some(100)          // 最大取得数
+).await?;
+
+// オブジェクトをコピー
+s3_client.copy_object("path/to/file.txt", "path/to/copy.txt").await?;
+
+// オブジェクトを削除
+s3_client.delete_object("path/to/file.txt").await?;
+```
+
+## 高度なリアルタイムフィルタリング
+
+```rust
+// 高度なリアルタイムフィルタリングの使用例
+use supabase_rust::realtime::{DatabaseChanges, ChannelEvent, DatabaseFilter, FilterOperator};
+
+// リアルタイムクライアントを取得
+let realtime = supabase.realtime();
+
+// 完了済みタスクだけを監視するチャンネルを作成
+let channel = realtime
+    .channel("filtered-channel")
+    .on(
+        DatabaseChanges::new("tasks")
+            .event(ChannelEvent::Insert)
+            .event(ChannelEvent::Update)
+            // is_completeがtrueのレコードだけを対象にする
+            .eq("is_complete", true),
+        |payload| {
+            println!("完了済みタスクが更新されました: {:?}", payload);
+        },
+    )
+    .subscribe()
+    .await?;
+
+// 複合条件によるフィルタリング
+let complex_channel = realtime
+    .channel("complex-filter")
+    .on(
+        DatabaseChanges::new("users")
+            .event(ChannelEvent::Insert)
+            .event(ChannelEvent::Update)
+            // 年齢が30以上で、
+            .gte("age", 30)
+            // statusがactiveか、premiumのユーザー
+            .in_values("status", vec!["active", "premium"]),
+        |payload| {
+            println!("条件に一致するユーザーが更新されました: {:?}", payload);
+        },
+    )
+    .subscribe()
+    .await?;
+
+// 使用可能なフィルター演算子:
+// .eq() - 等しい
+// .neq() - 等しくない
+// .gt() - より大きい
+// .gte() - 以上
+// .lt() - より小さい
+// .lte() - 以下
+// .in_values() - いずれかの値に一致
+// .contains() - 配列に含まれる
+// .like() - ワイルドカードマッチング
+// .ilike() - 大文字小文字を区別しないワイルドカードマッチング
+
+// カスタムフィルターを直接作成する場合
+let custom_channel = realtime
+    .channel("custom-filter")
+    .on(
+        DatabaseChanges::new("products")
+            .filter(DatabaseFilter {
+                column: "name".to_string(),
+                operator: FilterOperator::ILike,
+                value: serde_json::Value::String("%smartphone%".to_string()),
+            }),
+        |payload| {
+            println!("スマートフォン関連の製品が更新されました: {:?}", payload);
+        },
+    )
+    .subscribe()
+    .await?;
+```
