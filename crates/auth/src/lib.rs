@@ -1002,69 +1002,80 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[tokio::test]
-    async fn test_sign_up() {
-        let mock_server = MockServer::start().await;
+    #[test]
+    fn test_sign_up() {
+        tokio_test::block_on(async {
+            let mock_server = MockServer::start().await;
 
-        Mock::given(method("POST"))
-            .and(path("/auth/v1/signup"))
-            .respond_with(ResponseTemplate::new(200).json(serde_json::json!({
-                "access_token": "test_access_token",
-                "refresh_token": "test_refresh_token",
-                "expires_in": 3600,
-                "token_type": "bearer",
-                "user": {
-                    "id": "test_user_id",
-                    "email": "test@example.com",
-                    "phone": null,
-                    "app_metadata": {},
-                    "user_metadata": {},
-                    "created_at": "2021-01-01T00:00:00Z",
-                    "updated_at": "2021-01-01T00:00:00Z"
-                }
-            })))
-            .mount(&mock_server)
-            .await;
+            Mock::given(method("POST"))
+                .and(path("/auth/v1/signup"))
+                .respond_with(ResponseTemplate::new(200).and_then_fn(|_| {
+                    async {
+                        Ok(wiremock::http::Response::builder()
+                            .status(200)
+                            .header("content-type", "application/json")
+                            .body(serde_json::to_string(&serde_json::json!({
+                                "access_token": "test_access_token",
+                                "refresh_token": "test_refresh_token",
+                                "expires_in": 3600,
+                                "token_type": "bearer",
+                                "user": {
+                                    "id": "test_user_id",
+                                    "email": "test@example.com",
+                                    "phone": null,
+                                    "app_metadata": {},
+                                    "user_metadata": {},
+                                    "created_at": "2021-01-01T00:00:00Z",
+                                    "updated_at": "2021-01-01T00:00:00Z"
+                                }
+                            })).unwrap())
+                    }
+                }))
+                .mount(&mock_server)
+                .await;
 
-        let http_client = Client::new();
-        let auth = Auth::new(
-            &mock_server.uri(),
-            "test_key",
-            http_client,
-            AuthOptions::default(),
-        );
+            let http_client = Client::new();
+            let auth = Auth::new(
+                &mock_server.uri(),
+                "test_key",
+                http_client,
+                AuthOptions::default(),
+            );
 
-        let result = auth.sign_up("test@example.com", "password123").await;
+            let result = auth.sign_up("test@example.com", "password123").await;
 
-        assert!(result.is_ok());
-        let session = result.unwrap();
-        assert_eq!(session.access_token, "test_access_token");
-        assert_eq!(session.user.email, Some("test@example.com".to_string()));
+            assert!(result.is_ok());
+            let session = result.unwrap();
+            assert_eq!(session.access_token, "test_access_token");
+            assert_eq!(session.user.email, Some("test@example.com".to_string()));
+        });
     }
 
-    #[tokio::test]
-    async fn test_oauth_sign_in_url() {
-        let client = Client::new();
-        let auth = Auth::new(
-            "https://example.supabase.co",
-            "test-key",
-            client,
-            AuthOptions::default(),
-        );
+    #[test]
+    fn test_oauth_sign_in_url() {
+        tokio_test::block_on(async {
+            let client = Client::new();
+            let auth = Auth::new(
+                "https://example.supabase.co",
+                "test-key",
+                client,
+                AuthOptions::default(),
+            );
 
-        let url = auth.get_oauth_sign_in_url(super::OAuthProvider::Google, None);
-        assert!(url.contains("provider=google"));
+            let url = auth.get_oauth_sign_in_url(super::OAuthProvider::Google, None);
+            assert!(url.contains("provider=google"));
 
-        let options = super::OAuthSignInOptions {
-            redirect_to: Some("https://example.com/callback".to_string()),
-            scopes: Some("email profile".to_string()),
-            ..Default::default()
-        };
+            let options = super::OAuthSignInOptions {
+                redirect_to: Some("https://example.com/callback".to_string()),
+                scopes: Some("email profile".to_string()),
+                ..Default::default()
+            };
 
-        let url_with_options =
-            auth.get_oauth_sign_in_url(super::OAuthProvider::Github, Some(options));
-        assert!(url_with_options.contains("provider=github"));
-        assert!(url_with_options.contains("redirect_to="));
-        assert!(url_with_options.contains("scopes="));
+            let url_with_options =
+                auth.get_oauth_sign_in_url(super::OAuthProvider::Github, Some(options));
+            assert!(url_with_options.contains("provider=github"));
+            assert!(url_with_options.contains("redirect_to="));
+            assert!(url_with_options.contains("scopes="));
+        });
     }
 }
