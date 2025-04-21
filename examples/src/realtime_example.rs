@@ -1,4 +1,6 @@
-use supabase_rust::prelude::*;
+use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::{Supabase, DatabaseFilter, FilterOperator};
+use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges};
 use dotenv::dotenv;
 use std::env;
 use std::sync::Arc;
@@ -9,6 +11,7 @@ use tokio::time::{sleep, Duration};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::io;
+use serde_json::json;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
@@ -32,7 +35,7 @@ struct RealtimePayload<T> {
 }
 
 /// 高度なフィルタリング機能の例
-async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Result<(), Error> {
+async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 高度なリアルタイムフィルタリングの例 ===\n");
     
     // リアルタイムクライアントを取得
@@ -202,7 +205,7 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> Resu
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     

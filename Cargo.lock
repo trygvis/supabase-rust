@@ -1790,7 +1790,10 @@ dependencies = [
 name = "supabase-rust-examples"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "dotenv",
+ "futures",
+ "mime",
  "serde",
  "serde_json",
  "supabase-rust-gftd",

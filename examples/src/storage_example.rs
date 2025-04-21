@@ -1,4 +1,6 @@
-use supabase_rust::prelude::*;
+use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::Supabase;
+use supabase_rust_gftd::storage::ImageTransformOptions;
 use dotenv::dotenv;
 use std::env;
 use std::io::Cursor;
@@ -6,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use tokio::fs;
 use mime;
 use std::path::PathBuf;
-use supabase_rust::storage::ImageTransformOptions;
 use bytes;
+use serde_json::json;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FileObject {
@@ -25,8 +27,9 @@ mod image_transform_examples {
     use std::env;
     use std::fs;
     use std::path::PathBuf;
-    use supabase_rust::prelude::*;
-    use supabase_rust::storage::ImageTransformOptions;
+    use supabase_rust_gftd::prelude::*;
+    use supabase_rust_gftd::Supabase;
+    use supabase_rust_gftd::storage::ImageTransformOptions;
     
     pub async fn run_image_transform_examples() -> Result<(), Box<dyn std::error::Error>> {
         // Supabaseの認証情報を環境変数から取得
@@ -145,7 +148,7 @@ async fn run_s3_compatible_example(supabase: &Supabase) -> Result<(), Box<dyn st
     println!("\n=== S3互換APIの例 ===\n");
     
     // S3互換オプションを設定
-    let s3_options = supabase_rust::storage::s3::S3Options {
+    let s3_options = supabase_rust_gftd::storage::s3::S3Options {
         access_key_id: "your-access-key".to_string(), // 実際の環境では適切な値に置き換えてください
         secret_access_key: "your-secret-key".to_string(), // 実際の環境では適切な値に置き換えてください
         region: Some("auto".to_string()),

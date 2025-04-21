@@ -1,8 +1,10 @@
-use supabase_rust::prelude::*;
-use supabase_rust::postgrest::{IsolationLevel, TransactionMode};
+use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::Supabase;
+use supabase_rust_gftd::postgrest::{IsolationLevel, TransactionMode};
 use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Task {
@@ -15,7 +17,7 @@ struct Task {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     
