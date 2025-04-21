@@ -284,6 +284,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let counter_clone = message_counter.clone();
     
     // チャンネルを作成し、tasksテーブルの変更を購読
+    // 改善されたchannel()メソッドを使用
     let channel = realtime
         .channel("public:tasks")
         .on(
@@ -291,37 +292,35 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 .event(ChannelEvent::Insert)
                 .event(ChannelEvent::Update)
                 .event(ChannelEvent::Delete),
-            move |payload: HashMap<String, serde_json::Value>| {
+            move |payload| {
                 let counter = counter_clone.clone();
-                async move {
-                    // 受信メッセージをカウント
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    
-                    // JSONペイロードをパース
-                    if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload)) {
-                        match payload.event_type.as_str() {
-                            "INSERT" => {
-                                if let Some(record) = payload.record {
-                                    println!("INSERT イベント: タスク「{}」が作成されました", record.title);
-                                }
-                            },
-                            "UPDATE" => {
-                                if let (Some(record), Some(old)) = (payload.record, payload.old_record) {
-                                    println!("UPDATE イベント: タスク「{}」が更新されました", record.title);
-                                    println!("  更新前: is_complete = {}", old.is_complete);
-                                    println!("  更新後: is_complete = {}", record.is_complete);
-                                }
-                            },
-                            "DELETE" => {
-                                if let Some(old) = payload.old_record {
-                                    println!("DELETE イベント: タスク「{}」が削除されました", old.title);
-                                }
-                            },
-                            _ => println!("Unknown event type: {}", payload.event_type),
-                        }
-                    } else {
-                        println!("Failed to parse payload: {:?}", payload);
+                // 受信メッセージをカウント
+                counter.fetch_add(1, Ordering::SeqCst);
+                
+                // JSONペイロードをパース
+                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload.data)) {
+                    match payload.event_type.as_str() {
+                        "INSERT" => {
+                            if let Some(record) = payload.record {
+                                println!("INSERT イベント: タスク「{}」が作成されました", record.title);
+                            }
+                        },
+                        "UPDATE" => {
+                            if let (Some(record), Some(old)) = (payload.record, payload.old_record) {
+                                println!("UPDATE イベント: タスク「{}」が更新されました", record.title);
+                                println!("  更新前: is_complete = {}", old.is_complete);
+                                println!("  更新後: is_complete = {}", record.is_complete);
+                            }
+                        },
+                        "DELETE" => {
+                            if let Some(old) = payload.old_record {
+                                println!("DELETE イベント: タスク「{}」が削除されました", old.title);
+                            }
+                        },
+                        _ => println!("Unknown event type: {}", payload.event_type),
                     }
+                } else {
+                    println!("Failed to parse payload");
                 }
             },
         )
@@ -364,7 +363,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .select("*")
         .eq("title", "Realtime Task 1")
         .eq("user_id", &user_id)
-        .execute()
+        .execute::<serde_json::Value>()
         .await?;
     
     if !task1_list.is_empty() {
@@ -374,14 +373,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         postgrest
             .update(json!({ "is_complete": true }))
             .eq("id", &task1_id.to_string())
-            .execute()
+            .execute::<serde_json::Value>()
             .await?;
     }
     
     println!("タスク1を更新しました");
     
     // イベントが処理される時間を確保
-    tokio::time::sleep(Duration::from_seconds(1)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
     
     // 3. タスクを削除
     println!("\nタスク2を削除します");
@@ -391,7 +390,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .select("*")
         .eq("title", "Realtime Task 2")
         .eq("user_id", &user_id)
-        .execute()
+        .execute::<serde_json::Value>()
         .await?;
     
     if !task2_list.is_empty() {
@@ -401,14 +400,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         postgrest
             .delete()
             .eq("id", &task2_id.to_string())
-            .execute()
+            .execute::<serde_json::Value>()
             .await?;
     }
     
     println!("タスク2を削除しました");
     
     // イベントが処理される時間を確保
-    tokio::time::sleep(Duration::from_seconds(1)).await;
+    tokio::time::sleep(Duration::from_secs(1)).await;
     
     // 結果を表示
     let received_count = message_counter.load(Ordering::SeqCst);
@@ -426,7 +425,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     postgrest
         .delete()
         .eq("user_id", &user_id)
-        .execute()
+        .execute::<serde_json::Value>()
         .await?;
     
     println!("すべてのテストタスクを削除しました");
@@ -436,6 +435,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
     
+    // 明示的にチャンネルを解除
     channel.unsubscribe().await?;
     println!("チャンネルの購読を解除しました");
     

@@ -796,99 +796,138 @@ pub struct ChannelBuilder<'a> {
 
 impl<'a> ChannelBuilder<'a> {
     /// データベース変更のハンドラを設定
-    pub fn on<F>(mut self, _changes: DatabaseChanges, callback: F) -> Self
+    pub fn on<F>(mut self, changes: DatabaseChanges, callback: F) -> Self
     where
         F: Fn(Payload) + Send + Sync + 'static,
     {
-        let id = self.client.next_ref();
-        self.callbacks.insert(id, Box::new(callback));
+        let topic_key = serde_json::to_string(&changes).unwrap_or_default();
+        self.callbacks.insert(topic_key, Box::new(callback));
         self
     }
     
-    /// ブロードキャストのハンドラを設定
-    pub fn on_broadcast<F>(mut self, _changes: BroadcastChanges, callback: F) -> Self
+    /// ブロードキャストメッセージに対するハンドラを登録
+    pub fn on_broadcast<F>(mut self, changes: BroadcastChanges, callback: F) -> Self
     where
         F: Fn(Payload) + Send + Sync + 'static,
     {
-        let id = self.client.next_ref();
-        self.callbacks.insert(id, Box::new(callback));
+        let topic_key = format!("broadcast:{}", changes.event);
+        self.callbacks.insert(topic_key, Box::new(callback));
         self
     }
     
-    /// Presenceのハンドラを設定
+    /// プレゼンス変更に対するハンドラを登録
     pub fn on_presence<F>(mut self, callback: F) -> Self
     where
         F: Fn(PresenceChange) + Send + Sync + 'static,
     {
-        let id = self.client.next_ref();
-        
-        let wrapper_callback = move |payload: Payload| {
-            if let Ok(presence_diff) = serde_json::from_value::<PresenceChange>(payload.data) {
+        // プレゼンスハンドラは特別なキーで保存
+        let presence_callback = move |payload: Payload| {
+            if let Ok(presence_diff) = serde_json::from_value::<PresenceChange>(payload.data.clone()) {
                 callback(presence_diff);
             }
         };
         
-        self.callbacks.insert(id, Box::new(wrapper_callback));
+        self.callbacks.insert("presence".to_string(), Box::new(presence_callback));
         self
     }
     
-    /// サブスクリプションを開始
+    /// チャンネルを購読
     pub async fn subscribe(self) -> Result<Subscription, RealtimeError> {
-        let client = self.client;
-        let topic = self.topic;
-        
-        // 現在の状態を確認し、必要なら接続
-        let current_state = client.get_connection_state().await;
-        if current_state == ConnectionState::Disconnected {
-            client.connect().await?;
-        }
-        
-        // チャンネルの作成または取得
-        let channel = {
-            let mut channels = client.channels.write().await;
-            
-            if let Some(channel) = channels.get(&topic) {
-                channel.clone()
-            } else {
-                let channel = Arc::new(Channel {
-                    topic: topic.clone(),
-                    socket: client.socket.clone(),
-                    callbacks: RwLock::new(HashMap::new()),
-                });
+        // クライアントの接続状態を確認
+        let state = self.client.get_connection_state().await;
+        match state {
+            ConnectionState::Disconnected | ConnectionState::Reconnecting => {
+                // 自動再接続が有効ならば接続開始
+                if self.client.options.auto_reconnect {
+                    let connect_future = self.client.connect();
+                    tokio::spawn(connect_future);
+                    
+                    // 接続が確立されるまで少し待機
+                    for _ in 0..10 {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        let new_state = self.client.get_connection_state().await;
+                        if matches!(new_state, ConnectionState::Connected) {
+                            break;
+                        }
+                    }
+                } else {
+                    return Err(RealtimeError::ConnectionError(
+                        "Client is disconnected and auto-reconnect is disabled".to_string()
+                    ));
+                }
+            }
+            ConnectionState::Connecting => {
+                // 接続中なので少し待機
+                for _ in 0..20 {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    let new_state = self.client.get_connection_state().await;
+                    if matches!(new_state, ConnectionState::Connected) {
+                        break;
+                    }
+                }
                 
-                channels.insert(topic.clone(), channel.clone());
-                channel
+                let final_state = self.client.get_connection_state().await;
+                if !matches!(final_state, ConnectionState::Connected) {
+                    return Err(RealtimeError::ConnectionError(
+                        "Failed to connect to realtime server within timeout".to_string()
+                    ));
+                }
             }
-        };
-        
-        // コールバックを登録
-        {
-            let mut callbacks = channel.callbacks.write().await;
-            for (id, callback) in self.callbacks {
-                callbacks.insert(id.clone(), callback);
+            ConnectionState::Connected => {
+                // 既に接続済み、そのまま続行
             }
         }
         
-        // チャンネルへの参加メッセージを送信
-        let join_ref = client.next_ref();
-        let join_msg = serde_json::json!({
-            "topic": topic,
-            "event": "phx_join",
-            "payload": {},
-            "ref": join_ref
+        // 既存のチャンネルを確認
+        let channels = self.client.channels.read().await;
+        if let Some(channel) = channels.get(&self.topic) {
+            // 既存のチャンネルにコールバックを追加
+            let mut callbacks = channel.callbacks.write().await;
+            for (key, callback) in self.callbacks {
+                callbacks.insert(key, callback);
+            }
+            
+            return Ok(Subscription {
+                id: self.client.next_ref(),
+                channel: channel.clone(),
+            });
+        }
+        
+        // 新しいチャンネルを作成
+        let channel = Arc::new(Channel {
+            topic: self.topic.clone(),
+            socket: self.client.socket.clone(),
+            callbacks: RwLock::new(self.callbacks),
         });
         
-        let socket_guard = client.socket.read().await;
-        if let Some(tx) = &*socket_guard {
-            tx.send(Message::Text(join_msg.to_string())).await?;
+        // チャンネル登録メッセージを送信
+        let socket_guard = self.client.socket.read().await;
+        if let Some(socket) = &*socket_guard {
+            let ref_id = self.client.next_ref();
+            let join_payload = json!({
+                "event": "phx_join",
+                "topic": self.topic,
+                "payload": {},
+                "ref": ref_id
+            });
+            
+            let message = Message::Text(serde_json::to_string(&join_payload)
+                .map_err(|e| RealtimeError::SerializationError(e))?);
+                
+            socket.send(message).await
+                .map_err(|e| RealtimeError::SubscriptionError(format!("Failed to send join message: {}", e)))?;
+                
+            // チャンネルをマップに追加
+            drop(socket_guard);
+            let mut channels = self.client.channels.write().await;
+            channels.insert(self.topic.clone(), channel.clone());
         } else {
-            return Err(RealtimeError::ConnectionError("Socket not connected".to_string()));
+            return Err(RealtimeError::ConnectionError("WebSocket connection not available".to_string()));
         }
         
-        // サブスクリプションを返す
         Ok(Subscription {
-            id: join_ref,
-            channel,
+            id: self.client.next_ref(),
+            channel: channel,
         })
     }
     

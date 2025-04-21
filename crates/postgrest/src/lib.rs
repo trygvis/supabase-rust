@@ -506,56 +506,57 @@ impl PostgrestClient {
         transaction_mode: Option<TransactionMode>,
         timeout_seconds: Option<u64>
     ) -> Result<PostgrestTransaction, PostgrestError> {
-        let url = format!("{}/rest/v1/rpc/begin_transaction", self.base_url);
+        // トランザクションオプションを構築
+        let isolation = isolation_level.unwrap_or(IsolationLevel::ReadCommitted);
+        let mode = transaction_mode.unwrap_or(TransactionMode::ReadWrite);
         
-        // トランザクションオプションの設定
-        let mut transaction_options = serde_json::Map::new();
-        
-        if let Some(level) = isolation_level {
-            transaction_options.insert(
-                "isolation_level".to_string(),
-                serde_json::Value::String(level.to_string().to_string())
-            );
-        }
-        
-        if let Some(mode) = transaction_mode {
-            transaction_options.insert(
-                "read_only".to_string(),
-                serde_json::Value::Bool(mode == TransactionMode::ReadOnly)
-            );
-        }
+        // トランザクション開始リクエストを構築
+        let mut request_body = json!({
+            "isolation_level": isolation.to_string(),
+            "mode": mode.to_string(),
+        });
         
         if let Some(timeout) = timeout_seconds {
-            transaction_options.insert(
-                "timeout_seconds".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(timeout))
-            );
+            request_body["timeout_seconds"] = json!(timeout);
         }
         
-        let response = self.http_client.post(url)
+        // トランザクション開始APIを呼び出し
+        let transaction_url = format!("{}/rpc/begin_transaction", self.base_url);
+        
+        let response = self.http_client
+            .post(&transaction_url)
             .headers(self.headers.clone())
-            .json(&json!({ "options": transaction_options }))
+            .json(&request_body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
         if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::TransactionError(format!(
+                "Failed to begin transaction: {} (Status: {})",
+                error_text,
+                response.status()
+            )));
         }
         
-        #[derive(Deserialize)]
+        #[derive(Debug, Deserialize)]
         struct TransactionResponse {
             transaction_id: String,
         }
         
-        let transaction_data = response.json::<TransactionResponse>().await?;
-        
+        let response_data = response.json::<TransactionResponse>().await
+            .map_err(|e| PostgrestError::SerializationError(e))?;
+            
+        // トランザクションオブジェクトを作成して返す
         Ok(PostgrestTransaction::new(
             &self.base_url,
             &self.api_key,
             self.http_client.clone(),
             self.headers.clone(),
-            transaction_data.transaction_id
+            response_data.transaction_id
         ))
     }
 }
@@ -571,7 +572,7 @@ pub struct PostgrestTransaction {
 }
 
 impl PostgrestTransaction {
-    /// 新しいトランザクションクライアントを作成
+    /// 新しいトランザクションを作成
     fn new(
         base_url: &str,
         api_key: &str,
@@ -585,133 +586,190 @@ impl PostgrestTransaction {
             http_client,
             headers,
             transaction_id,
-            state: Arc::new(AtomicBool::new(true)),
+            state: Arc::new(AtomicBool::new(true)), // トランザクションは初期状態でアクティブ
         }
     }
-
-    /// テーブルに対する操作を開始
+    
+    /// トランザクション内で指定したテーブルに対するクライアントを取得
     pub fn from(&self, table: &str) -> PostgrestClient {
+        // トランザクションIDをクエリパラメータとして追加するクライアントを作成
         let mut client = PostgrestClient::new(
-            &self.base_url,
-            &self.api_key,
-            table,
-            self.http_client.clone(),
+            &self.base_url, 
+            &self.api_key, 
+            table, 
+            self.http_client.clone()
         );
         
-        // トランザクションヘッダーを追加
-        let mut headers = self.headers.clone();
-        headers.insert(
-            HeaderName::from_static("x-postgresql-transaction-id"),
-            HeaderValue::from_str(&self.transaction_id).unwrap(),
-        );
-        client.headers = headers;
+        // トランザクションヘッダーを設定
+        for (key, value) in self.headers.iter() {
+            if let Some(key_str) = key.as_str() {
+                if let Ok(value_str) = value.to_str() {
+                    client = client.with_header(key_str, value_str).unwrap_or(client);
+                }
+            }
+        }
+        
+        // トランザクションIDをクエリパラメータに追加
+        client.query_params.insert("transaction".to_string(), self.transaction_id.clone());
         
         client
     }
-
+    
     /// トランザクションをコミット
     pub async fn commit(&self) -> Result<(), PostgrestError> {
+        // トランザクションがアクティブかチェック
         if !self.state.load(Ordering::SeqCst) {
             return Err(PostgrestError::TransactionError(
-                "Transaction is not active".to_string()
+                "Cannot commit: transaction is no longer active".to_string()
             ));
         }
-
-        let url = format!("{}/rest/v1/rpc/commit_transaction", self.base_url);
         
-        let response = self.http_client.post(url)
+        // コミットAPIを呼び出し
+        let commit_url = format!("{}/rpc/commit_transaction", self.base_url);
+        
+        let commit_body = json!({
+            "transaction_id": self.transaction_id
+        });
+        
+        let response = self.http_client
+            .post(&commit_url)
             .headers(self.headers.clone())
-            .json(&json!({ "transaction_id": self.transaction_id }))
+            .json(&commit_body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
         if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::TransactionError(format!(
+                "Failed to commit transaction: {} (Status: {})",
+                error_text,
+                response.status()
+            )));
         }
         
-        // トランザクション状態を非アクティブに設定
+        // トランザクションを非アクティブに設定
         self.state.store(false, Ordering::SeqCst);
         
         Ok(())
     }
-
+    
     /// トランザクションをロールバック
     pub async fn rollback(&self) -> Result<(), PostgrestError> {
+        // トランザクションがアクティブかチェック
         if !self.state.load(Ordering::SeqCst) {
             return Err(PostgrestError::TransactionError(
-                "Transaction is not active".to_string()
+                "Cannot rollback: transaction is no longer active".to_string()
             ));
         }
-
-        let url = format!("{}/rest/v1/rpc/rollback_transaction", self.base_url);
         
-        let response = self.http_client.post(url)
+        // ロールバックAPIを呼び出し
+        let rollback_url = format!("{}/rpc/rollback_transaction", self.base_url);
+        
+        let rollback_body = json!({
+            "transaction_id": self.transaction_id
+        });
+        
+        let response = self.http_client
+            .post(&rollback_url)
             .headers(self.headers.clone())
-            .json(&json!({ "transaction_id": self.transaction_id }))
+            .json(&rollback_body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
         if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::TransactionError(format!(
+                "Failed to rollback transaction: {} (Status: {})",
+                error_text,
+                response.status()
+            )));
         }
         
-        // トランザクション状態を非アクティブに設定
+        // トランザクションを非アクティブに設定
         self.state.store(false, Ordering::SeqCst);
         
         Ok(())
     }
-
+    
     /// セーブポイントを作成
     pub async fn savepoint(&self, name: &str) -> Result<(), PostgrestError> {
+        // トランザクションがアクティブかチェック
         if !self.state.load(Ordering::SeqCst) {
             return Err(PostgrestError::TransactionError(
-                "Transaction is not active".to_string()
+                "Cannot create savepoint: transaction is no longer active".to_string()
             ));
         }
-
-        let url = format!("{}/rest/v1/rpc/create_savepoint", self.base_url);
         
-        let response = self.http_client.post(url)
+        // セーブポイント作成APIを呼び出し
+        let savepoint_url = format!("{}/rpc/create_savepoint", self.base_url);
+        
+        let savepoint_body = json!({
+            "transaction_id": self.transaction_id,
+            "name": name
+        });
+        
+        let response = self.http_client
+            .post(&savepoint_url)
             .headers(self.headers.clone())
-            .json(&json!({
-                "transaction_id": self.transaction_id,
-                "savepoint_name": name
-            }))
+            .json(&savepoint_body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
         if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::TransactionError(format!(
+                "Failed to create savepoint: {} (Status: {})",
+                error_text,
+                response.status()
+            )));
         }
         
         Ok(())
     }
-
+    
     /// セーブポイントにロールバック
     pub async fn rollback_to_savepoint(&self, name: &str) -> Result<(), PostgrestError> {
+        // トランザクションがアクティブかチェック
         if !self.state.load(Ordering::SeqCst) {
             return Err(PostgrestError::TransactionError(
-                "Transaction is not active".to_string()
+                "Cannot rollback to savepoint: transaction is no longer active".to_string()
             ));
         }
-
-        let url = format!("{}/rest/v1/rpc/rollback_to_savepoint", self.base_url);
         
-        let response = self.http_client.post(url)
+        // セーブポイントへのロールバックAPIを呼び出し
+        let rollback_savepoint_url = format!("{}/rpc/rollback_to_savepoint", self.base_url);
+        
+        let rollback_savepoint_body = json!({
+            "transaction_id": self.transaction_id,
+            "name": name
+        });
+        
+        let response = self.http_client
+            .post(&rollback_savepoint_url)
             .headers(self.headers.clone())
-            .json(&json!({
-                "transaction_id": self.transaction_id,
-                "savepoint_name": name
-            }))
+            .json(&rollback_savepoint_body)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
         if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::TransactionError(format!(
+                "Failed to rollback to savepoint: {} (Status: {})",
+                error_text,
+                response.status()
+            )));
         }
         
         Ok(())

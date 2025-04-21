@@ -785,80 +785,105 @@ impl<'a> StorageBucketClient<'a> {
         Ok(file_object)
     }
     
-    /// 画像を変換して取得
+    /// 画像に変換を適用して取得する
     pub async fn transform_image(&self, path: &str, options: ImageTransformOptions) -> Result<Bytes, StorageError> {
         let url = format!(
-            "{}/storage/v1/object/transform/{}/{}{}",
-            self.parent.base_url,
-            self.bucket_id,
-            path,
-            options.to_query_params()
+            "{}/object/transform/authenticated/{}/{}",
+            self.parent.base_url, self.bucket_id, path
         );
         
-        let response = self.parent.http_client.get(&url)
+        // クエリパラメータに変換オプションを追加
+        let query_params = options.to_query_params();
+        let request_url = if query_params.is_empty() {
+            url
+        } else {
+            format!("{}?{}", url, query_params)
+        };
+        
+        let res = self.parent.http_client
+            .get(&request_url)
             .header("apikey", &self.parent.api_key)
+            .header("Authorization", format!("Bearer {}", self.parent.api_key))
             .send()
-            .await?;
-            
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(StorageError::ApiError(error_text));
+            .await
+            .map_err(|e| StorageError::NetworkError(e))?;
+        
+        if !res.status().is_success() {
+            let error_text = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(StorageError::ApiError(format!(
+                "Failed to transform image: {} (Status: {})",
+                error_text,
+                res.status()
+            )));
         }
         
-        let data = response.bytes().await?;
-        
-        Ok(data)
+        let bytes = res.bytes().await.map_err(|e| StorageError::NetworkError(e))?;
+        Ok(bytes)
     }
     
-    /// 変換された画像のURLを取得（公開バケットの場合）
+    /// 画像の公開変換URLを取得
     pub fn get_public_transform_url(&self, path: &str, options: ImageTransformOptions) -> String {
-        format!(
-            "{}/storage/v1/object/public/transform/{}/{}{}",
-            self.parent.base_url,
-            self.bucket_id,
-            path,
-            options.to_query_params()
-        )
+        let base_url = format!(
+            "{}/object/public/{}/{}",
+            self.parent.base_url, self.bucket_id, path
+        );
+        
+        // クエリパラメータに変換オプションを追加
+        let query_params = options.to_query_params();
+        if query_params.is_empty() {
+            base_url
+        } else {
+            format!("{}?{}", base_url, query_params)
+        }
     }
     
-    /// 変換された画像の署名付きURLを取得
+    /// 画像の署名付き変換URLを作成
     pub async fn create_signed_transform_url(
         &self,
         path: &str,
         options: ImageTransformOptions,
         expires_in: i32
     ) -> Result<String, StorageError> {
-        let transform_path = format!("transform/{}/{}{}", self.bucket_id, path, options.to_query_params());
-        
         let url = format!(
-            "{}/storage/v1/object/sign/{}",
-            self.parent.base_url,
-            transform_path,
+            "{}/object/sign/{}/{}",
+            self.parent.base_url, self.bucket_id, path
         );
         
-        let params = serde_json::json!({
-            "expiresIn": expires_in
+        // クエリパラメータに変換オプションを追加
+        let transform_params = options.to_query_params();
+        
+        let payload = json!({
+            "expiresIn": expires_in,
+            "transform": transform_params,
         });
         
-        let response = self.parent.http_client.post(&url)
+        let res = self.parent.http_client
+            .post(&url)
             .header("apikey", &self.parent.api_key)
-            .json(&params)
+            .header("Authorization", format!("Bearer {}", self.parent.api_key))
+            .json(&payload)
             .send()
-            .await?;
+            .await
+            .map_err(|e| StorageError::NetworkError(e))?;
             
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(StorageError::ApiError(error_text));
+        if !res.status().is_success() {
+            let error_text = res.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(StorageError::ApiError(format!(
+                "Failed to create signed transform URL: {} (Status: {})",
+                error_text,
+                res.status()
+            )));
         }
         
-        #[derive(Deserialize)]
+        #[derive(Debug, Deserialize)]
         struct SignedUrlResponse {
             signed_url: String,
         }
         
-        let result = response.json::<SignedUrlResponse>().await?;
-        
-        Ok(result.signed_url)
+        let response = res.json::<SignedUrlResponse>().await
+            .map_err(|e| StorageError::SerializationError(e))?;
+            
+        Ok(response.signed_url)
     }
 }
 

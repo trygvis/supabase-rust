@@ -78,10 +78,11 @@ mod image_transform_examples {
         
         // 画像をアップロード
         println!("画像をアップロードしています...");
-        // Path型を使用するようにアップロード処理を修正
+        // アップロードオプションを追加して、正しいMIMEタイプを設定
+        let upload_options = FileOptions::new().with_content_type("image/png");
         let upload_result = storage
             .from(bucket_name)
-            .upload(upload_path, local_image_path.as_path(), None)
+            .upload(upload_path, local_image_path.as_path(), Some(upload_options))
             .await?;
             
         println!("画像をアップロードしました: {}", upload_result.name);
