@@ -1,12 +1,12 @@
 [package]
-name = "supabase-realtime"
+name = "supabase-rust-realtime"
 version = "0.1.0"
 edition = "2021"
-authors = ["Supabase Rust Client Contributors"]
+authors = ["Jun Kawasaki"]
 description = "Realtime client for Supabase"
 license = "MIT"
-repository = "https://github.com/supabase/supabase-rust"
-documentation = "https://docs.rs/supabase-realtime"
+repository = "https://github.com/jun784/supabase-rust"
+documentation = "https://docs.rs/supabase-rust-realtime"
 keywords = ["supabase", "realtime", "websocket", "postgres", "subscription"]
 categories = ["web-programming", "asynchronous"]
 

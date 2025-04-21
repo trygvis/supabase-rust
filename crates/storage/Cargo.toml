@@ -1,12 +1,12 @@
 [package]
-name = "supabase-storage"
+name = "supabase-rust-storage"
 version = "0.1.0"
 edition = "2021"
-authors = ["Supabase Rust Client Contributors"]
+authors = ["Jun Kawasaki"]
 description = "Storage client for Supabase"
 license = "MIT"
-repository = "https://github.com/supabase/supabase-rust"
-documentation = "https://docs.rs/supabase-storage"
+repository = "https://github.com/jun784/supabase-rust"
+documentation = "https://docs.rs/supabase-rust-storage"
 keywords = ["supabase", "storage", "file", "upload", "download"]
 categories = ["web-programming"]
 

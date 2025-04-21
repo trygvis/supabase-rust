@@ -1,12 +1,12 @@
 [package]
-name = "supabase-postgrest"
+name = "supabase-rust-postgrest"
 version = "0.1.0"
 edition = "2021"
-authors = ["Supabase Rust Client Contributors"]
+authors = ["Jun Kawasaki"]
 description = "PostgreSQL REST client for Supabase"
 license = "MIT"
-repository = "https://github.com/supabase/supabase-rust"
-documentation = "https://docs.rs/supabase-postgrest"
+repository = "https://github.com/jun784/supabase-rust"
+documentation = "https://docs.rs/supabase-rust-postgrest"
 keywords = ["supabase", "postgrest", "postgresql", "database", "api"]
 categories = ["database", "api-bindings", "web-programming"]
 

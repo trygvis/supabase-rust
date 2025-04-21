@@ -1,12 +1,12 @@
 [package]
-name = "supabase-functions"
+name = "supabase-rust-functions"
 version = "0.1.0"
 edition = "2021"
-authors = ["Supabase Rust Client Contributors"]
+authors = ["Jun Kawasaki"]
 description = "Edge Functions client for Supabase"
 license = "MIT"
-repository = "https://github.com/supabase/supabase-rust"
-documentation = "https://docs.rs/supabase-functions"
+repository = "https://github.com/jun784/supabase-rust"
+documentation = "https://docs.rs/supabase-rust-functions"
 keywords = ["supabase", "functions", "edge", "serverless"]
 categories = ["web-programming"]
 
