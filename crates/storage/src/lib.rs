@@ -862,6 +862,400 @@ impl<'a> StorageBucketClient<'a> {
     }
 }
 
+// S3互換API用のモジュールを追加
+pub mod s3 {
+    use crate::{StorageError, StorageBucketClient, Result};
+    use reqwest::Client;
+    use serde::{Deserialize, Serialize};
+    use bytes::Bytes;
+    use std::collections::HashMap;
+
+    /// S3互換APIのオプション
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct S3Options {
+        /// アクセスキー
+        pub access_key_id: String,
+        /// シークレットキー
+        pub secret_access_key: String,
+        /// リージョン（デフォルトは「auto」）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub region: Option<String>,
+        /// エンドポイントURL（デフォルトはSupabaseのストレージURL）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub endpoint: Option<String>,
+        /// フォースパス形式を使用するかどうか
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub force_path_style: Option<bool>,
+    }
+
+    impl Default for S3Options {
+        fn default() -> Self {
+            Self {
+                access_key_id: String::new(),
+                secret_access_key: String::new(),
+                region: Some("auto".to_string()),
+                endpoint: None,
+                force_path_style: Some(true),
+            }
+        }
+    }
+
+    /// S3 API互換クライアント
+    pub struct S3Client {
+        pub options: S3Options,
+        pub base_url: String,
+        pub api_key: String,
+        pub http_client: Client,
+    }
+
+    impl S3Client {
+        /// 新しいS3互換クライアントを作成
+        pub fn new(base_url: &str, api_key: &str, http_client: Client, options: S3Options) -> Self {
+            Self {
+                options,
+                base_url: base_url.to_string(),
+                api_key: api_key.to_string(),
+                http_client,
+            }
+        }
+
+        /// バケットの作成
+        pub async fn create_bucket(&self, bucket_name: &str, is_public: bool) -> Result<()> {
+            let url = format!("{}/storage/v1/bucket", self.base_url);
+            
+            let payload = serde_json::json!({
+                "name": bucket_name,
+                "public": is_public,
+                "file_size_limit": null,
+                "allowed_mime_types": null
+            });
+            
+            let response = self.http_client
+                .post(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            Ok(())
+        }
+        
+        /// バケットの削除
+        pub async fn delete_bucket(&self, bucket_name: &str) -> Result<()> {
+            let url = format!("{}/storage/v1/bucket/{}", self.base_url, bucket_name);
+            
+            let response = self.http_client
+                .delete(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            Ok(())
+        }
+        
+        /// バケットの一覧を取得
+        pub async fn list_buckets(&self) -> Result<Vec<serde_json::Value>> {
+            let url = format!("{}/storage/v1/bucket", self.base_url);
+            
+            let response = self.http_client
+                .get(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            let buckets = response.json::<Vec<serde_json::Value>>().await
+                .map_err(|e| StorageError::DeserializationError(e.to_string()))?;
+            
+            Ok(buckets)
+        }
+        
+        /// バケットを取得し、S3互換操作のためのクライアントを返す
+        pub fn bucket(&self, bucket_name: &str) -> S3BucketClient {
+            S3BucketClient::new(
+                &self.base_url,
+                &self.api_key,
+                bucket_name,
+                self.http_client.clone(),
+                self.options.clone()
+            )
+        }
+    }
+    
+    /// S3バケット操作用クライアント
+    pub struct S3BucketClient {
+        pub base_url: String,
+        pub api_key: String,
+        pub bucket_name: String,
+        pub http_client: Client,
+        pub options: S3Options,
+    }
+    
+    impl S3BucketClient {
+        /// 新しいS3バケットクライアントを作成
+        pub fn new(
+            base_url: &str,
+            api_key: &str,
+            bucket_name: &str,
+            http_client: Client,
+            options: S3Options
+        ) -> Self {
+            Self {
+                base_url: base_url.to_string(),
+                api_key: api_key.to_string(),
+                bucket_name: bucket_name.to_string(),
+                http_client,
+                options,
+            }
+        }
+        
+        /// オブジェクトをアップロード（S3互換API）
+        pub async fn put_object(&self, path: &str, data: Bytes, content_type: Option<String>, metadata: Option<HashMap<String, String>>) -> Result<()> {
+            let url = format!(
+                "{}/storage/v1/object/{}/{}",
+                self.base_url,
+                self.bucket_name,
+                path.trim_start_matches('/')
+            );
+            
+            let content_type = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+            
+            let mut request = self.http_client
+                .put(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .header("Content-Type", content_type)
+                .body(data);
+            
+            // メタデータがある場合は追加
+            if let Some(metadata) = metadata {
+                for (key, value) in metadata {
+                    request = request.header(&format!("x-amz-meta-{}", key), value);
+                }
+            }
+            
+            let response = request
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            Ok(())
+        }
+        
+        /// オブジェクトをダウンロード（S3互換API）
+        pub async fn get_object(&self, path: &str) -> Result<Bytes> {
+            let url = format!(
+                "{}/storage/v1/object/{}/{}",
+                self.base_url,
+                self.bucket_name,
+                path.trim_start_matches('/')
+            );
+            
+            let response = self.http_client
+                .get(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            let data = response.bytes().await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            Ok(data)
+        }
+        
+        /// オブジェクトのメタデータを取得（S3互換API）
+        pub async fn head_object(&self, path: &str) -> Result<HashMap<String, String>> {
+            let url = format!(
+                "{}/storage/v1/object/{}/{}",
+                self.base_url,
+                self.bucket_name,
+                path.trim_start_matches('/')
+            );
+            
+            let response = self.http_client
+                .head(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                return Err(StorageError::ApiError("Object not found".to_string()));
+            }
+            
+            let mut metadata = HashMap::new();
+            
+            // レスポンスヘッダーからメタデータを抽出
+            for (key, value) in response.headers() {
+                let key_str = key.to_string();
+                if key_str.starts_with("x-amz-meta-") {
+                    let meta_key = key_str.trim_start_matches("x-amz-meta-").to_string();
+                    metadata.insert(meta_key, value.to_str().unwrap_or_default().to_string());
+                }
+            }
+            
+            Ok(metadata)
+        }
+        
+        /// オブジェクトを削除（S3互換API）
+        pub async fn delete_object(&self, path: &str) -> Result<()> {
+            let url = format!(
+                "{}/storage/v1/object/{}/{}",
+                self.base_url,
+                self.bucket_name,
+                path.trim_start_matches('/')
+            );
+            
+            let response = self.http_client
+                .delete(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            Ok(())
+        }
+        
+        /// オブジェクトの一覧を取得（S3互換API）
+        pub async fn list_objects(&self, prefix: Option<&str>, delimiter: Option<&str>, max_keys: Option<i32>) -> Result<serde_json::Value> {
+            let mut url = format!(
+                "{}/storage/v1/object/list/{}",
+                self.base_url,
+                self.bucket_name
+            );
+            
+            // クエリパラメータを追加
+            let mut query_params = Vec::new();
+            
+            if let Some(prefix) = prefix {
+                query_params.push(format!("prefix={}", prefix));
+            }
+            
+            if let Some(delimiter) = delimiter {
+                query_params.push(format!("delimiter={}", delimiter));
+            }
+            
+            if let Some(max_keys) = max_keys {
+                query_params.push(format!("max-keys={}", max_keys));
+            }
+            
+            if !query_params.is_empty() {
+                url = format!("{}?{}", url, query_params.join("&"));
+            }
+            
+            let response = self.http_client
+                .get(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            let objects = response.json::<serde_json::Value>().await
+                .map_err(|e| StorageError::DeserializationError(e.to_string()))?;
+            
+            Ok(objects)
+        }
+        
+        /// オブジェクトのコピー（S3互換API）
+        pub async fn copy_object(&self, source_path: &str, destination_path: &str) -> Result<()> {
+            let url = format!(
+                "{}/storage/v1/object/copy",
+                self.base_url
+            );
+            
+            let payload = serde_json::json!({
+                "bucketId": self.bucket_name,
+                "sourceKey": source_path,
+                "destinationKey": destination_path
+            });
+            
+            let response = self.http_client
+                .post(&url)
+                .header("apikey", &self.api_key)
+                .header("Authorization", format!("Bearer {}", &self.api_key))
+                .json(&payload)
+                .send()
+                .await
+                .map_err(|e| StorageError::RequestError(e.to_string()))?;
+            
+            if !response.status().is_success() {
+                let error_text = response.text().await
+                    .unwrap_or_else(|_| "Unknown error".to_string());
+                return Err(StorageError::ApiError(error_text));
+            }
+            
+            Ok(())
+        }
+    }
+}
+
+impl StorageBucketClient {
+    // 既存のメソッドは維持しながら、S3互換モードを追加
+
+    /// S3互換モードでクライアントを取得
+    pub fn s3_compatible(&self, options: s3::S3Options) -> s3::S3BucketClient {
+        s3::S3BucketClient::new(
+            &self.parent.base_url,
+            &self.parent.api_key,
+            &self.bucket_id,
+            self.parent.http_client.clone(),
+            options
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

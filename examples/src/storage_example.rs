@@ -7,6 +7,7 @@ use tokio::fs;
 use mime;
 use std::path::PathBuf;
 use supabase_rust::storage::ImageTransformOptions;
+use bytes;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FileObject {
@@ -139,6 +140,105 @@ mod image_transform_examples {
     }
 }
 
+/// S3互換APIの例を実行
+async fn run_s3_compatible_example(supabase: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n=== S3互換APIの例 ===\n");
+    
+    // S3互換オプションを設定
+    let s3_options = supabase_rust::storage::s3::S3Options {
+        access_key_id: "your-access-key".to_string(), // 実際の環境では適切な値に置き換えてください
+        secret_access_key: "your-secret-key".to_string(), // 実際の環境では適切な値に置き換えてください
+        region: Some("auto".to_string()),
+        ..Default::default()
+    };
+    
+    // S3互換クライアントを取得
+    let storage_client = supabase.storage();
+    let bucket_client = storage_client.from("test-bucket");
+    let s3_client = bucket_client.s3_compatible(s3_options);
+    
+    // テキストファイルをアップロード
+    let text_content = "This is a test file uploaded via S3 compatible API";
+    let text_bytes = bytes::Bytes::from(text_content);
+    
+    println!("Uploading text file via S3 compatible API...");
+    s3_client.put_object(
+        "s3-test/test.txt", 
+        text_bytes, 
+        Some("text/plain".to_string()),
+        Some({
+            let mut metadata = std::collections::HashMap::new();
+            metadata.insert("description".to_string(), "Test file for S3 API".to_string());
+            metadata
+        })
+    ).await?;
+    println!("Text file uploaded successfully");
+    
+    // ファイルをダウンロード
+    println!("Downloading file via S3 compatible API...");
+    let downloaded_data = s3_client.get_object("s3-test/test.txt").await?;
+    let downloaded_text = String::from_utf8_lossy(&downloaded_data);
+    println!("Downloaded content: {}", downloaded_text);
+    
+    // メタデータを取得
+    println!("Retrieving file metadata...");
+    let metadata = s3_client.head_object("s3-test/test.txt").await?;
+    println!("File metadata: {:?}", metadata);
+    
+    // 複数のファイルをアップロード
+    println!("Uploading multiple files...");
+    for i in 1..4 {
+        let content = format!("This is file number {}", i);
+        let bytes = bytes::Bytes::from(content.into_bytes());
+        s3_client.put_object(
+            &format!("s3-test/multiple/file{}.txt", i),
+            bytes,
+            Some("text/plain".to_string()),
+            None
+        ).await?;
+    }
+    println!("Multiple files uploaded");
+    
+    // ファイル一覧を取得
+    println!("Listing objects with prefix 's3-test/multiple/'...");
+    let objects = s3_client.list_objects(Some("s3-test/multiple/"), None, None).await?;
+    println!("Objects in the directory: {:?}", objects);
+    
+    // ファイルをコピー
+    println!("Copying an object...");
+    s3_client.copy_object(
+        "s3-test/test.txt",
+        "s3-test/test-copy.txt"
+    ).await?;
+    println!("File copied successfully");
+    
+    // ファイルをダウンロード
+    let copied_data = s3_client.get_object("s3-test/test-copy.txt").await?;
+    let copied_text = String::from_utf8_lossy(&copied_data);
+    println!("Copied file content: {}", copied_text);
+    
+    // ファイルを削除
+    println!("Deleting object 's3-test/test.txt'...");
+    s3_client.delete_object("s3-test/test.txt").await?;
+    println!("File deleted successfully");
+    
+    println!("\nS3互換APIの例が完了しました");
+    
+    Ok(())
+}
+
+// 基本的なストレージ操作の例
+async fn run_basic_storage_operations(supabase: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+    // ... existing code ...
+    Ok(())
+}
+
+// 大きなファイルのアップロード例
+async fn run_large_file_upload(supabase: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+    // ... existing code ...
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
@@ -146,11 +246,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("=== Supabase Storage Examples ===");
     
+    // Supabaseクライアントの初期化
+    let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
+    let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
+    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    
     // Basic storage operations
-    run_basic_storage_operations().await?;
+    run_basic_storage_operations(&supabase).await?;
     
     // Large file upload example
-    run_large_file_upload().await?;
+    run_large_file_upload(&supabase).await?;
     
     // 画像変換機能の例を実行
     println!("\n画像変換機能の例を実行しますか？(y/n)");
@@ -159,6 +264,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     if input.trim().to_lowercase() == "y" {
         image_transform_examples::run_image_transform_examples().await?;
+    }
+    
+    // S3互換APIの例を実行するか確認
+    println!("\nS3互換APIの例を実行しますか？(y/n)");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input)?;
+    
+    if input.trim().to_lowercase() == "y" {
+        run_s3_compatible_example(&supabase).await?;
     }
     
     Ok(())

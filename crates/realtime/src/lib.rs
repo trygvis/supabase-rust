@@ -18,6 +18,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tokio::sync::{broadcast, RwLock};
+use std::collections::HashSet;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -57,12 +58,74 @@ pub enum ChannelEvent {
     All,
 }
 
+/// データベース変更に対するフィルター条件
+pub struct DatabaseFilter {
+    /// フィルター対象のカラム名
+    pub column: String,
+    /// 比較演算子
+    pub operator: FilterOperator,
+    /// 比較する値
+    pub value: serde_json::Value,
+}
+
+/// フィルター演算子
+#[derive(Debug, Clone, PartialEq)]
+pub enum FilterOperator {
+    /// 等しい
+    Eq,
+    /// 等しくない
+    Neq,
+    /// より大きい
+    Gt,
+    /// より大きいか等しい
+    Gte,
+    /// より小さい
+    Lt,
+    /// より小さいか等しい
+    Lte,
+    /// 含む
+    In,
+    /// 含まない
+    NotIn,
+    /// 近い値（配列内の値に対して）
+    ContainedBy,
+    /// 含む（配列が対象の値を含む）
+    Contains,
+    /// 完全に含む（配列が対象の配列のすべての要素を含む）
+    ContainedByArray,
+    /// LIKE演算子（ワイルドカード検索）
+    Like,
+    /// ILIKE演算子（大文字小文字を区別しないワイルドカード検索）
+    ILike,
+}
+
+impl ToString for FilterOperator {
+    fn to_string(&self) -> String {
+        match self {
+            FilterOperator::Eq => "eq".to_string(),
+            FilterOperator::Neq => "neq".to_string(),
+            FilterOperator::Gt => "gt".to_string(),
+            FilterOperator::Gte => "gte".to_string(),
+            FilterOperator::Lt => "lt".to_string(),
+            FilterOperator::Lte => "lte".to_string(),
+            FilterOperator::In => "in".to_string(),
+            FilterOperator::NotIn => "not.in".to_string(),
+            FilterOperator::ContainedBy => "contained_by".to_string(),
+            FilterOperator::Contains => "contains".to_string(),
+            FilterOperator::ContainedByArray => "contained_by_array".to_string(),
+            FilterOperator::Like => "like".to_string(),
+            FilterOperator::ILike => "ilike".to_string(),
+        }
+    }
+}
+
 /// データベース変更監視設定
 #[derive(Debug, Clone, Serialize)]
 pub struct DatabaseChanges {
     schema: String,
     table: String,
     events: Vec<ChannelEvent>,
+    filter: Option<Vec<DatabaseFilter>>,
 }
 
 impl DatabaseChanges {
@@ -72,6 +135,7 @@ impl DatabaseChanges {
             schema: "public".to_string(),
             table: table.to_string(),
             events: Vec::new(),
+            filter: None,
         }
     }
     
@@ -87,6 +151,147 @@ impl DatabaseChanges {
             self.events.push(event);
         }
         self
+    }
+
+    /// フィルター条件を追加
+    pub fn filter(mut self, filter: DatabaseFilter) -> Self {
+        if self.filter.is_none() {
+            self.filter = Some(vec![filter]);
+        } else {
+            self.filter.as_mut().unwrap().push(filter);
+        }
+        self
+    }
+
+    /// eq演算子による簡便なフィルター追加メソッド
+    pub fn eq<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Eq,
+            value: value.into(),
+        })
+    }
+
+    /// neq演算子による簡便なフィルター追加メソッド
+    pub fn neq<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Neq,
+            value: value.into(),
+        })
+    }
+
+    /// gt演算子による簡便なフィルター追加メソッド
+    pub fn gt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Gt,
+            value: value.into(),
+        })
+    }
+
+    /// gte演算子による簡便なフィルター追加メソッド
+    pub fn gte<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Gte,
+            value: value.into(),
+        })
+    }
+
+    /// lt演算子による簡便なフィルター追加メソッド
+    pub fn lt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Lt,
+            value: value.into(),
+        })
+    }
+
+    /// lte演算子による簡便なフィルター追加メソッド
+    pub fn lte<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Lte,
+            value: value.into(),
+        })
+    }
+
+    /// in演算子による簡便なフィルター追加メソッド
+    pub fn in_values<T: Into<serde_json::Value>>(self, column: &str, values: Vec<T>) -> Self {
+        let json_values: Vec<serde_json::Value> = values.into_iter().map(|v| v.into()).collect();
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::In,
+            value: serde_json::Value::Array(json_values),
+        })
+    }
+
+    /// contains演算子による簡便なフィルター追加メソッド
+    pub fn contains<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Contains,
+            value: value.into(),
+        })
+    }
+
+    /// like演算子による簡便なフィルター追加メソッド
+    pub fn like(self, column: &str, pattern: &str) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Like,
+            value: serde_json::Value::String(pattern.to_string()),
+        })
+    }
+
+    /// ilike演算子による簡便なフィルター追加メソッド
+    pub fn ilike(self, column: &str, pattern: &str) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::ILike,
+            value: serde_json::Value::String(pattern.to_string()),
+        })
+    }
+
+    // to_channel_configメソッドを更新
+    fn to_channel_config(&self) -> serde_json::Value {
+        let mut events_str = String::new();
+        
+        // イベントリストを文字列に変換
+        for (i, event) in self.events.iter().enumerate() {
+            if i > 0 {
+                events_str.push(',');
+            }
+            events_str.push_str(&event.to_string());
+        }
+        
+        // イベントが指定されていない場合は全イベント('*')を使用
+        if events_str.is_empty() {
+            events_str = "*".to_string();
+        }
+        
+        let mut config = serde_json::json!({
+            "schema": self.schema,
+            "table": self.table,
+            "event": events_str,
+        });
+        
+        // フィルター条件があれば追加
+        if let Some(filters) = &self.filter {
+            let mut filter_obj = serde_json::Map::new();
+            
+            for filter in filters {
+                let filter_key = format!("{}:{}", filter.column, filter.operator.to_string());
+                filter_obj.insert(filter_key, filter.value.clone());
+            }
+            
+            if !filter_obj.is_empty() {
+                config["filter"] = serde_json::Value::Object(filter_obj);
+            }
+        }
+        
+        config
     }
 }
 

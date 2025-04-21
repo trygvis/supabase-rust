@@ -135,6 +135,20 @@ impl Default for OAuthSignInOptions {
     }
 }
 
+/// メール確認設定
+#[derive(Debug, Clone, Serialize)]
+pub struct EmailConfirmOptions {
+    pub redirect_to: Option<String>,
+}
+
+impl Default for EmailConfirmOptions {
+    fn default() -> Self {
+        Self {
+            redirect_to: None,
+        }
+    }
+}
+
 /// MFAファクターのタイプ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -674,14 +688,77 @@ impl Auth {
     
     /// 匿名認証でサインイン
     pub async fn sign_in_anonymously(&self) -> Result<Session, AuthError> {
-        let url = format!("{}/auth/v1/signup", self.url);
+        let endpoint = format!("{}/auth/v1/signup", self.url);
         
-        // 匿名認証のリクエスト
-        let payload = serde_json::json!({
-            "data": { "is_anonymous": true }
+        let response = self.http_client
+            .post(&endpoint)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "data": {}
+            }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_msg = response.text().await?;
+            return Err(AuthError::ApiError(error_msg));
+        }
+        
+        let session: Session = response.json().await?;
+        
+        // セッションを保存
+        if self.options.persist_session {
+            let mut writable_session = self.current_session.write().unwrap();
+            *writable_session = Some(session.clone());
+        }
+        
+        Ok(session)
+    }
+    
+    /// メール確認のリクエストを送信する
+    ///
+    /// # Arguments
+    ///
+    /// * `email` - 確認メールを送信するメールアドレス
+    /// * `options` - オプション設定（リダイレクトURLなど）
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use supabase_auth::{Auth, EmailConfirmOptions};
+    ///
+    /// let auth = // Auth インスタンスの初期化
+    /// # Auth::new("", "", reqwest::Client::new(), Default::default());
+    /// 
+    /// let options = EmailConfirmOptions {
+    ///     redirect_to: Some("https://example.com/confirm-success".to_string()),
+    /// };
+    /// 
+    /// let result = auth.send_confirm_email_request("user@example.com", Some(options));
+    /// ```
+    pub async fn send_confirm_email_request(
+        &self, 
+        email: &str, 
+        options: Option<EmailConfirmOptions>
+    ) -> Result<(), AuthError> {
+        let endpoint = format!("{}/auth/v1/signup", self.url);
+        
+        let mut payload = serde_json::json!({
+            "email": email,
+            "data": {}
         });
         
-        let response = self.http_client.post(&url)
+        if let Some(opts) = options {
+            if let Some(redirect_to) = opts.redirect_to {
+                payload["options"] = serde_json::json!({
+                    "redirect_to": redirect_to
+                });
+            }
+        }
+        
+        let response = self.http_client
+            .post(&endpoint)
             .header("apikey", &self.key)
             .header("Content-Type", "application/json")
             .json(&payload)
@@ -689,22 +766,111 @@ impl Auth {
             .await?;
             
         if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(AuthError::ApiError(error_text));
+            let error_msg = response.text().await?;
+            return Err(AuthError::ApiError(error_msg));
+        }
+        
+        Ok(())
+    }
+    
+    /// メール確認トークンを検証する
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - メール確認用のトークン（確認リンクから取得）
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use supabase_auth::Auth;
+    ///
+    /// let auth = // Auth インスタンスの初期化
+    /// # Auth::new("", "", reqwest::Client::new(), Default::default());
+    /// 
+    /// let result = auth.verify_email("confirmation-token-from-email");
+    /// ```
+    pub async fn verify_email(&self, token: &str) -> Result<Session, AuthError> {
+        let endpoint = format!("{}/auth/v1/verify", self.url);
+        
+        let response = self.http_client
+            .post(&endpoint)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "type": "signup",
+                "token": token
+            }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_msg = response.text().await?;
+            return Err(AuthError::ApiError(error_msg));
         }
         
         let session: Session = response.json().await?;
         
         // セッションを保存
         if self.options.persist_session {
-            let mut write_guard = self.current_session.write().unwrap();
-            *write_guard = Some(session.clone());
+            let mut writable_session = self.current_session.write().unwrap();
+            *writable_session = Some(session.clone());
+        }
+        
+        Ok(session)
+    }
+
+    /// パスワードリセット後にリセットトークンを検証する
+    ///
+    /// # Arguments
+    ///
+    /// * `token` - パスワードリセット用のトークン（リセットリンクから取得）
+    /// * `new_password` - 新しいパスワード
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use supabase_auth::Auth;
+    ///
+    /// let auth = // Auth インスタンスの初期化
+    /// # Auth::new("", "", reqwest::Client::new(), Default::default());
+    /// 
+    /// let result = auth.verify_password_reset("reset-token-from-email", "new-secure-password");
+    /// ```
+    pub async fn verify_password_reset(
+        &self, 
+        token: &str, 
+        new_password: &str
+    ) -> Result<Session, AuthError> {
+        let endpoint = format!("{}/auth/v1/verify", self.url);
+        
+        let response = self.http_client
+            .post(&endpoint)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({
+                "type": "recovery",
+                "token": token,
+                "password": new_password
+            }))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_msg = response.text().await?;
+            return Err(AuthError::ApiError(error_msg));
+        }
+        
+        let session: Session = response.json().await?;
+        
+        // セッションを保存
+        if self.options.persist_session {
+            let mut writable_session = self.current_session.write().unwrap();
+            *writable_session = Some(session.clone());
         }
         
         Ok(session)
     }
     
-    /// 電話番号で認証コードを送信
     pub async fn send_verification_code(&self, phone: &str) -> Result<PhoneVerificationResponse, AuthError> {
         let url = format!("{}/auth/v1/otp", self.url);
         
