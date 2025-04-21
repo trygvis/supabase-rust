@@ -41,3 +41,5 @@ members = [
 tokio-test = "0.4"
 mockito = "1.0"
 wiremock = "0.5"
+dotenv = "0.15"
+uuid = { version = "1.4", features = ["v4", "serde"] }

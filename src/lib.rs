@@ -22,20 +22,7 @@ pub use config::ClientOptions;
 pub use error::{Error, Result};
 
 use reqwest::Client;
-use serde::Serialize;
-use std::sync::Arc;
-use std::collections::HashMap;
-use tokio_tungstenite::connect_async;
-use tokio_tungstenite::tungstenite::Message;
 use serde::{Serialize, Deserialize};
-use thiserror::Error;
-use futures_util::{StreamExt, SinkExt};
-use tokio::sync::mpsc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use tokio::sync::{broadcast, RwLock};
-use std::time::Duration;
-use tokio::time::sleep;
-use url::Url;
 
 /// The main entry point for the Supabase Rust client
 pub struct Supabase {

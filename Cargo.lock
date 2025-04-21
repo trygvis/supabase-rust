@@ -1821,25 +1821,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "supabase-rust-functions"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f26c6000aac88130bbcc48ff14d09e460e77165edcf68ffc31d5dd0138196b8"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "futures-util",
+ "http 0.2.12",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+]
+
+[[package]]
 name = "supabase-rust-gftd"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "base64 0.21.7",
+ "dotenv",
  "jsonwebtoken",
  "mockito",
  "reqwest",
  "serde",
  "serde_json",
  "supabase-rust-auth 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-functions",
+ "supabase-rust-functions 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "supabase-rust-postgrest 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-realtime",
- "supabase-rust-storage",
+ "supabase-rust-realtime 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-storage 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
  "url",
+ "uuid",
  "wiremock",
 ]
 
@@ -1900,6 +1924,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "supabase-rust-realtime"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c015e057f75935944b39d765fda08cffd4a5b45ac14c39b24521bc360e1ca8f5"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.7",
+ "futures-util",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-tungstenite",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "supabase-rust-storage"
 version = "0.1.0"
 dependencies = [
@@ -1918,6 +1962,27 @@ dependencies = [
  "url",
  "uuid",
  "wiremock",
+]
+
+[[package]]
+name = "supabase-rust-storage"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f6e98a4f24043341bf8a75f6ab8a4e54c9380209d772be64f58b8c2c1280eca6"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.21.7",
+ "bytes",
+ "http 0.2.12",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "url",
+ "uuid",
 ]
 
 [[package]]
