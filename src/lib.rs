@@ -8,10 +8,10 @@
 
 // 各コンポーネントクレートの再エクスポート
 pub use supabase_rust_auth as auth;
-pub use supabase_rust_postgrest as postgrest;
-pub use supabase_rust_storage as storage;
-pub use supabase_rust_realtime as realtime;
 pub use supabase_rust_functions as functions;
+pub use supabase_rust_postgrest as postgrest;
+pub use supabase_rust_realtime as realtime;
+pub use supabase_rust_storage as storage;
 
 // 内部モジュール
 mod config;
@@ -77,17 +77,26 @@ impl Supabase {
     ///     options
     /// );
     /// ```
-    pub fn new_with_options(supabase_url: &str, supabase_key: &str, options: ClientOptions) -> Self {
+    pub fn new_with_options(
+        supabase_url: &str,
+        supabase_key: &str,
+        options: ClientOptions,
+    ) -> Self {
         let http_client = Client::new();
-        
+
         let auth_options = auth::AuthOptions {
             auto_refresh_token: options.auto_refresh_token,
             persist_session: options.persist_session,
             detect_session_in_url: options.detect_session_in_url,
         };
-        
-        let auth = auth::Auth::new(supabase_url, supabase_key, http_client.clone(), auth_options);
-        
+
+        let auth = auth::Auth::new(
+            supabase_url,
+            supabase_key,
+            http_client.clone(),
+            auth_options,
+        );
+
         Self {
             url: supabase_url.to_string(),
             key: supabase_key.to_string(),
@@ -96,12 +105,12 @@ impl Supabase {
             options,
         }
     }
-    
+
     /// Get a reference to the auth client for user management and authentication
     pub fn auth(&self) -> &auth::Auth {
         &self.auth
     }
-    
+
     /// Create a new PostgrestClient for database operations on a specific table or view
     ///
     /// # Arguments
@@ -117,29 +126,24 @@ impl Supabase {
     /// let query = supabase.from("users");
     /// ```
     pub fn from(&self, table: &str) -> postgrest::PostgrestClient {
-        postgrest::PostgrestClient::new(
-            &self.url,
-            &self.key,
-            table,
-            self.http_client.clone(),
-        )
+        postgrest::PostgrestClient::new(&self.url, &self.key, table, self.http_client.clone())
     }
-    
+
     /// Create a client for the Storage API
     pub fn storage(&self) -> storage::StorageClient {
         storage::StorageClient::new(&self.url, &self.key, self.http_client.clone())
     }
-    
+
     /// Create a client for the Realtime API
     pub fn realtime(&self) -> realtime::RealtimeClient {
         realtime::RealtimeClient::new(&self.url, &self.key)
     }
-    
+
     /// Create a client for the Edge Functions API
     pub fn functions(&self) -> functions::FunctionsClient {
         functions::FunctionsClient::new(&self.url, &self.key, self.http_client.clone())
     }
-    
+
     /// Execute a Postgres function via RPC
     ///
     /// # Arguments
@@ -156,13 +160,17 @@ impl Supabase {
     /// let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
     /// let result = supabase.rpc("calculate_total", json!({"user_id": 123}));
     /// ```
-    pub fn rpc(&self, function_name: &str, params: serde_json::Value) -> postgrest::PostgrestClient {
+    pub fn rpc(
+        &self,
+        function_name: &str,
+        params: serde_json::Value,
+    ) -> postgrest::PostgrestClient {
         postgrest::PostgrestClient::rpc(
             &self.url,
             &self.key,
             function_name,
             params,
-            self.http_client.clone()
+            self.http_client.clone(),
         )
     }
 
@@ -179,7 +187,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Eq,
-            value.into()
+            value.into(),
         ))
     }
 
@@ -188,16 +196,16 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Neq,
-            value.into()
+            value.into(),
         ))
     }
 
     /// gt演算子による簡便なフィルター追加メソッド
     pub fn gt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
         self.filter(DatabaseFilter::new(
-            column.to_string(), 
+            column.to_string(),
             FilterOperator::Gt,
-            value.into()
+            value.into(),
         ))
     }
 
@@ -206,7 +214,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Gte,
-            value.into()
+            value.into(),
         ))
     }
 
@@ -215,7 +223,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Lt,
-            value.into()
+            value.into(),
         ))
     }
 
@@ -224,7 +232,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Lte,
-            value.into()
+            value.into(),
         ))
     }
 
@@ -234,7 +242,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::In,
-            serde_json::Value::Array(json_values)
+            serde_json::Value::Array(json_values),
         ))
     }
 
@@ -243,7 +251,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Contains,
-            value.into()
+            value.into(),
         ))
     }
 
@@ -252,7 +260,7 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::Like,
-            serde_json::Value::String(pattern.to_string())
+            serde_json::Value::String(pattern.to_string()),
         ))
     }
 
@@ -261,21 +269,20 @@ impl Supabase {
         self.filter(DatabaseFilter::new(
             column.to_string(),
             FilterOperator::ILike,
-            serde_json::Value::String(pattern.to_string())
+            serde_json::Value::String(pattern.to_string()),
         ))
     }
 }
 
 /// A convenience module for common imports
 pub mod prelude {
-    pub use crate::Supabase;
-    pub use crate::error::{Error, Result};
     pub use crate::config::ClientOptions;
+    pub use crate::error::{Error, Result};
     pub use crate::postgrest::{IsolationLevel, TransactionMode};
+    pub use crate::Supabase;
 }
 
-/// フィルター演算子
-#[derive(Debug, Clone, PartialEq)]
+/// Filter operators for database queries
 pub enum FilterOperator {
     /// 等しい
     Eq,
@@ -305,27 +312,28 @@ pub enum FilterOperator {
     ILike,
 }
 
-impl ToString for FilterOperator {
-    fn to_string(&self) -> String {
-        match self {
-            FilterOperator::Eq => "eq".to_string(),
-            FilterOperator::Neq => "neq".to_string(),
-            FilterOperator::Gt => "gt".to_string(),
-            FilterOperator::Gte => "gte".to_string(),
-            FilterOperator::Lt => "lt".to_string(),
-            FilterOperator::Lte => "lte".to_string(),
-            FilterOperator::In => "in".to_string(),
-            FilterOperator::NotIn => "not.in".to_string(),
-            FilterOperator::ContainedBy => "contained_by".to_string(),
-            FilterOperator::Contains => "contains".to_string(),
-            FilterOperator::ContainedByArray => "contained_by_array".to_string(),
-            FilterOperator::Like => "like".to_string(),
-            FilterOperator::ILike => "ilike".to_string(),
-        }
+impl std::fmt::Display for FilterOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            FilterOperator::Eq => "eq",
+            FilterOperator::Neq => "neq",
+            FilterOperator::Gt => "gt",
+            FilterOperator::Gte => "gte",
+            FilterOperator::Lt => "lt",
+            FilterOperator::Lte => "lte",
+            FilterOperator::In => "in",
+            FilterOperator::NotIn => "not.in",
+            FilterOperator::ContainedBy => "contained_by",
+            FilterOperator::Contains => "contains",
+            FilterOperator::ContainedByArray => "contained_by_array",
+            FilterOperator::Like => "like",
+            FilterOperator::ILike => "ilike",
+        };
+        write!(f, "{}", s)
     }
 }
 
-/// データベース変更に対するフィルター条件
+/// Database filter that holds a column, operator, and value
 #[derive(Debug, Clone, Serialize)]
 pub struct DatabaseFilter {
     /// フィルター対象のカラム名
@@ -338,6 +346,7 @@ pub struct DatabaseFilter {
 }
 
 impl DatabaseFilter {
+    /// Create a new database filter
     pub fn new(column: String, operator: FilterOperator, value: serde_json::Value) -> Self {
         Self {
             column,
@@ -350,43 +359,39 @@ impl DatabaseFilter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{MockServer, Mock, ResponseTemplate};
-    use wiremock::matchers::{method, path};
     use serde_json::json;
-    
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
     #[tokio::test]
     async fn test_integration() {
         let mock_server = MockServer::start().await;
-        
+
         // Auth モックエンドポイント
         Mock::given(method("POST"))
             .and(path("/auth/v1/token"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(json!({
-                    "access_token": "test_token",
-                    "refresh_token": "test_refresh",
-                    "expires_in": 3600,
-                    "token_type": "bearer",
-                    "user": {
-                        "id": "1234",
-                        "email": "test@example.com"
-                    }
-                }))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "access_token": "test_token",
+                "refresh_token": "test_refresh",
+                "expires_in": 3600,
+                "token_type": "bearer",
+                "user": {
+                    "id": "1234",
+                    "email": "test@example.com"
+                }
+            })))
             .mount(&mock_server)
             .await;
-        
+
         // Database モックエンドポイント
         Mock::given(method("GET"))
             .and(path("/rest/v1/users"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(json!([
-                    { "id": 1, "name": "Test User" }
-                ]))
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                { "id": 1, "name": "Test User" }
+            ])))
             .mount(&mock_server)
             .await;
-        
+
         // Storage モックエンドポイント - 現在は使用していないのでコメントアウト
         /*
         Mock::given(method("GET"))
@@ -399,24 +404,20 @@ mod tests {
             .mount(&mock_server)
             .await;
         */
-        
+
         let supabase = Supabase::new(&mock_server.uri(), "test_key");
-        
+
         // Database操作のテスト
-        let users: Vec<serde_json::Value> = supabase
-            .from("users")
-            .select("*")
-            .execute()
-            .await
-            .unwrap();
-        
+        let users: Vec<serde_json::Value> =
+            supabase.from("users").select("*").execute().await.unwrap();
+
         assert_eq!(users.len(), 1);
         assert_eq!(users[0]["name"], "Test User");
-        
+
         // Storageバケット一覧取得のテスト - Storageモジュールが未実装なのでスキップ
         /*
         let buckets = supabase.storage().list_buckets().await.unwrap();
-        
+
         assert_eq!(buckets.len(), 1);
         assert_eq!(buckets[0].name, "test-bucket");
         */

@@ -2,17 +2,17 @@
 //!
 //! This crate provides functionality for invoking Supabase Edge Functions.
 
+use base64::Engine;
+use bytes::{BufMut, Bytes, BytesMut};
+use futures_util::{Stream, StreamExt};
 use reqwest::{Client, Response, StatusCode};
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::time::Duration;
 use thiserror::Error;
 use url::Url;
-use std::collections::HashMap;
-use std::time::Duration;
-use futures_util::{Stream, StreamExt};
-use std::pin::Pin;
-use bytes::{Bytes, BytesMut, BufMut};
-use base64::Engine;
 
 /// エラー型の詳細
 #[derive(Debug, Clone, Deserialize)]
@@ -28,23 +28,23 @@ pub struct FunctionErrorDetails {
 pub enum FunctionsError {
     #[error("Request error: {0}")]
     RequestError(#[from] reqwest::Error),
-    
+
     #[error("URL parse error: {0}")]
     UrlError(#[from] url::ParseError),
-    
+
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
-    
+
     #[error("Function error (status: {status}): {message}")]
     FunctionError {
         message: String,
         status: StatusCode,
         details: Option<FunctionErrorDetails>,
     },
-    
+
     #[error("Timeout error: Function execution exceeded timeout limit")]
     TimeoutError,
-    
+
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
 }
@@ -57,7 +57,7 @@ impl FunctionsError {
             details: None,
         }
     }
-    
+
     pub fn from_response(response: &Response) -> Self {
         Self::FunctionError {
             message: format!("Function returned error status: {}", response.status()),
@@ -65,12 +65,12 @@ impl FunctionsError {
             details: None,
         }
     }
-    
+
     pub fn with_details(response: &Response, details: FunctionErrorDetails) -> Self {
         Self::FunctionError {
             message: details.message.as_ref().map_or_else(
                 || format!("Function returned error status: {}", response.status()),
-                |msg| msg.clone()
+                |msg| msg.clone(),
             ),
             status: response.status(),
             details: Some(details),
@@ -85,13 +85,13 @@ pub type Result<T> = std::result::Result<T, FunctionsError>;
 pub struct FunctionOptions {
     /// カスタムHTTPヘッダー
     pub headers: Option<HashMap<String, String>>,
-    
+
     /// 関数タイムアウト（秒）
     pub timeout_seconds: Option<u64>,
-    
+
     /// レスポンスのコンテンツタイプを指定（デフォルトはJSONとして処理）
     pub response_type: ResponseType,
-    
+
     /// リクエストのコンテンツタイプ
     pub content_type: Option<String>,
 }
@@ -112,13 +112,13 @@ impl Default for FunctionOptions {
 pub enum ResponseType {
     /// JSONとしてパースする（デフォルト）
     Json,
-    
+
     /// テキストとして処理する
     Text,
-    
+
     /// バイトデータとして処理する
     Binary,
-    
+
     /// ストリームとして処理する
     Stream,
 }
@@ -131,10 +131,10 @@ pub type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send>>;
 pub struct FunctionResponse<T> {
     /// レスポンスデータ
     pub data: T,
-    
+
     /// HTTPステータスコード
     pub status: StatusCode,
-    
+
     /// レスポンスヘッダー
     pub headers: HashMap<String, String>,
 }
@@ -160,7 +160,10 @@ impl<'a, T: DeserializeOwned> FunctionRequest<'a, T> {
         body: Option<B>,
         options: Option<FunctionOptions>,
     ) -> Result<T> {
-        let result = self.client.invoke::<T, B>(&self.function_name, body, options).await?;
+        let result = self
+            .client
+            .invoke::<T, B>(&self.function_name, body, options)
+            .await?;
         Ok(result.data)
     }
 }
@@ -174,7 +177,7 @@ impl FunctionsClient {
             http_client,
         }
     }
-    
+
     /// Edge Function を呼び出す
     pub async fn invoke<T: DeserializeOwned, B: Serialize>(
         &self,
@@ -183,7 +186,7 @@ impl FunctionsClient {
         options: Option<FunctionOptions>,
     ) -> Result<FunctionResponse<T>> {
         let opts = options.unwrap_or_default();
-        
+
         // URLの構築
         let mut url = Url::parse(&self.base_url)?;
         url.path_segments_mut()
@@ -193,58 +196,60 @@ impl FunctionsClient {
             .push(function_name);
 
         // リクエストの構築
-        let mut request_builder = self.http_client
+        let mut request_builder = self
+            .http_client
             .post(url)
             .header("apikey", &self.api_key)
             .header("Authorization", format!("Bearer {}", &self.api_key));
-        
+
         // リクエストタイムアウトの設定
         if let Some(timeout) = opts.timeout_seconds {
             request_builder = request_builder.timeout(Duration::from_secs(timeout));
         }
-        
+
         // コンテンツタイプの設定
         if let Some(content_type) = opts.content_type {
             request_builder = request_builder.header("Content-Type", content_type);
         }
-        
+
         // カスタムヘッダーの追加
         if let Some(headers) = opts.headers {
             for (key, value) in headers {
                 request_builder = request_builder.header(key, value);
             }
         }
-        
+
         // リクエストボディの追加
         if let Some(body_data) = body {
             request_builder = request_builder.json(&body_data);
         }
-        
+
         // リクエストの送信
-        let response = request_builder.send().await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    FunctionsError::TimeoutError
-                } else {
-                    FunctionsError::from(e)
-                }
-            })?;
-        
+        let response = request_builder.send().await.map_err(|e| {
+            if e.is_timeout() {
+                FunctionsError::TimeoutError
+            } else {
+                FunctionsError::from(e)
+            }
+        })?;
+
         // ステータスコードの確認
         let status = response.status();
         if !status.is_success() {
             // レスポンスのクローンを作成してエラー処理に使用
             let status_copy = status;
-            
+
             // エラーレスポンスのパース
-            let error_body = response.text().await
+            let error_body = response
+                .text()
+                .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
             if let Ok(error_details) = serde_json::from_str::<FunctionErrorDetails>(&error_body) {
                 return Err(FunctionsError::FunctionError {
                     message: error_details.message.as_ref().map_or_else(
                         || format!("Function returned error status: {}", status_copy),
-                        |msg| msg.clone()
+                        |msg| msg.clone(),
                     ),
                     status: status_copy,
                     details: Some(error_details),
@@ -259,63 +264,66 @@ impl FunctionsClient {
         }
 
         // レスポンスヘッダーの抽出
-        let headers = response.headers().iter()
-            .map(|(name, value)| {
-                (
-                    name.to_string(),
-                    value.to_str().unwrap_or("").to_string()
-                )
-            })
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_str().unwrap_or("").to_string()))
             .collect::<HashMap<String, String>>();
 
         // レスポンスタイプに応じた処理
         match opts.response_type {
             ResponseType::Json => {
-                let data = response.json::<T>().await
-                    .map_err(|e| FunctionsError::JsonError(serde_json::from_str::<T>("{}")
-                        .err()
-                        .unwrap_or_else(|| serde_json::Error::io(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            e.to_string()
-                        )))))?;
-                
+                let data = response.json::<T>().await.map_err(|e| {
+                    FunctionsError::JsonError(serde_json::from_str::<T>("{}").err().unwrap_or_else(
+                        || {
+                            serde_json::Error::io(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                e.to_string(),
+                            ))
+                        },
+                    ))
+                })?;
+
                 Ok(FunctionResponse {
                     data,
                     status,
                     headers,
                 })
-            },
+            }
             ResponseType::Text => {
                 // テキスト処理
                 let text = response.text().await?;
-                
+
                 // テキストからデシリアライズを試みる
-                let data: T = serde_json::from_str(&text)
-                    .unwrap_or_else(|_| panic!("Failed to deserialize text response as requested type"));
-                
+                let data: T = serde_json::from_str(&text).unwrap_or_else(|_| {
+                    panic!("Failed to deserialize text response as requested type")
+                });
+
                 Ok(FunctionResponse {
                     data,
                     status,
                     headers,
                 })
-            },
+            }
             ResponseType::Binary => {
                 // バイナリデータ処理
                 let bytes = response.bytes().await?;
-                
+
                 // Base64エンコード（非推奨API対応）
                 let binary_str = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                
+
                 // バイナリデータをデシリアライズ
-                let data: T = serde_json::from_str(&format!("\"{}\"", binary_str))
-                    .unwrap_or_else(|_| panic!("Failed to deserialize binary response as requested type"));
-                
+                let data: T =
+                    serde_json::from_str(&format!("\"{}\"", binary_str)).unwrap_or_else(|_| {
+                        panic!("Failed to deserialize binary response as requested type")
+                    });
+
                 Ok(FunctionResponse {
                     data,
                     status,
                     headers,
                 })
-            },
+            }
             ResponseType::Stream => {
                 // ストリームレスポンスの場合、通常のデシリアライズではなく
                 // 別のストリーム処理用のメソッドを使用する必要がある
@@ -325,7 +333,7 @@ impl FunctionsClient {
             }
         }
     }
-    
+
     /// JSONを返すファンクションを呼び出す（シンプルなラッパー）
     pub async fn invoke_json<T: DeserializeOwned, B: Serialize>(
         &self,
@@ -336,11 +344,13 @@ impl FunctionsClient {
             response_type: ResponseType::Json,
             ..Default::default()
         };
-        
-        let response = self.invoke::<T, B>(function_name, body, Some(options)).await?;
+
+        let response = self
+            .invoke::<T, B>(function_name, body, Some(options))
+            .await?;
         Ok(response.data)
     }
-    
+
     /// テキストを返すファンクションを呼び出す（シンプルなラッパー）
     pub async fn invoke_text<B: Serialize>(
         &self,
@@ -351,11 +361,13 @@ impl FunctionsClient {
             response_type: ResponseType::Text,
             ..Default::default()
         };
-        
-        let response = self.invoke::<String, B>(function_name, body, Some(options)).await?;
+
+        let response = self
+            .invoke::<String, B>(function_name, body, Some(options))
+            .await?;
         Ok(response.data)
     }
-    
+
     /// バイナリデータを返すファンクションを呼び出す（シンプルなラッパー）
     pub async fn invoke_binary<B: Serialize>(
         &self,
@@ -366,11 +378,13 @@ impl FunctionsClient {
             response_type: ResponseType::Binary,
             ..Default::default()
         };
-        
-        let response = self.invoke::<String, B>(function_name, body, Some(options)).await?;
+
+        let response = self
+            .invoke::<String, B>(function_name, body, Some(options))
+            .await?;
         Ok(response.data)
     }
-    
+
     /// ストリーミングレスポンスを取得するメソッド
     pub async fn invoke_stream<B: Serialize>(
         &self,
@@ -382,7 +396,7 @@ impl FunctionsClient {
             response_type: ResponseType::Stream,
             ..Default::default()
         });
-        
+
         // URLの構築
         let mut url = Url::parse(&self.base_url)?;
         url.path_segments_mut()
@@ -390,18 +404,19 @@ impl FunctionsClient {
             .push("functions")
             .push("v1")
             .push(function_name);
-            
+
         // リクエストの構築
-        let mut request_builder = self.http_client
+        let mut request_builder = self
+            .http_client
             .post(url)
             .header("apikey", &self.api_key)
             .header("Authorization", format!("Bearer {}", &self.api_key));
-        
+
         // リクエストタイムアウトの設定
         if let Some(timeout) = opts.timeout_seconds {
             request_builder = request_builder.timeout(Duration::from_secs(timeout));
         }
-        
+
         // コンテンツタイプの設定
         if let Some(content_type) = opts.content_type {
             request_builder = request_builder.header("Content-Type", content_type);
@@ -409,44 +424,45 @@ impl FunctionsClient {
             // デフォルトはJSON
             request_builder = request_builder.header("Content-Type", "application/json");
         }
-        
+
         // カスタムヘッダーの追加
         if let Some(headers) = opts.headers {
             for (key, value) in headers {
                 request_builder = request_builder.header(key, value);
             }
         }
-        
+
         // リクエストボディの追加
         if let Some(body_data) = body {
             request_builder = request_builder.json(&body_data);
         }
-        
+
         // リクエストの送信
-        let response = request_builder.send().await
-            .map_err(|e| {
-                if e.is_timeout() {
-                    FunctionsError::TimeoutError
-                } else {
-                    FunctionsError::from(e)
-                }
-            })?;
-            
+        let response = request_builder.send().await.map_err(|e| {
+            if e.is_timeout() {
+                FunctionsError::TimeoutError
+            } else {
+                FunctionsError::from(e)
+            }
+        })?;
+
         // ステータスコードの確認
         let status = response.status();
         if !status.is_success() {
             // ステータスコードのコピーを保持
             let status_copy = status;
-            
+
             // エラーレスポンスのパース
-            let error_body = response.text().await
+            let error_body = response
+                .text()
+                .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-                
+
             if let Ok(error_details) = serde_json::from_str::<FunctionErrorDetails>(&error_body) {
                 return Err(FunctionsError::FunctionError {
                     message: error_details.message.as_ref().map_or_else(
                         || format!("Function returned error status: {}", status_copy),
-                        |msg| msg.clone()
+                        |msg| msg.clone(),
                     ),
                     status: status_copy,
                     details: Some(error_details),
@@ -459,11 +475,15 @@ impl FunctionsClient {
                 });
             }
         }
-        
+
         // ストリームを返す
-        Ok(Box::pin(response.bytes_stream().map(|result| result.map_err(FunctionsError::from))))
+        Ok(Box::pin(
+            response
+                .bytes_stream()
+                .map(|result| result.map_err(FunctionsError::from)),
+        ))
     }
-    
+
     /// JSONストリームを取得するメソッド（SSE形式のJSONイベントを扱う）
     pub async fn invoke_json_stream<B: Serialize>(
         &self,
@@ -475,12 +495,15 @@ impl FunctionsClient {
         let json_stream = self.byte_stream_to_json(byte_stream);
         Ok(json_stream)
     }
-    
+
     /// バイトストリームをJSONストリームに変換する
-    fn byte_stream_to_json(&self, stream: ByteStream) -> Pin<Box<dyn Stream<Item = Result<Value>> + Send + '_>> {
+    fn byte_stream_to_json(
+        &self,
+        stream: ByteStream,
+    ) -> Pin<Box<dyn Stream<Item = Result<Value>> + Send + '_>> {
         Box::pin(async_stream::stream! {
             let mut line_stream = self.stream_to_lines(stream);
-            
+
             while let Some(line_result) = line_stream.next().await {
                 match line_result {
                     Ok(line) => {
@@ -488,7 +511,7 @@ impl FunctionsClient {
                         if line.trim().is_empty() {
                             continue;
                         }
-                        
+
                         // JSON解析を試みる
                         match serde_json::from_str::<Value>(&line) {
                             Ok(json_value) => {
@@ -507,19 +530,22 @@ impl FunctionsClient {
             }
         })
     }
-    
+
     /// ストリームを行に変換する
-    pub fn stream_to_lines(&self, stream: ByteStream) -> Pin<Box<dyn Stream<Item = Result<String>> + Send + '_>> {
+    pub fn stream_to_lines(
+        &self,
+        stream: ByteStream,
+    ) -> Pin<Box<dyn Stream<Item = Result<String>> + Send + '_>> {
         Box::pin(async_stream::stream! {
             let mut buf = BytesMut::new();
-            
+
             // 行ごとに処理
             tokio::pin!(stream);
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
                         buf.extend_from_slice(&chunk);
-                        
+
                         // バッファから完全な行を探して処理
                         while let Some(i) = buf.iter().position(|&b| b == b'\n') {
                             let line = if i > 0 && buf[i - 1] == b'\r' {
@@ -533,7 +559,7 @@ impl FunctionsClient {
                                 unsafe { buf.advance_mut(i + 1); }
                                 line
                             };
-                            
+
                             yield Ok(line);
                         }
                     },
@@ -543,7 +569,7 @@ impl FunctionsClient {
                     }
                 }
             }
-            
+
             // 最後の行が改行で終わっていない場合も処理
             if !buf.is_empty() {
                 let line = String::from_utf8_lossy(&buf).to_string();
@@ -553,7 +579,10 @@ impl FunctionsClient {
     }
 
     /// 関数リクエストを作成する
-    pub fn create_request<T: DeserializeOwned>(&self, function_name: &str) -> FunctionRequest<'_, T> {
+    pub fn create_request<T: DeserializeOwned>(
+        &self,
+        function_name: &str,
+    ) -> FunctionRequest<'_, T> {
         FunctionRequest {
             client: self,
             function_name: function_name.to_string(),
@@ -565,7 +594,7 @@ impl FunctionsClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     async fn test_invoke() {
         // TODO: モック実装を用いたテスト

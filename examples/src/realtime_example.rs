@@ -1,17 +1,19 @@
-use supabase_rust_gftd::prelude::*;
-use supabase_rust_gftd::Supabase;
-use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, RealtimeClient, FilterOperator, DatabaseFilter};
 use dotenv::dotenv;
-use std::env;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use tokio::time::{sleep, Duration};
-use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::io;
 use serde_json::json;
+use std::collections::HashMap;
+use std::env;
+use std::io;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::realtime::{
+    ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator, RealtimeClient,
+};
+use supabase_rust_gftd::Supabase;
+use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,20 +38,23 @@ struct RealtimePayload<T> {
 }
 
 /// 高度なフィルタリング機能の例
-async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std::result::Result<(), Box<dyn std::error::Error>> {
+async fn run_advanced_filter_example(
+    supabase: &Supabase,
+    user_id: &str,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 高度なリアルタイムフィルタリングの例 ===\n");
-    
+
     // リアルタイムクライアントを取得
     let realtime = supabase.realtime();
-    
+
     // メッセージ受信カウンターを作成
     let counter = Arc::new(AtomicU32::new(0));
     let counter_clone = counter.clone();
-    
+
     // 高度なフィルターを使用してチャンネル作成
     // 完了済みタスクだけを監視する例
     println!("完了済みタスク（is_complete = true）のみを監視するチャンネルを作成しています...");
-    
+
     let channel = realtime
         .channel("filtered-tasks")
         .on(
@@ -62,12 +67,15 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
                 let counter = counter_clone.clone();
                 println!("フィルター付きチャンネルで受信: {:?}", payload);
                 counter.fetch_add(1, Ordering::SeqCst);
-                
+
                 if let Some(record) = payload.data.get("record") {
                     if let Some(title) = record.get("title") {
-                        println!("フィルター付きチャンネルで受信: 完了済みタスク「{}」", title);
+                        println!(
+                            "フィルター付きチャンネルで受信: 完了済みタスク「{}」",
+                            title
+                        );
                     }
-                    
+
                     if let Some(is_complete) = record.get("is_complete") {
                         // タスクは必ず完了済み (is_complete = true) のはず
                         if let Some(is_complete) = is_complete.as_bool() {
@@ -79,12 +87,12 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
         )
         .subscribe()
         .await?;
-    
+
     println!("フィルター付きチャンネルを作成しました");
-    
+
     // 複数のタスクを作成し、一部だけを完了済みにする
     let postgrest = supabase.from("tasks");
-    
+
     // 5つのタスクを作成（最初は全て未完了）
     for i in 1..6 {
         let task = Task {
@@ -95,18 +103,16 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
             created_at: None,
             user_id: user_id.to_string(),
         };
-        
+
         println!("タスクを作成: {}", task.title);
-        let insert_result = postgrest
-            .insert(json!(task))
-            .await?;
-        
+        let insert_result = postgrest.insert(json!(task)).await?;
+
         let task_id = if let Some(task) = insert_result.get(0) {
             task["id"].as_i64().unwrap()
         } else {
             continue;
         };
-        
+
         // 偶数番目のタスクを完了済みに更新（フィルターに合致）
         if i % 2 == 0 {
             println!("タスク {} を完了済みに更新（フィルターに合致）", i);
@@ -114,24 +120,24 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
                 .eq("id", &task_id.to_string())
                 .update(json!({ "is_complete": true }))
                 .await?;
-            
+
             println!("更新結果: {:?}", update_result);
         }
-        
+
         // 少し待機してイベントを処理させる
         sleep(Duration::from_millis(500)).await;
     }
-    
+
     // 少し待機してすべてのイベントを処理させる
     sleep(Duration::from_secs(2)).await;
-    
+
     // 複合条件を使用したフィルタリングを追加で試す
     println!("\n複合条件を使ったフィルタリングテスト:");
-    
+
     // カウンターをリセット
     let counter2 = Arc::new(AtomicU32::new(0));
     let counter2_clone = counter2.clone();
-    
+
     // タイトルに「3」または「5」を含み、かつ未完了のタスクに一致するフィルター
     let channel2 = realtime
         .channel("complex-filter")
@@ -157,17 +163,17 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
                 let counter = counter2_clone.clone();
                 println!("複合フィルターで受信: {:?}", payload);
                 counter.fetch_add(1, Ordering::SeqCst);
-                
+
                 if let Some(record) = payload.data.get("record") {
                     if let Some(title) = record.get("title") {
                         println!("複合フィルターで受信: 「{}」", title);
-                        
+
                         if let Some(title_str) = title.as_str() {
                             // タスクのタイトルには「3」または「5」が含まれるはず
                             assert!(title_str.contains('3') || title_str.contains('5'));
                         }
                     }
-                    
+
                     if let Some(is_complete) = record.get("is_complete") {
                         // タスクは必ず未完了 (is_complete = false) のはず
                         if let Some(is_complete) = is_complete.as_bool() {
@@ -179,14 +185,14 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
         )
         .subscribe()
         .await?;
-    
+
     println!("複合フィルター付きチャンネルを作成しました");
-    
+
     // タスク3と5を更新
     for &i in &[3, 5] {
         let task_title = format!("フィルタリングテスト用タスク {}", i);
         println!("タスク {} の説明を更新（複合フィルターに合致）", i);
-        
+
         // タスクを取得
         let task_list: Vec<serde_json::Value> = postgrest
             .select("*")
@@ -194,55 +200,58 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
             .eq("user_id", &user_id)
             .execute()
             .await?;
-        
+
         if !task_list.is_empty() {
             let task_id = task_list[0]["id"].as_i64().unwrap();
-            
+
             // タスクを更新
             let update_result = postgrest
                 .eq("id", &task_id.to_string())
-                .update(json!({ 
+                .update(json!({
                     "description": format!("複合フィルターテスト用に更新 {}", i)
                 }))
                 .await?;
-            
+
             println!("更新結果: {:?}", update_result);
         }
-        
+
         // 少し待機
         sleep(Duration::from_millis(500)).await;
     }
-    
+
     // 少し待機してすべてのイベントを処理させる
     sleep(Duration::from_secs(2)).await;
-    
+
     // 結果を確認
     let received_count = counter.load(Ordering::SeqCst);
-    println!("\n検証: 完了済みタスクフィルターで受信したイベント数: {}", received_count);
-    
+    println!(
+        "\n検証: 完了済みタスクフィルターで受信したイベント数: {}",
+        received_count
+    );
+
     let received_count2 = counter2.load(Ordering::SeqCst);
-    println!("検証: 複合フィルターで受信したイベント数: {}", received_count2);
-    
+    println!(
+        "検証: 複合フィルターで受信したイベント数: {}",
+        received_count2
+    );
+
     // 購読を終了
     // トークンを使用してチャンネルの使用を終了
     // 注: unsubscribe メソッドがなくても、subscription がドロップされると内部的にクリーンアップされます
     println!("\n購読を終了します...");
     drop(channel);
     drop(channel2);
-    
+
     println!("購読を終了しました");
-    
+
     // テスト後のクリーンアップ
     println!("\nテスト後のクリーンアップ...");
-    
+
     // 作成したテストデータを削除
-    let delete_result = postgrest
-        .eq("user_id", &user_id)
-        .delete()
-        .await?;
-    
+    let delete_result = postgrest.eq("user_id", &user_id).delete().await?;
+
     println!("削除結果: {:?}", delete_result);
-    
+
     Ok(())
 }
 
@@ -250,41 +259,38 @@ async fn run_advanced_filter_example(supabase: &Supabase, user_id: &str) -> std:
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
-    
+
     // Get Supabase URL and key from environment variables
     let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
-    
+
     // Initialize the Supabase client
     let supabase = Supabase::new(&supabase_url, &supabase_key);
-    
+
     println!("Starting Realtime example");
-    
+
     // First, sign up a test user for our examples
     let test_email = format!("test-realtime-{}@example.com", uuid::Uuid::new_v4());
     let test_password = "password123";
-    
-    let sign_up_result = supabase
-        .auth()
-        .sign_up(&test_email, test_password)
-        .await?;
-    
+
+    let sign_up_result = supabase.auth().sign_up(&test_email, test_password).await?;
+
     let user_id = sign_up_result.user.id;
     println!("Created test user with ID: {}", user_id);
-    
+
     // タスクテーブルの準備
     println!("\n基本的なリアルタイム購読のデモを開始します");
-    
+
     // リアルタイムクライアントを取得
     let realtime = supabase.realtime();
-    
+
     // シンプルなチャンネルを作成
     println!("Tasksテーブルに対する基本的なチャンネルを作成します...");
-    
+
     // メッセージを受信するカウンター
     let message_counter = Arc::new(AtomicU32::new(0));
     let counter_clone = message_counter.clone();
-    
+
     // チャンネルを作成し、tasksテーブルの変更を購読
     // 改善されたchannel()メソッドを使用
     let channel = realtime
@@ -298,27 +304,39 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 let counter = counter_clone.clone();
                 // 受信メッセージをカウント
                 counter.fetch_add(1, Ordering::SeqCst);
-                
+
                 // JSONペイロードをパース
-                if let Ok(payload) = serde_json::from_value::<RealtimePayload<Task>>(json!(payload.data)) {
+                if let Ok(payload) =
+                    serde_json::from_value::<RealtimePayload<Task>>(json!(payload.data))
+                {
                     match payload.event_type.as_str() {
                         "INSERT" => {
                             if let Some(record) = payload.record {
-                                println!("INSERT イベント: タスク「{}」が作成されました", record.title);
+                                println!(
+                                    "INSERT イベント: タスク「{}」が作成されました",
+                                    record.title
+                                );
                             }
-                        },
+                        }
                         "UPDATE" => {
-                            if let (Some(record), Some(old)) = (payload.record, payload.old_record) {
-                                println!("UPDATE イベント: タスク「{}」が更新されました", record.title);
+                            if let (Some(record), Some(old)) = (payload.record, payload.old_record)
+                            {
+                                println!(
+                                    "UPDATE イベント: タスク「{}」が更新されました",
+                                    record.title
+                                );
                                 println!("  更新前: is_complete = {}", old.is_complete);
                                 println!("  更新後: is_complete = {}", record.is_complete);
                             }
-                        },
+                        }
                         "DELETE" => {
                             if let Some(old) = payload.old_record {
-                                println!("DELETE イベント: タスク「{}」が削除されました", old.title);
+                                println!(
+                                    "DELETE イベント: タスク「{}」が削除されました",
+                                    old.title
+                                );
                             }
-                        },
+                        }
                         _ => println!("Unknown event type: {}", payload.event_type),
                     }
                 } else {
@@ -328,15 +346,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         )
         .subscribe()
         .await?;
-    
+
     println!("チャンネルの購読を開始しました");
-    
+
     // いくつかのタスクを作成して更新・削除し、リアルタイムイベントをテスト
     let postgrest = supabase.from("tasks");
-    
+
     // 1. タスクを作成
     println!("\nテスト用タスクを作成します");
-    
+
     for i in 1..4 {
         let task = Task {
             id: None,
@@ -346,20 +364,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             created_at: None,
             user_id: user_id.clone(),
         };
-        
-        postgrest
-            .insert(json!(task))
-            .await?;
-        
+
+        postgrest.insert(json!(task)).await?;
+
         println!("タスク {} を作成しました", i);
-        
+
         // イベントが処理される時間を確保
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    
+
     // 2. タスクを更新
     println!("\nタスク1を「完了」に更新します");
-    
+
     // タスク1を検索
     let task1_list = postgrest
         .select("*")
@@ -367,10 +383,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
         .await?;
-    
+
     if !task1_list.is_empty() {
         let task1_id = task1_list[0]["id"].as_i64().unwrap();
-        
+
         // タスクを更新
         postgrest
             .update(json!({ "is_complete": true }))
@@ -378,15 +394,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .execute::<serde_json::Value>()
             .await?;
     }
-    
+
     println!("タスク1を更新しました");
-    
+
     // イベントが処理される時間を確保
     tokio::time::sleep(Duration::from_secs(1)).await;
-    
+
     // 3. タスクを削除
     println!("\nタスク2を削除します");
-    
+
     // タスク2を検索
     let task2_list = postgrest
         .select("*")
@@ -394,10 +410,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
         .await?;
-    
+
     if !task2_list.is_empty() {
         let task2_id = task2_list[0]["id"].as_i64().unwrap();
-        
+
         // タスクを削除
         postgrest
             .delete()
@@ -405,43 +421,45 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .execute::<serde_json::Value>()
             .await?;
     }
-    
+
     println!("タスク2を削除しました");
-    
+
     // イベントが処理される時間を確保
     tokio::time::sleep(Duration::from_secs(1)).await;
-    
+
     // 結果を表示
     let received_count = message_counter.load(Ordering::SeqCst);
     println!("\n受信したリアルタイムイベント数: {}", received_count);
     println!("期待値: 5 (作成イベント3件 + 更新イベント1件 + 削除イベント1件)");
-    
+
     // 高度なフィルタリングの例を実行
     if let Err(e) = run_advanced_filter_example(&supabase, &user_id).await {
         println!("フィルタリング例でエラーが発生しました: {}", e);
     }
-    
+
     // クリーンアップ - 作成したすべてのタスクを削除
     println!("\nクリーンアップ - すべてのテストタスクを削除");
-    
+
     postgrest
         .delete()
         .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
         .await?;
-    
+
     println!("すべてのテストタスクを削除しました");
-    
+
     // チャンネルの購読を解除
     println!("\n続行するには何かキーを押してください...");
     let mut input = String::new();
-    io::stdin().read_line(&mut input).map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-    
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+
     // 明示的にチャンネルを解除
     channel.unsubscribe().await?;
     println!("チャンネルの購読を解除しました");
-    
+
     println!("Realtime example completed");
-    
+
     Ok(())
 }
