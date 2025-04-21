@@ -5,7 +5,7 @@
 
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
@@ -380,6 +380,12 @@ impl PresenceState {
 #[derive(Debug, Clone, Serialize)]
 pub struct PresenceChanges {
     event: String,
+}
+
+impl Default for PresenceChanges {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PresenceChanges {
@@ -971,7 +977,7 @@ impl<'a> ChannelBuilder<'a> {
 
             let message = Message::Text(
                 serde_json::to_string(&join_payload)
-                    .map_err(|e| RealtimeError::SerializationError(e))?,
+                    .map_err(RealtimeError::SerializationError)?,
             );
 
             socket.send(message).await.map_err(|e| {
@@ -990,7 +996,7 @@ impl<'a> ChannelBuilder<'a> {
 
         Ok(Subscription {
             id: self.client.next_ref(),
-            channel: channel,
+            channel,
         })
     }
 

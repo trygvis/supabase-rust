@@ -420,9 +420,9 @@ impl PostgrestClient {
 
         // CSVフォーマットを指定
         if url.contains('?') {
-            url.push_str("&");
+            url.push('&');
         } else {
-            url.push_str("?");
+            url.push('?');
         }
         url.push_str("accept=text/csv");
 
@@ -454,7 +454,7 @@ impl PostgrestClient {
             .headers(self.headers.clone())
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -495,7 +495,7 @@ impl PostgrestClient {
             .json(&self.rpc_params.as_ref().unwrap())
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -529,7 +529,7 @@ impl PostgrestClient {
             .json(&values)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -563,7 +563,7 @@ impl PostgrestClient {
             .json(&values)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -596,7 +596,7 @@ impl PostgrestClient {
             .headers(self.headers.clone())
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -661,7 +661,7 @@ impl PostgrestClient {
             .json(&request_body)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -786,7 +786,7 @@ impl PostgrestTransaction {
             .json(&commit_body)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -832,7 +832,7 @@ impl PostgrestTransaction {
             .json(&rollback_body)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -879,7 +879,7 @@ impl PostgrestTransaction {
             .json(&savepoint_body)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();
@@ -923,7 +923,7 @@ impl PostgrestTransaction {
             .json(&rollback_body)
             .send()
             .await
-            .map_err(|e| PostgrestError::NetworkError(e))?;
+            .map_err(PostgrestError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = response.status();

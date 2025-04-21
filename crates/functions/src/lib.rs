@@ -481,7 +481,8 @@ impl FunctionsClient {
         headers.insert("Accept".to_string(), "application/octet-stream".to_string());
         custom_opts.headers = Some(headers);
 
-        self.invoke_stream(function_name, body, Some(custom_opts)).await
+        self.invoke_stream(function_name, body, Some(custom_opts))
+            .await
     }
 
     /// チャンク単位でバイナリを処理する補助メソッド
@@ -496,14 +497,14 @@ impl FunctionsClient {
     {
         Box::pin(async_stream::stream! {
             let mut buffer = BytesMut::new();
-            
+
             tokio::pin!(stream);
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
                     Ok(chunk) => {
                         // バッファに追加
                         buffer.extend_from_slice(&chunk);
-                        
+
                         // chunk_sizeを超えたら処理
                         while buffer.len() >= chunk_size {
                             let chunk_to_process = buffer.split_to(chunk_size);
@@ -522,7 +523,7 @@ impl FunctionsClient {
                     }
                 }
             }
-            
+
             // 残りのバッファを処理
             if !buffer.is_empty() {
                 match processor(&buffer) {
@@ -712,7 +713,7 @@ impl FunctionsClient {
                         }
                     },
                     Err(e) => {
-                        yield Err(FunctionsError::from(e));
+                        yield Err(e);
                         break;
                     }
                 }

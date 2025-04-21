@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::RwLock;
 use thiserror::Error;
-use urlencoding;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -117,6 +116,7 @@ impl OAuthProvider {
 
 /// OAuth サインイン設定
 #[derive(Debug, Clone, Serialize)]
+#[derive(Default)]
 pub struct OAuthSignInOptions {
     pub redirect_to: Option<String>,
     pub scopes: Option<String>,
@@ -124,28 +124,14 @@ pub struct OAuthSignInOptions {
     pub skip_browser_redirect: Option<bool>,
 }
 
-impl Default for OAuthSignInOptions {
-    fn default() -> Self {
-        Self {
-            redirect_to: None,
-            scopes: None,
-            provider_scope: None,
-            skip_browser_redirect: None,
-        }
-    }
-}
 
 /// メール確認設定
 #[derive(Debug, Clone, Serialize)]
+#[derive(Default)]
 pub struct EmailConfirmOptions {
     pub redirect_to: Option<String>,
 }
 
-impl Default for EmailConfirmOptions {
-    fn default() -> Self {
-        Self { redirect_to: None }
-    }
-}
 
 /// MFAファクターのタイプ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -239,26 +225,30 @@ impl AdminAuth {
     }
 
     /// 指定されたIDのユーザーを取得します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `user_id` - 取得するユーザーのID
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// let user = supabase.auth().admin().get_user_by_id("some-user-id").await?;
     /// ```
     pub async fn get_user_by_id(&self, user_id: &str) -> Result<User, AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .get(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -266,44 +256,51 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         let user_data = response.json::<serde_json::Value>().await?;
-        
+
         match serde_json::from_value::<User>(user_data) {
             Ok(user) => Ok(user),
             Err(err) => Err(AuthError::SerializationError(err)),
         }
     }
-    
+
     /// 全ユーザーを取得します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `page` - ページ番号（オプション、デフォルトは1）
     /// * `per_page` - ページあたりのユーザー数（オプション、デフォルトは50）
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// let users = supabase.auth().admin().list_users(Some(1), Some(100)).await?;
     /// ```
     pub async fn list_users(
         &self,
         page: Option<u32>,
-        per_page: Option<u32>
+        per_page: Option<u32>,
     ) -> Result<Vec<User>, AuthError> {
         let page = page.unwrap_or(1);
         let per_page = per_page.unwrap_or(50);
-        
-        let url = format!("{}/admin/users?page={}&per_page={}", self.url, page, per_page);
-        
-        let response = self.http_client
+
+        let url = format!(
+            "{}/admin/users?page={}&per_page={}",
+            self.url, page, per_page
+        );
+
+        let response = self
+            .http_client
             .get(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -311,32 +308,32 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         let users_data = response.json::<serde_json::Value>().await?;
-        
+
         match serde_json::from_value::<Vec<User>>(users_data) {
             Ok(users) => Ok(users),
             Err(err) => Err(AuthError::SerializationError(err)),
         }
     }
-    
+
     /// 新しいユーザーを作成します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `email` - ユーザーのEメールアドレス
     /// * `password` - ユーザーのパスワード（オプション）
     /// * `user_metadata` - ユーザーのメタデータ（オプション）
     /// * `email_confirm` - メールアドレスを確認済みとしてマークするかどうか（オプション、デフォルトはfalse）
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// let metadata = serde_json::json!({
     ///     "first_name": "John",
     ///     "last_name": "Doe"
     /// });
-    /// 
+    ///
     /// let user = supabase.auth().admin().create_user(
     ///     "user@example.com",
     ///     Some("password123"),
@@ -349,31 +346,35 @@ impl AdminAuth {
         email: &str,
         password: Option<&str>,
         user_metadata: Option<serde_json::Value>,
-        email_confirm: Option<bool>
+        email_confirm: Option<bool>,
     ) -> Result<User, AuthError> {
         let url = format!("{}/admin/users", self.url);
-        
+
         let mut payload = serde_json::json!({
             "email": email,
             "email_confirm": email_confirm.unwrap_or(false)
         });
-        
+
         if let Some(pw) = password {
             payload["password"] = serde_json::Value::String(pw.to_string());
         }
-        
+
         if let Some(metadata) = user_metadata {
             payload["user_metadata"] = metadata;
         }
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .post(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .json(&payload)
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -381,36 +382,40 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         let user_data = response.json::<serde_json::Value>().await?;
-        
+
         match serde_json::from_value::<User>(user_data) {
             Ok(user) => Ok(user),
             Err(err) => Err(AuthError::SerializationError(err)),
         }
     }
-    
+
     /// ユーザーを削除します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `user_id` - 削除するユーザーのID
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// supabase.auth().admin().delete_user("some-user-id").await?;
     /// ```
     pub async fn delete_user(&self, user_id: &str) -> Result<(), AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .delete(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -418,19 +423,19 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         Ok(())
     }
-    
+
     /// ユーザーの情報を更新します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `user_id` - 更新するユーザーのID
     /// * `attributes` - 更新するユーザー属性（email, password, user_metadata, email_confirm, phone_confirm など）
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// let attributes = serde_json::json!({
     ///     "email": "newemail@example.com",
@@ -440,7 +445,7 @@ impl AdminAuth {
     ///     },
     ///     "email_confirm": true
     /// });
-    /// 
+    ///
     /// let user = supabase.auth().admin().update_user(
     ///     "some-user-id",
     ///     attributes
@@ -449,18 +454,22 @@ impl AdminAuth {
     pub async fn update_user(
         &self,
         user_id: &str,
-        attributes: serde_json::Value
+        attributes: serde_json::Value,
     ) -> Result<User, AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .put(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .json(&attributes)
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -468,24 +477,24 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         let user_data = response.json::<serde_json::Value>().await?;
-        
+
         match serde_json::from_value::<User>(user_data) {
             Ok(user) => Ok(user),
             Err(err) => Err(AuthError::SerializationError(err)),
         }
     }
-    
+
     /// メール招待リンクを送信します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `email` - 招待するユーザーのEメールアドレス
     /// * `redirect_to` - 認証後のリダイレクト先URL（オプション）
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// supabase.auth().admin().invite_user_by_email(
     ///     "user@example.com",
@@ -495,26 +504,30 @@ impl AdminAuth {
     pub async fn invite_user_by_email(
         &self,
         email: &str,
-        redirect_to: Option<&str>
+        redirect_to: Option<&str>,
     ) -> Result<User, AuthError> {
         let url = format!("{}/admin/users/invite", self.url);
-        
+
         let mut payload = serde_json::json!({
             "email": email
         });
-        
+
         if let Some(redirect) = redirect_to {
             payload["redirect_to"] = serde_json::Value::String(redirect.to_string());
         }
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .post(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .json(&payload)
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -522,44 +535,48 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         let user_data = response.json::<serde_json::Value>().await?;
-        
+
         match serde_json::from_value::<User>(user_data) {
             Ok(user) => Ok(user),
             Err(err) => Err(AuthError::SerializationError(err)),
         }
     }
-    
+
     /// ユーザーのMFAファクターを削除します
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `user_id` - ユーザーのID
     /// * `factor_id` - 削除するMFAファクターのID
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// supabase.auth().admin().delete_user_factor(
-    ///     "some-user-id", 
+    ///     "some-user-id",
     ///     "factor-id"
     /// ).await?;
     /// ```
     pub async fn delete_user_factor(
         &self,
         user_id: &str,
-        factor_id: &str
+        factor_id: &str,
     ) -> Result<(), AuthError> {
         let url = format!("{}/admin/users/{}/factors/{}", self.url, user_id, factor_id);
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .delete(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -567,20 +584,20 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         Ok(())
     }
-    
+
     /// メールリンクを生成します (マジックリンク, パスワードリセットなど)
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `email` - ユーザーのEメールアドレス
     /// * `type` - リンクの種類 ("signup", "magiclink", "recovery", "invite")
     /// * `redirect_to` - 認証後のリダイレクト先URL（オプション）
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// let link = supabase.auth().admin().generate_link(
     ///     "user@example.com",
@@ -592,27 +609,31 @@ impl AdminAuth {
         &self,
         email: &str,
         link_type: &str,
-        redirect_to: Option<&str>
+        redirect_to: Option<&str>,
     ) -> Result<String, AuthError> {
         let url = format!("{}/admin/users/generate_link", self.url);
-        
+
         let mut payload = serde_json::json!({
             "email": email,
             "type": link_type
         });
-        
+
         if let Some(redirect) = redirect_to {
             payload["redirect_to"] = serde_json::Value::String(redirect.to_string());
         }
-        
-        let response = self.http_client
+
+        let response = self
+            .http_client
             .post(&url)
             .header("apikey", &self.service_role_key)
-            .header("Authorization", format!("Bearer {}", &self.service_role_key))
+            .header(
+                "Authorization",
+                format!("Bearer {}", &self.service_role_key),
+            )
             .json(&payload)
             .send()
             .await?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(AuthError::ApiError(format!(
@@ -620,9 +641,9 @@ impl AdminAuth {
                 error_text
             )));
         }
-        
+
         let data = response.json::<serde_json::Value>().await?;
-        
+
         match data.get("action_link") {
             Some(link) => match link.as_str() {
                 Some(s) => Ok(s.to_string()),
@@ -645,15 +666,15 @@ impl Auth {
             admin: None,
         }
     }
-    
+
     /// 管理者用APIクライアントを初期化
-    /// 
+    ///
     /// # 引数
-    /// 
+    ///
     /// * `service_role_key` - サービスロールキー（重要: クライアント側では使用せず、サーバー側でのみ使用する）
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// // サーバーサイドでのみ使用！
     /// let auth = supabase.auth().init_admin("your-service-role-key");
@@ -663,15 +684,15 @@ impl Auth {
         self.admin = Some(AdminAuth::new(
             &self.url,
             service_role_key,
-            self.http_client.clone()
+            self.http_client.clone(),
         ));
         self
     }
-    
+
     /// 管理者用APIクライアントを取得
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// // サーバーサイドでのみ使用！
     /// if let Some(admin) = supabase.auth().admin() {

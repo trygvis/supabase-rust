@@ -8,7 +8,6 @@ use reqwest::multipart::{Form, Part};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
 use tokio::fs::File;
@@ -781,7 +780,7 @@ impl<'a> StorageBucketClient<'a> {
         let file_size = file.metadata().await?.len() as usize;
 
         // チャンク数を計算
-        let chunk_count = (file_size + chunk_size - 1) / chunk_size;
+        let chunk_count = file_size.div_ceil(chunk_size);
 
         if chunk_count == 0 {
             return Err(StorageError::new("File is empty".to_string()));
@@ -852,7 +851,7 @@ impl<'a> StorageBucketClient<'a> {
             .header("Authorization", format!("Bearer {}", self.parent.api_key))
             .send()
             .await
-            .map_err(|e| StorageError::NetworkError(e))?;
+            .map_err(StorageError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = res.status();
@@ -871,7 +870,7 @@ impl<'a> StorageBucketClient<'a> {
         let bytes = res
             .bytes()
             .await
-            .map_err(|e| StorageError::NetworkError(e))?;
+            .map_err(StorageError::NetworkError)?;
         Ok(bytes)
     }
 
@@ -920,7 +919,7 @@ impl<'a> StorageBucketClient<'a> {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| StorageError::NetworkError(e))?;
+            .map_err(StorageError::NetworkError)?;
 
         // ステータスコードを事前に取得
         let status = res.status();
@@ -963,7 +962,7 @@ impl<'a> StorageBucketClient<'a> {
 
 // S3互換API用のモジュールを追加
 pub mod s3 {
-    use crate::{Result, StorageBucketClient, StorageError};
+    use crate::{Result, StorageError};
     use bytes::Bytes;
     use reqwest::Client;
     use serde::{Deserialize, Serialize};
