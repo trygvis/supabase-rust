@@ -21,9 +21,7 @@ mod error;
 pub use config::ClientOptions;
 pub use error::{Error, Result};
 
-use std::sync::Arc;
 use reqwest::Client;
-use url::Url;
 
 /// The main entry point for the Supabase Rust client
 pub struct Supabase {
@@ -185,15 +183,13 @@ impl Supabase {
     /// let result = supabase.rpc("calculate_total", json!({"user_id": 123}));
     /// ```
     pub fn rpc(&self, function_name: &str, params: serde_json::Value) -> postgrest::PostgrestClient {
-        let client = postgrest::PostgrestClient::new(
+        postgrest::PostgrestClient::rpc(
             &self.url,
             &self.key,
-            "rpc",
-            self.http_client.clone(),
-        );
-        
-        // rpc エンドポイントに関数名とパラメータを設定
-        client
+            function_name,
+            params,
+            self.http_client.clone()
+        )
     }
 }
 

@@ -1,4 +1,7 @@
 //! HTTP client abstraction for making requests to Supabase services
+//! 
+//! TODO: Consider moving this to a separate crate (`supabase-common` or similar)
+//! to avoid duplication across component crates in the future.
 
 use reqwest::{Client, RequestBuilder, Method, header::{HeaderMap, HeaderValue, HeaderName}};
 use serde::{Serialize, de::DeserializeOwned};

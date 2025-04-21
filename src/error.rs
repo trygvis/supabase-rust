@@ -44,14 +44,6 @@ pub enum Error {
     #[error("URL parse error: {0}")]
     UrlParseError(#[from] url::ParseError),
     
-    /// Unexpected errors
-    #[error("Unexpected error: {0}")]
-    UnexpectedError(String),
-    
-    /// Parameter validation errors
-    #[error("Validation error: {0}")]
-    ValidationError(String),
-    
     /// General errors
     #[error("General error: {0}")]
     GeneralError(String),
@@ -67,26 +59,6 @@ impl Error {
             code: code.into(),
             message: message.into(),
         }
-    }
-    
-    /// Create a new validation error
-    pub fn validation_error(message: impl Into<String>) -> Self {
-        Self::ValidationError(message.into())
-    }
-    
-    /// Create a new auth error
-    pub fn auth(message: impl Into<String>) -> Self {
-        Self::AuthError(supabase_auth::AuthError::new(message.into()))
-    }
-    
-    /// Create a new storage error
-    pub fn storage(message: impl Into<String>) -> Self {
-        Self::StorageError(supabase_storage::StorageError::new(message.into()))
-    }
-    
-    /// Create a new function error
-    pub fn function(message: impl Into<String>) -> Self {
-        Self::FunctionsError(supabase_functions::FunctionsError::new(message.into()))
     }
     
     /// Create a new general error
