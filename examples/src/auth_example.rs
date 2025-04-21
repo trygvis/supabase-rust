@@ -44,13 +44,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let access_token = sign_in_response.access_token;
     println!("\nAccess token: {}", access_token);
     
-    // ユーザー情報を取得
+    // ユーザー情報を取得 - APIの変更に対応
     println!("\nGetting user information");
     
-    let user_info = auth.get_user(&access_token).await?;
+    let user_info = auth.get_user().await?;
     
     println!("User info: {:?}", user_info);
     
+    // メタデータ更新機能は現在のAPIでは使用できないためコメントアウト
+    /*
     // メタデータを更新
     println!("\nUpdating user metadata");
     
@@ -62,11 +64,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let update_result = auth.update_user_metadata(&access_token, metadata).await?;
     
     println!("Update result: {:?}", update_result);
+    */
     
-    // サインアウト
+    // サインアウト - APIの変更に対応
     println!("\nSigning out");
     
-    auth.sign_out(&access_token).await?;
+    auth.sign_out().await?;
     
     println!("User signed out successfully");
     

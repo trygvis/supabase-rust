@@ -41,9 +41,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let user_id = sign_up_result.user.id;
     println!("Created test user with ID: {}", user_id);
     
-    // Get the PostgreSQL client for the "tasks" table
-    let postgrest_client = supabase.from("tasks");
-    
     // Example 1: Create a new task
     println!("\nExample 1: Creating a new task");
     
@@ -56,22 +53,23 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         user_id: user_id.clone(),
     };
     
-    // APIに合わせて修正: executeメソッドは単独で呼び出す必要がある
-    let insert_query = postgrest_client
-        .insert(serde_json::json!(new_task));
-    
-    let insert_result = insert_query.execute().await?;
+    // 正しい方法でデータを挿入
+    let insert_result = supabase
+        .from("tasks")
+        .insert(new_task)
+        .await?;
     
     println!("Task created: {:?}", insert_result);
     
     // Example 2: Select all tasks for the current user
     println!("\nExample 2: Selecting user's tasks");
     
-    let select_query = postgrest_client
+    let user_tasks: Vec<Value> = supabase
+        .from("tasks")
         .select("*")
-        .eq("user_id", &user_id);
-    
-    let user_tasks: Vec<Value> = select_query.execute().await?;
+        .eq("user_id", &user_id)
+        .execute()
+        .await?;
     
     println!("Found {} tasks for user", user_tasks.len());
     for (i, task) in user_tasks.iter().enumerate() {
@@ -83,11 +81,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         println!("\nExample 3: Updating a task");
         
         if let Some(task_id) = task.get("id") {
-            let update_query = postgrest_client
+            let task_id_str = task_id.to_string();
+            let update_result = supabase
+                .from("tasks")
+                .eq("id", &task_id_str)
                 .update(serde_json::json!({"is_complete": true}))
-                .eq("id", task_id.to_string());
+                .await?;
             
-            let update_result = update_query.execute().await?;
             println!("Task updated: {:?}", update_result);
         }
     }
@@ -95,11 +95,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 4: Delete all tasks for this test user
     println!("\nExample 4: Cleaning up - deleting user's tasks");
     
-    let delete_query = postgrest_client
+    let delete_result = supabase
+        .from("tasks")
+        .eq("user_id", &user_id)
         .delete()
-        .eq("user_id", &user_id);
+        .await?;
     
-    let delete_result = delete_query.execute().await?;
     println!("Deleted tasks: {:?}", delete_result);
     
     println!("Database example completed");

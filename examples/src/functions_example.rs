@@ -1,6 +1,6 @@
 use supabase_rust_gftd::prelude::*;
 use supabase_rust_gftd::Supabase;
-use supabase_rust_gftd::functions::InvokeFunctionOptions;
+use supabase_rust_gftd::functions::FunctionOptions;
 use dotenv::dotenv;
 use std::env;
 use serde::{Deserialize, Serialize};
@@ -17,7 +17,7 @@ struct HelloResponse {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Load environment variables from .env file
     dotenv().ok();
     
@@ -63,8 +63,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: "Rust".to_string(),
     };
     
-    match functions
-        .invoke::<HelloResponse>("hello-world", Some(json!(request_data)), InvokeFunctionOptions::default())
+    let function_request = functions.create_request::<HelloResponse>("hello-world");
+    
+    match function_request
+        .execute(Some(json!(request_data)), None)
         .await {
             Ok(response) => {
                 println!("Function response: {:?}", response);
@@ -95,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .sign_in_with_password(&test_email, test_password)
         .await?;
     
-    let access_token = sign_in_result.session.access_token;
+    let access_token = sign_in_result.access_token;
     println!("Got access token for authenticated requests");
     
     // Invoke the function with authentication
@@ -105,11 +107,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         name: "Authenticated Rust".to_string(),
     };
     
-    let options = InvokeFunctionOptions::default()
-        .set_authorization(Some(format!("Bearer {}", access_token)));
+    let function_request = functions.create_request::<HelloResponse>("hello-world");
+    let options = FunctionOptions {
+        headers: Some(json!({
+            "Authorization": format!("Bearer {}", access_token)
+        })),
+        ..Default::default()
+    };
     
-    match functions
-        .invoke::<HelloResponse>("hello-world", Some(json!(request_data)), options)
+    match function_request
+        .execute(Some(json!(request_data)), Some(options))
         .await {
             Ok(response) => {
                 println!("Authenticated function response: {:?}", response);
@@ -122,14 +129,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example of invoking a function with custom headers
     println!("Invoking function with custom headers");
     
-    let options = InvokeFunctionOptions::default()
-        .set_headers(Some(json!({
+    let function_request = functions.create_request::<HelloResponse>("hello-world");
+    let options = FunctionOptions {
+        headers: Some(json!({
             "x-custom-header": "custom-value",
             "x-client-info": "supabase-rust-client"
-        })));
+        })),
+        ..Default::default()
+    };
     
-    match functions
-        .invoke::<HelloResponse>("hello-world", Some(json!(request_data)), options)
+    match function_request
+        .execute(Some(json!(request_data)), Some(options))
         .await {
             Ok(response) => {
                 println!("Function response with custom headers: {:?}", response);
