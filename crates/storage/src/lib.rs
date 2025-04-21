@@ -17,6 +17,9 @@ use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path, query_param};
 use serde_json::json;
 
+/// 結果型
+pub type Result<T> = std::result::Result<T, StorageError>;
+
 /// エラー型
 #[derive(Error, Debug)]
 pub enum StorageError {
@@ -40,6 +43,12 @@ pub enum StorageError {
     
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
+    
+    #[error("Request error: {0}")]
+    RequestError(String),
+    
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
 }
 
 impl StorageError {
@@ -307,7 +316,7 @@ impl StorageClient {
     }
     
     /// バケット一覧を取得
-    pub async fn list_buckets(&self) -> Result<Vec<Bucket>, StorageError> {
+    pub async fn list_buckets(&self) -> Result<Vec<Bucket>> {
         let url = format!("{}/storage/v1/bucket", self.base_url);
         
         let response = self.http_client.get(&url)
@@ -326,7 +335,7 @@ impl StorageClient {
     }
     
     /// バケットを作成
-    pub async fn create_bucket(&self, bucket_id: &str, is_public: bool) -> Result<Bucket, StorageError> {
+    pub async fn create_bucket(&self, bucket_id: &str, is_public: bool) -> Result<Bucket> {
         let url = format!("{}/storage/v1/bucket", self.base_url);
         
         let payload = serde_json::json!({
@@ -353,7 +362,7 @@ impl StorageClient {
     }
     
     /// バケットを削除
-    pub async fn delete_bucket(&self, bucket_id: &str) -> Result<(), StorageError> {
+    pub async fn delete_bucket(&self, bucket_id: &str) -> Result<()> {
         let url = format!("{}/storage/v1/bucket/{}", self.base_url, bucket_id);
         
         let response = self.http_client.delete(&url)
@@ -370,7 +379,7 @@ impl StorageClient {
     }
     
     /// バケット情報を更新
-    pub async fn update_bucket(&self, bucket_id: &str, is_public: bool) -> Result<Bucket, StorageError> {
+    pub async fn update_bucket(&self, bucket_id: &str, is_public: bool) -> Result<Bucket> {
         let url = format!("{}/storage/v1/bucket/{}", self.base_url, bucket_id);
         
         let payload = serde_json::json!({
@@ -398,7 +407,7 @@ impl StorageClient {
 
 impl<'a> StorageBucketClient<'a> {
     /// ファイルをアップロード
-    pub async fn upload(&self, path: &str, file_path: &Path, options: Option<FileOptions>) -> Result<FileObject, StorageError> {
+    pub async fn upload(&self, path: &str, file_path: &Path, options: Option<FileOptions>) -> Result<FileObject> {
         let mut url = Url::parse(&self.parent.base_url)?;
         url.set_path(&format!("/storage/v1/object/{}/{}", self.bucket_id, path));
         
@@ -443,7 +452,7 @@ impl<'a> StorageBucketClient<'a> {
     }
     
     /// ファイルをダウンロード
-    pub async fn download(&self, path: &str) -> Result<Bytes, StorageError> {
+    pub async fn download(&self, path: &str) -> Result<Bytes> {
         let mut url = Url::parse(&self.parent.base_url)?;
         url.set_path(&format!("/storage/v1/object/{}/{}", self.bucket_id, path));
         
@@ -465,7 +474,7 @@ impl<'a> StorageBucketClient<'a> {
     }
     
     /// ファイル一覧を取得
-    pub async fn list(&self, prefix: &str, options: Option<ListOptions>) -> Result<Vec<FileObject>, StorageError> {
+    pub async fn list(&self, prefix: &str, options: Option<ListOptions>) -> Result<Vec<FileObject>> {
         let mut url = Url::parse(&self.parent.base_url)?;
         url.set_path(&format!("/storage/v1/object/list/{}", self.bucket_id));
         
@@ -508,7 +517,7 @@ impl<'a> StorageBucketClient<'a> {
     }
     
     /// ファイルを削除
-    pub async fn remove(&self, paths: Vec<&str>) -> Result<(), StorageError> {
+    pub async fn remove(&self, paths: Vec<&str>) -> Result<()> {
         let url = format!("{}/storage/v1/object/{}", self.parent.base_url, self.bucket_id);
         
         let payload = serde_json::json!({
@@ -536,7 +545,7 @@ impl<'a> StorageBucketClient<'a> {
     }
     
     /// 署名付きURLを作成
-    pub async fn create_signed_url(&self, path: &str, expires_in: i32) -> Result<String, StorageError> {
+    pub async fn create_signed_url(&self, path: &str, expires_in: i32) -> Result<String> {
         let url = format!("{}/storage/v1/object/sign/{}/{}", self.parent.base_url, self.bucket_id, path);
         
         let payload = serde_json::json!({
@@ -570,7 +579,7 @@ impl<'a> StorageBucketClient<'a> {
         &self,
         path: &str,
         options: Option<FileOptions>
-    ) -> Result<InitiateMultipartUploadResponse, StorageError> {
+    ) -> Result<InitiateMultipartUploadResponse> {
         let url = format!(
             "{}/storage/v1/upload/initiate",
             self.parent.base_url
@@ -613,7 +622,7 @@ impl<'a> StorageBucketClient<'a> {
         upload_id: &str,
         part_number: u32,
         data: Bytes
-    ) -> Result<UploadedPartInfo, StorageError> {
+    ) -> Result<UploadedPartInfo> {
         let url = format!(
             "{}/storage/v1/upload/part",
             self.parent.base_url
@@ -658,7 +667,7 @@ impl<'a> StorageBucketClient<'a> {
         upload_id: &str,
         path: &str,
         parts: Vec<UploadedPartInfo>
-    ) -> Result<FileObject, StorageError> {
+    ) -> Result<FileObject> {
         let url = format!(
             "{}/storage/v1/upload/complete",
             self.parent.base_url
@@ -674,7 +683,7 @@ impl<'a> StorageBucketClient<'a> {
             .header("Content-Type", "application/json")
             .query(&[
                 ("bucket", &self.bucket_id),
-                ("key", &path),
+                ("key", path.to_string()),
             ])
             .json(&payload)
             .send()
@@ -695,7 +704,7 @@ impl<'a> StorageBucketClient<'a> {
         &self,
         upload_id: &str,
         path: &str
-    ) -> Result<(), StorageError> {
+    ) -> Result<()> {
         let url = format!(
             "{}/storage/v1/upload/abort",
             self.parent.base_url
@@ -733,7 +742,7 @@ impl<'a> StorageBucketClient<'a> {
         file_path: &Path,
         chunk_size: usize,
         options: Option<FileOptions>
-    ) -> Result<FileObject, StorageError> {
+    ) -> Result<FileObject> {
         // ファイルを開く
         let mut file = File::open(file_path).await?;
         
@@ -786,7 +795,7 @@ impl<'a> StorageBucketClient<'a> {
     }
     
     /// 画像に変換を適用して取得する
-    pub async fn transform_image(&self, path: &str, options: ImageTransformOptions) -> Result<Bytes, StorageError> {
+    pub async fn transform_image(&self, path: &str, options: ImageTransformOptions) -> Result<Bytes> {
         let url = format!(
             "{}/object/transform/authenticated/{}/{}",
             self.parent.base_url, self.bucket_id, path
@@ -843,7 +852,7 @@ impl<'a> StorageBucketClient<'a> {
         path: &str,
         options: ImageTransformOptions,
         expires_in: i32
-    ) -> Result<String, StorageError> {
+    ) -> Result<String> {
         let url = format!(
             "{}/object/sign/{}/{}",
             self.parent.base_url, self.bucket_id, path
@@ -884,6 +893,17 @@ impl<'a> StorageBucketClient<'a> {
             .map_err(|e| StorageError::SerializationError(e))?;
             
         Ok(response.signed_url)
+    }
+
+    /// S3互換クライアントを作成
+    pub fn s3_compatible(&self, options: s3::S3Options) -> s3::S3BucketClient {
+        s3::S3BucketClient::new(
+            &self.parent.base_url,
+            &self.parent.api_key,
+            &self.bucket_id,
+            self.parent.http_client.clone(),
+            options
+        )
     }
 }
 
@@ -1263,21 +1283,6 @@ pub mod s3 {
             
             Ok(())
         }
-    }
-}
-
-impl StorageBucketClient {
-    // 既存のメソッドは維持しながら、S3互換モードを追加
-
-    /// S3互換モードでクライアントを取得
-    pub fn s3_compatible(&self, options: s3::S3Options) -> s3::S3BucketClient {
-        s3::S3BucketClient::new(
-            &self.parent.base_url,
-            &self.parent.api_key,
-            &self.bucket_id,
-            self.parent.http_client.clone(),
-            options
-        )
     }
 }
 

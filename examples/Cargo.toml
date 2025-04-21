@@ -13,6 +13,7 @@ uuid = { version = "1.5", features = ["v4"] }
 futures = "0.3"
 mime = "0.3"
 bytes = "1.0"
+tempfile = "3.7"
 
 [[bin]]
 name = "auth_example"

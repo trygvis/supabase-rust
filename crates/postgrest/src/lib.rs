@@ -384,28 +384,31 @@ impl PostgrestClient {
     
     /// データを取得
     pub async fn execute<T: for<'de> Deserialize<'de>>(&self) -> Result<Vec<T>, PostgrestError> {
-        if self.is_rpc {
-            // RPCの場合は単一の結果を配列に入れて返す
-            let result = self.execute_rpc().await?;
-            let single_result: T = serde_json::from_value(result)?;
-            return Ok(vec![single_result]);
-        }
-
         let url = self.build_url()?;
         
-        let response = self.http_client.get(url)
+        let response = self.http_client
+            .get(&url)
             .headers(self.headers.clone())
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+        // ステータスコードを事前に取得
+        let status = response.status();
+        
+        if !status.is_success() {
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::ApiError(format!(
+                "API error: {} (Status: {})",
+                error_text,
+                status
+            )));
         }
         
-        let data = response.json::<Vec<T>>().await?;
-        
-        Ok(data)
+        response.json::<Vec<T>>().await
+            .map_err(|e| PostgrestError::SerializationError(e))
     }
     
     /// RPC関数を実行
@@ -432,60 +435,89 @@ impl PostgrestClient {
     pub async fn insert<T: Serialize>(&self, values: T) -> Result<Value, PostgrestError> {
         let url = self.build_url()?;
         
-        let response = self.http_client.post(url)
+        let response = self.http_client
+            .post(&url)
             .headers(self.headers.clone())
             .json(&values)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+        // ステータスコードを事前に取得
+        let status = response.status();
+        
+        if !status.is_success() {
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::ApiError(format!(
+                "API error: {} (Status: {})",
+                error_text,
+                status
+            )));
         }
         
-        let data = response.json::<Value>().await?;
-        
-        Ok(data)
+        response.json::<Value>().await
+            .map_err(|e| PostgrestError::SerializationError(e))
     }
     
     /// データを更新
     pub async fn update<T: Serialize>(&self, values: T) -> Result<Value, PostgrestError> {
         let url = self.build_url()?;
         
-        // PATCH メソッドで更新
-        let response = self.http_client.patch(url)
+        let response = self.http_client
+            .patch(&url)
             .headers(self.headers.clone())
             .json(&values)
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+        // ステータスコードを事前に取得
+        let status = response.status();
+        
+        if !status.is_success() {
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::ApiError(format!(
+                "API error: {} (Status: {})",
+                error_text,
+                status
+            )));
         }
         
-        let data = response.json::<Value>().await?;
-        
-        Ok(data)
+        response.json::<Value>().await
+            .map_err(|e| PostgrestError::SerializationError(e))
     }
     
     /// データを削除
     pub async fn delete(&self) -> Result<Value, PostgrestError> {
         let url = self.build_url()?;
         
-        let response = self.http_client.delete(url)
+        let response = self.http_client
+            .delete(&url)
             .headers(self.headers.clone())
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+        // ステータスコードを事前に取得
+        let status = response.status();
+        
+        if !status.is_success() {
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+                
+            return Err(PostgrestError::ApiError(format!(
+                "API error: {} (Status: {})",
+                error_text,
+                status
+            )));
         }
         
-        let data = response.json::<Value>().await?;
-        
-        Ok(data)
+        response.json::<Value>().await
+            .map_err(|e| PostgrestError::SerializationError(e))
     }
     
     // URLを構築
