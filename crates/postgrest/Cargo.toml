@@ -12,7 +12,7 @@ categories = ["database", "api-bindings", "web-programming"]
 
 [dependencies]
 reqwest = { version = "0.11", features = ["json"] }
-tokio = { version = "1.0", features = ["rt-multi-thread", "test", "macros"] }
+tokio = { version = "1.0", features = ["rt"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
