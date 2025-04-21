@@ -146,6 +146,25 @@ pub struct FunctionsClient {
     http_client: Client,
 }
 
+/// 関数リクエストを表す構造体
+pub struct FunctionRequest<'a, T> {
+    client: &'a FunctionsClient,
+    function_name: String,
+    _response_type: std::marker::PhantomData<T>,
+}
+
+impl<'a, T: DeserializeOwned> FunctionRequest<'a, T> {
+    /// 関数を実行する
+    pub async fn execute<B: Serialize>(
+        &self,
+        body: Option<B>,
+        options: Option<FunctionOptions>,
+    ) -> Result<T> {
+        let result = self.client.invoke::<T, B>(&self.function_name, body, options).await?;
+        Ok(result.data)
+    }
+}
+
 impl FunctionsClient {
     /// 新しい Edge Functions クライアントを作成
     pub fn new(supabase_url: &str, supabase_key: &str, http_client: Client) -> Self {
@@ -531,6 +550,15 @@ impl FunctionsClient {
                 yield Ok(line);
             }
         })
+    }
+
+    /// 関数リクエストを作成する
+    pub fn create_request<T: DeserializeOwned>(&self, function_name: &str) -> FunctionRequest<'_, T> {
+        FunctionRequest {
+            client: self,
+            function_name: function_name.to_string(),
+            _response_type: std::marker::PhantomData,
+        }
     }
 }
 
