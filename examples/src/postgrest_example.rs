@@ -141,7 +141,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .update(json!({ "is_complete": true }))
         .await?;
     
-    println!("Updated {} tasks to be complete", update_result.len());
+    // jsonの配列としてカウント
+    println!("Updated {} tasks to be complete", update_result.as_array().unwrap_or(&vec![]).len());
     
     // Example 5: Using range queries
     println!("\nExample 5: Using range queries");
@@ -206,7 +207,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .delete()
         .await?;
     
-    println!("Deleted {} tasks", delete_result.len());
+    // jsonの配列としてカウント
+    println!("Deleted {} tasks", delete_result.as_array().unwrap_or(&vec![]).len());
     
     // Example 8: Transaction with savepoints (begin_transaction方式)
     println!("\nExample 8: Transaction with savepoints");
