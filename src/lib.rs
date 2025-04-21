@@ -199,3 +199,75 @@ pub mod prelude {
     pub use crate::error::{Error, Result};
     pub use crate::config::ClientOptions;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use wiremock::{MockServer, Mock, ResponseTemplate};
+    use wiremock::matchers::{method, path};
+    use serde_json::json;
+    
+    #[tokio::test]
+    async fn test_integration() {
+        let mock_server = MockServer::start().await;
+        
+        // Auth モックエンドポイント
+        Mock::given(method("POST"))
+            .and(path("/auth/v1/token"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!({
+                    "access_token": "test_token",
+                    "refresh_token": "test_refresh",
+                    "expires_in": 3600,
+                    "token_type": "bearer",
+                    "user": {
+                        "id": "1234",
+                        "email": "test@example.com"
+                    }
+                }))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // Database モックエンドポイント
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/users"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!([
+                    { "id": 1, "name": "Test User" }
+                ]))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        // Storage モックエンドポイント
+        Mock::given(method("GET"))
+            .and(path("/storage/v1/bucket"))
+            .respond_with(ResponseTemplate::new(200)
+                .set_body_json(json!([
+                    { "id": "test-bucket", "name": "test-bucket", "public": true, "owner": "owner", "created_at": "2023-01-01", "updated_at": "2023-01-01" }
+                ]))
+            )
+            .mount(&mock_server)
+            .await;
+        
+        let supabase = Supabase::new(&mock_server.uri(), "test_key");
+        
+        // Database操作のテスト
+        let users: Vec<serde_json::Value> = supabase
+            .from("users")
+            .select("*")
+            .execute()
+            .await
+            .unwrap();
+        
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0]["name"], "Test User");
+        
+        // Storageバケット一覧取得のテスト
+        let buckets = supabase.storage().list_buckets().await.unwrap();
+        
+        assert_eq!(buckets.len(), 1);
+        assert_eq!(buckets[0].name, "test-bucket");
+    }
+}
