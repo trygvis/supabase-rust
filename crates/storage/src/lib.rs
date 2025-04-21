@@ -719,7 +719,7 @@ impl<'a> StorageBucketClient<'a> {
             .post(&url)
             .header("apikey", &self.parent.api_key)
             .header("Content-Type", "application/json")
-            .query(&[("bucket", &self.bucket_id), ("key", path)])
+            .query(&[("bucket", &self.bucket_id), ("key", &path.to_string())])
             .json(&payload)
             .send()
             .await?;

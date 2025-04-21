@@ -1011,24 +1011,26 @@ mod tests {
                 .and(path("/auth/v1/signup"))
                 .respond_with(ResponseTemplate::new(200).and_then_fn(|_| {
                     async {
+                        let body = serde_json::to_string(&serde_json::json!({
+                            "access_token": "test_access_token",
+                            "refresh_token": "test_refresh_token",
+                            "expires_in": 3600,
+                            "token_type": "bearer",
+                            "user": {
+                                "id": "test_user_id",
+                                "email": "test@example.com",
+                                "phone": null,
+                                "app_metadata": {},
+                                "user_metadata": {},
+                                "created_at": "2021-01-01T00:00:00Z",
+                                "updated_at": "2021-01-01T00:00:00Z"
+                            }
+                        })).unwrap();
+                        
                         Ok(wiremock::http::Response::builder()
                             .status(200)
                             .header("content-type", "application/json")
-                            .body(serde_json::to_string(&serde_json::json!({
-                                "access_token": "test_access_token",
-                                "refresh_token": "test_refresh_token",
-                                "expires_in": 3600,
-                                "token_type": "bearer",
-                                "user": {
-                                    "id": "test_user_id",
-                                    "email": "test@example.com",
-                                    "phone": null,
-                                    "app_metadata": {},
-                                    "user_metadata": {},
-                                    "created_at": "2021-01-01T00:00:00Z",
-                                    "updated_at": "2021-01-01T00:00:00Z"
-                                }
-                            })).unwrap())
+                            .body(body))
                     }
                 }))
                 .mount(&mock_server)

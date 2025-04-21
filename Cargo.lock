@@ -1764,29 +1764,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "supabase-rust-auth"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa329dc28ebd9a2dbb1d6c51fcdbacc2c3432620c67bfb05233b2cdae5d4a58f"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.21.7",
- "chrono",
- "http 0.2.12",
- "jsonwebtoken",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "url",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
 name = "supabase-rust-examples"
 version = "0.1.0"
 dependencies = [
@@ -1825,28 +1802,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "supabase-rust-functions"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "371b0fe1bed989f7cfe7dccffdc99ab35750ca29c58b547050b43c59f4e880de"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "base64 0.21.7",
- "bytes",
- "futures-util",
- "http 0.2.12",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "supabase-rust-gftd"
 version = "0.1.2"
 dependencies = [
@@ -1858,11 +1813,11 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "supabase-rust-auth 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-functions 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-postgrest 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-realtime 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "supabase-rust-storage 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "supabase-rust-auth",
+ "supabase-rust-functions",
+ "supabase-rust-postgrest",
+ "supabase-rust-realtime",
+ "supabase-rust-storage",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
@@ -1891,24 +1846,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "supabase-rust-postgrest"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "141b1ddc32024e6600dff1a7662ade7de7328ecd551865a3699a98c11ba75bfe"
-dependencies = [
- "anyhow",
- "async-trait",
- "http 0.2.12",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "supabase-rust-realtime"
 version = "0.1.1"
 dependencies = [
@@ -1926,26 +1863,6 @@ dependencies = [
  "url",
  "uuid",
  "wiremock",
-]
-
-[[package]]
-name = "supabase-rust-realtime"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16adde8d8b55b533093e70f0fc5bdc0e97fa4bd5109c2fc05e954135fad68738"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.21.7",
- "futures-util",
- "log",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tokio-tungstenite",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -1967,27 +1884,6 @@ dependencies = [
  "url",
  "uuid",
  "wiremock",
-]
-
-[[package]]
-name = "supabase-rust-storage"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af28558f877cccf166005d448e54f755b2fd6c83d756768b6d2c36f11bbed0a4"
-dependencies = [
- "anyhow",
- "async-trait",
- "base64 0.21.7",
- "bytes",
- "http 0.2.12",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "url",
- "uuid",
 ]
 
 [[package]]
