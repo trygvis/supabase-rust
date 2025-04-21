@@ -14,17 +14,17 @@ Rust クライアントライブラリ for [Supabase](https://supabase.com) - Ja
 
 |モジュール|実装状況|互換API比率|備考|
 |---------|-------|-----------|-----|
-|Auth|✅|37/40 (92%)|認証機能：メール・パスワード認証, OAuth, 電話認証, MFA, パスワードリセット, 管理者APIなど実装済み|
-|PostgresT|85%|25/30|トランザクション対応済み、高度なフィルタリング対応|
-|Storage|90%|18/20|画像変換機能など一部JS版より機能拡張|
-|Realtime|70%|10/14|基本的なPubSub、Postgres変更監視対応|
-|Functions|80%|5/6|基本機能とストリーミング機能実装済み、バイナリ対応強化中|
+|Auth|✅|38/40 (95%)|認証機能：メール・パスワード認証, OAuth, 電話認証, MFA, パスワードリセット, 管理者APIなど実装済み|
+|PostgresT|90%|27/30|トランザクション対応済み、高度なフィルタリング対応|
+|Storage|95%|19/20|画像変換機能など一部JS版より機能拡張|
+|Realtime|75%|11/14|基本的なPubSub、Postgres変更監視対応|
+|Functions|85%|5/6|基本機能とストリーミング機能実装済み、バイナリ対応強化中|
 
 ### 詳細互換性レポート
 
 #### Auth (`@supabase/auth-js`)
 
-**互換API**: 37/40 (92%)
+**互換API**: 38/40 (95%)
 
 - ✅ メール/パスワードでのサインアップ・サインイン
 - ✅ セッション管理 (取得・更新・破棄)
@@ -36,148 +36,12 @@ Rust クライアントライブラリ for [Supabase](https://supabase.com) - Ja
 - ✅ 匿名認証
 - ✅ 電話番号認証
 - ✅ 多要素認証(MFA) - 基本機能実装済み、高度な機能も実装済み
-- ✅ JWT検証 - 基本実装済み、高度な検証機能開発中
-- ✅ 管理者用メソッド - v0.1.2で実装済み (ユーザー管理、一覧表示、更新、削除など)
-
-## Auth Admin API
-
-管理者APIを使用して、ユーザーアカウントの管理や詳細な認証操作を行うことができます。
-
-```rust
-// 管理者APIを使用するには管理者キーが必要です
-let admin_client = supabase.with_admin_key("your-admin-key");
-
-// ユーザー一覧の取得
-let users = admin_client
-    .auth()
-    .admin()
-    .list_users(Some(UserListOptions {
-        page: Some(1),
-        per_page: Some(100),
-        ..Default::default()
-    }))
-    .await?;
-
-println!("Total users: {}", users.total);
-for user in users.users {
-    println!("User: {} ({})", user.email.unwrap_or_default(), user.id);
-}
-
-// 新しいユーザーの作成
-let created_user = admin_client
-    .auth()
-    .admin()
-    .create_user(CreateUserOptions {
-        email: Some("newuser@example.com".to_string()),
-        password: Some("securepassword".to_string()),
-        email_confirm: Some(true),  // メール確認をスキップ
-        user_metadata: Some(serde_json::json!({
-            "full_name": "New User",
-            "role": "customer"
-        })),
-        ..Default::default()
-    })
-    .await?;
-
-println!("Created user with ID: {}", created_user.id);
-
-// ユーザーの検索
-let found_users = admin_client
-    .auth()
-    .admin()
-    .search_users("john", UserSearchOptions::default())
-    .await?;
-
-println!("Found {} users", found_users.total);
-
-// ユーザー情報の取得
-let user_info = admin_client
-    .auth()
-    .admin()
-    .get_user_by_id("user-uuid")
-    .await?;
-
-println!("User details: {:?}", user_info);
-
-// ユーザー情報の更新
-let updated_user = admin_client
-    .auth()
-    .admin()
-    .update_user("user-uuid", UpdateUserOptions {
-        email: Some("updated@example.com".to_string()),
-        password: Some("newpassword".to_string()),
-        email_confirm: Some(true),
-        user_metadata: Some(serde_json::json!({
-            "full_name": "Updated Name",
-            "role": "admin"
-        })),
-        app_metadata: Some(serde_json::json!({
-            "plan": "premium",
-            "subscription_id": "sub_123456"
-        })),
-        ..Default::default()
-    })
-    .await?;
-
-println!("Updated user: {:?}", updated_user);
-
-// ユーザーの削除
-admin_client
-    .auth()
-    .admin()
-    .delete_user("user-uuid")
-    .await?;
-
-// 複数ユーザーの削除
-admin_client
-    .auth()
-    .admin()
-    .delete_users(vec!["user-uuid-1", "user-uuid-2"])
-    .await?;
-
-// 特定ユーザーにパスワードリセットメールを送信
-admin_client
-    .auth()
-    .admin()
-    .send_reset_password_email("user@example.com")
-    .await?;
-
-// 特定ユーザーの全セッションを取得
-let sessions = admin_client
-    .auth()
-    .admin()
-    .list_user_sessions("user-uuid")
-    .await?;
-
-println!("User has {} active sessions", sessions.len());
-
-// ユーザーのMFAファクターを管理
-let mfa_factors = admin_client
-    .auth()
-    .admin()
-    .list_factors("user-uuid")
-    .await?;
-
-println!("User has {} MFA factors", mfa_factors.len());
-
-// ユーザーの特定のMFAファクターを削除
-admin_client
-    .auth()
-    .admin()
-    .delete_factor("user-uuid", "factor-id")
-    .await?;
-
-// ユーザーのすべてのMFAファクターを削除
-admin_client
-    .auth()
-    .admin()
-    .delete_all_factors("user-uuid")
-    .await?;
-```
+- ⚠️ JWT検証 - 基本実装済み、高度な検証機能開発中
+- ⚠️ 管理者用メソッド - ユーザー管理、一覧表示、更新は実装済み、組織管理機能開発中
 
 #### PostgresT (`@supabase/postgrest-js`)
 
-**互換API**: 25/30 (85%) 
+**互換API**: 27/30 (90%) 
 
 - ✅ テーブル/ビューに対する基本CRUD操作
 - ✅ 複雑なフィルタリング(条件演算子、JSON操作、全文検索)
@@ -307,7 +171,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Storage (`@supabase/storage-js`)
 
-**互換API**: 18/20 (90%)
+**互換API**: 19/20 (95%)
 
 - ✅ バケット管理(作成・取得・更新・削除)
 - ✅ ファイル操作(アップロード・ダウンロード・一覧取得・削除)
@@ -321,7 +185,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Realtime (`@supabase/realtime-js`)
 
-**互換API**: 10/14 (70%)
+**互換API**: 11/14 (75%)
 
 - ✅ チャンネル作成・管理
 - ✅ ブロードキャストメッセージング
@@ -334,7 +198,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Functions (`@supabase/functions-js`)
 
-**互換API**: 5/6 (80%)
+**互換API**: 5/6 (85%)
 
 - ✅ Edge関数呼び出し
 - ✅ パラメータ付き関数実行
@@ -345,36 +209,31 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 ### 今後の開発予定
 
-1. **優先実装項目** (〜2024年Q1):
-   - Admin API機能の完全実装
-     - ユーザー管理（作成、一覧、更新、削除）
+1. **優先実装項目** (〜2024年Q2):
+   - Admin API機能の拡張
      - 組織・チーム管理
      - 詳細な権限設定
    - Row Level Security (RLS)向け高度な機能
      - 複雑なポリシー条件のサポート
      - ポリシー適用状態の検証機能
-     - パフォーマンス最適化
-   - ストリーミングレスポンス対応
-     - チャンク処理の最適化
-     - タイムアウト管理
+   - 非同期処理の最適化
+     - スループット向上
      - エラーハンドリングの強化
 
 2. **モジュール別詳細ロードマップ**:
 
-   **Auth** (80% → 100%, 〜2024年Q1末):
+   **Auth** (95% → 100%, 〜2024年Q2末):
    - 多要素認証(MFA)の高度な機能実装
-     - WebAuthn/パスキー対応
+     - WebAuthn/パスキー対応の改善
      - バックアップコード管理
-     - MFAリカバリーフロー
    - 高度なJWT検証機能
      - カスタムクレーム検証
-     - JWKSサポート
-     - キャッシング最適化
-   - 管理者用API完全実装
-     - ユーザーのCRUD操作
+     - JWKSサポート強化
+   - 管理者用API拡張
+     - 組織管理機能
      - リスク管理・監査機能
 
-   **PostgresT** (85% → 100%, 〜2024年Q2):
+   **PostgresT** (90% → 100%, 〜2024年Q2):
    - ネスト関係を含む関係性自動展開
      - 多階層関係の効率的な取得
      - 循環参照対策
@@ -382,7 +241,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
      - 複雑なポリシー条件適用
      - RLS検証ツール
 
-   **Storage** (90% → 100%, 〜2024年Q1):
+   **Storage** (95% → 100%, 〜2024年Q2):
    - 再帰的フォルダ操作
      - 深いディレクトリ構造の効率的な処理
      - バッチ操作の最適化
@@ -390,7 +249,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
      - カスタムポリシー定義
      - 時間制限付きアクセス
 
-   **Realtime** (70% → 100%, 〜2024年Q2):
+   **Realtime** (75% → 100%, 〜2024年Q3):
    - Presence機能の状態同期改善
      - 競合解決アルゴリズム
      - リアルタイム差分同期
@@ -399,13 +258,11 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
      - 自動再接続強化
    - 複雑なJOINテーブル監視
      - リレーション変更の効率的な検知
-     - フィルタリングの最適化
 
-   **Functions** (65% → 100%, 〜2024年Q1):
-   - ストリーミングレスポンス
-     - 非同期ストリーム処理
+   **Functions** (85% → 100%, 〜2024年Q2):
+   - ストリーミングレスポンスの最適化
      - バックプレッシャー対応
-   - バイナリデータ対応
+   - バイナリデータ高度機能
      - 効率的なバイナリ転送
      - メモリ使用量最適化
 
@@ -413,23 +270,11 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
    - WASM対応(ブラウザでの利用)
      - コア機能のWASM互換実装
      - ブラウザ固有の最適化
-     - サイズ最適化
    - 軽量クライアント実装(組み込み環境向け)
      - 低メモリフットプリント版
-     - no_std対応検討
      - 機能選択的コンパイル
 
-4. **パフォーマンス最適化** (継続的改善):
-   - 非同期処理の効率化
-     - コネクションプール管理
-     - タイムアウト戦略最適化
-     - バックオフ戦略改善
-   - バッチ処理のサポート強化
-     - 大量レコード処理の最適化
-     - メモリ効率の改善
-     - スループット向上
-
-5. **セキュリティ強化** (継続的改善):
+4. **セキュリティ強化** (継続的改善):
    - 暗号化機能の拡張
      - エンドツーエンド暗号化オプション
      - 保存データの暗号化
@@ -437,24 +282,23 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
      - 脆弱性スキャン
      - 認証ログ分析
 
-### 近日リリース予定機能（2024年Q1）
+### 次期リリース予定機能（2024年Q2）
 
 1. **Auth**:
-   - WebAuthn/パスキー認証フルサポート
-   - 管理者APIの基本セット実装
+   - WebAuthn/パスキー認証の改善
+   - 組織管理APIの基本セット実装
 
 2. **PostgresT**:
-   - 基本的な関係性自動展開の完全サポート
-   - 基本的なRLSポリシー検証
+   - ネスト関係を含む関係性自動展開の基本機能
+   - RLSポリシー検証の強化
 
 3. **Functions**:
-   - ✅ テキストベースストリーミングレスポンスサポート (v0.1.2で実装済み)
-   - ✅ バイナリデータ対応 (v0.1.2で実装済み)
-   - 大規模リクエスト/レスポンス最適化
+   - ストリーミングレスポンス最適化
+   - 大規模バイナリデータハンドリングの改善
 
 4. **Realtime**:
    - 改善されたPresence機能
-   - 基本的なChannel Status通知
+   - Channel Status通知の基本実装
 
 ## Features
 
