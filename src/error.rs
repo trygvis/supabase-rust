@@ -58,6 +58,7 @@ impl Error {
 }
 
 /// Prints an API error from the Supabase API
+#[allow(dead_code)]
 pub fn api_error<E: std::fmt::Display>(error: E) -> Error {
     Error::Other(format!("API error: {}", error))
 }

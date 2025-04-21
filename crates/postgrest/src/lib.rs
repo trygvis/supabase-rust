@@ -15,7 +15,6 @@ use url::Url;
 use serde_json::json;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -199,7 +198,7 @@ impl PostgrestClient {
     }
     
     /// 結合クエリ: 一対多関係の子テーブルを含める
-    pub fn include(mut self, foreign_table: &str, foreign_column: &str, columns: Option<&str>) -> Self {
+    pub fn include(mut self, foreign_table: &str, _foreign_column: &str, columns: Option<&str>) -> Self {
         // 選択列にリレーションを追加
         let current_select = self.query_params.get("select").cloned().unwrap_or_else(|| "*".to_string());
         let columns_str = columns.unwrap_or("*");
@@ -416,13 +415,19 @@ impl PostgrestClient {
     
     /// RPC関数を実行
     async fn execute_rpc(&self) -> Result<Value, PostgrestError> {
+        if !self.is_rpc || self.rpc_params.is_none() {
+            return Err(PostgrestError::InvalidParameters("Not an RPC request".to_string()));
+        }
+        
         let url = format!("{}/rest/v1/rpc/{}", self.base_url, self.table);
         
-        let response = self.http_client.post(url)
+        let response = self.http_client
+            .post(&url)
             .headers(self.headers.clone())
-            .json(&self.rpc_params.clone().unwrap_or(Value::Null))
+            .json(&self.rpc_params.as_ref().unwrap())
             .send()
-            .await?;
+            .await
+            .map_err(|e| PostgrestError::NetworkError(e))?;
             
         // ステータスコードを事前に取得
         let status = response.status();
@@ -438,9 +443,8 @@ impl PostgrestClient {
             )));
         }
         
-        let data = response.json::<Value>().await?;
-        
-        Ok(data)
+        response.json::<Value>().await
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
     
     /// データを挿入
@@ -575,14 +579,17 @@ impl PostgrestClient {
             .await
             .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
+        // ステータスコードを事前に取得
+        let status = response.status();
+        
+        if !status.is_success() {
             let error_text = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
                 
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to begin transaction: {} (Status: {})",
                 error_text,
-                response.status()
+                status
             )));
         }
         
@@ -647,9 +654,15 @@ impl PostgrestTransaction {
         // トランザクションヘッダーを設定
         for (key, value) in self.headers.iter() {
             // HeaderNameをStr形式に変換
-            let key_str = key.as_str();
             if let Ok(value_str) = value.to_str() {
-                client = client.with_header(key_str, value_str).unwrap_or(client);
+                if let Ok(client_with_header) = PostgrestClient::new(
+                    &self.base_url,
+                    &self.api_key,
+                    table,
+                    self.http_client.clone()
+                ).with_header(key.as_str(), value_str) {
+                    client = client_with_header;
+                }
             }
         }
         
@@ -683,14 +696,17 @@ impl PostgrestTransaction {
             .await
             .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
+        // ステータスコードを事前に取得
+        let status = response.status();
+            
+        if !status.is_success() {
             let error_text = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
                 
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to commit transaction: {} (Status: {})",
                 error_text,
-                response.status()
+                status
             )));
         }
         
@@ -724,14 +740,17 @@ impl PostgrestTransaction {
             .await
             .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
+        // ステータスコードを事前に取得
+        let status = response.status();
+            
+        if !status.is_success() {
             let error_text = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
                 
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to rollback transaction: {} (Status: {})",
                 error_text,
-                response.status()
+                status
             )));
         }
         
@@ -750,7 +769,7 @@ impl PostgrestTransaction {
             ));
         }
         
-        // セーブポイント作成APIを呼び出し
+        // セーブポイントAPIを呼び出し
         let savepoint_url = format!("{}/rpc/create_savepoint", self.base_url);
         
         let savepoint_body = json!({
@@ -766,14 +785,17 @@ impl PostgrestTransaction {
             .await
             .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
+        // ステータスコードを事前に取得
+        let status = response.status();
+            
+        if !status.is_success() {
             let error_text = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
                 
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to create savepoint: {} (Status: {})",
                 error_text,
-                response.status()
+                status
             )));
         }
         
@@ -790,29 +812,32 @@ impl PostgrestTransaction {
         }
         
         // セーブポイントへのロールバックAPIを呼び出し
-        let rollback_savepoint_url = format!("{}/rpc/rollback_to_savepoint", self.base_url);
+        let rollback_url = format!("{}/rpc/rollback_to_savepoint", self.base_url);
         
-        let rollback_savepoint_body = json!({
+        let rollback_body = json!({
             "transaction_id": self.transaction_id,
             "name": name
         });
         
         let response = self.http_client
-            .post(&rollback_savepoint_url)
+            .post(&rollback_url)
             .headers(self.headers.clone())
-            .json(&rollback_savepoint_body)
+            .json(&rollback_body)
             .send()
             .await
             .map_err(|e| PostgrestError::NetworkError(e))?;
             
-        if !response.status().is_success() {
+        // ステータスコードを事前に取得
+        let status = response.status();
+            
+        if !status.is_success() {
             let error_text = response.text().await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
                 
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to rollback to savepoint: {} (Status: {})",
                 error_text,
-                response.status()
+                status
             )));
         }
         
@@ -843,7 +868,7 @@ impl Drop for PostgrestTransaction {
 mod tests {
     use super::*;
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    use wiremock::matchers::{method, path, body_json, header};
+    use wiremock::matchers::{method, path, body_json, header, query_param};
     
     #[tokio::test]
     async fn test_select() {

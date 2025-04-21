@@ -22,7 +22,7 @@ pub use config::ClientOptions;
 pub use error::{Error, Result};
 
 use reqwest::Client;
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 
 /// The main entry point for the Supabase Rust client
 pub struct Supabase {
