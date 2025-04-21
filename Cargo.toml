@@ -22,10 +22,9 @@ async-trait = "0.1"
 jsonwebtoken = "9.1"
 supabase-rust-auth = { version = "0.1.0" }
 supabase-rust-postgrest = { version = "0.1.0" }
-# まだ公開されていないクレートはコメントアウト
-# supabase-rust-storage = { path = "crates/storage" }
-# supabase-rust-realtime = { path = "crates/realtime" }
-# supabase-rust-functions = { path = "crates/functions" }
+supabase-rust-storage = { version = "0.1.0" }
+supabase-rust-realtime = { version = "0.1.0" }
+supabase-rust-functions = { version = "0.1.0" }
 
 [workspace]
 members = [
