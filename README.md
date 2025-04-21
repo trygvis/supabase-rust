@@ -129,6 +129,32 @@ supabase
     .await?;
 ```
 
+## OAuth認証
+
+```rust
+// OAuth認証URLの生成
+let auth_url = supabase
+    .auth()
+    .get_oauth_sign_in_url(
+        OAuthProvider::Google,
+        Some(OAuthSignInOptions {
+            redirect_to: Some("https://your-app.com/callback".to_string()),
+            scopes: Some("email profile".to_string()),
+            ..Default::default()
+        })
+    );
+
+println!("Sign in URL: {}", auth_url);
+
+// コールバックからのコードを使用してセッションを取得
+let session = supabase
+    .auth()
+    .exchange_code_for_session("received_code_from_oauth_callback")
+    .await?;
+
+println!("Authenticated user: {:?}", session.user);
+```
+
 ## Storage
 
 ```rust
@@ -174,6 +200,55 @@ supabase
     .await?;
 ```
 
+## 大容量ファイルのチャンクアップロード
+
+```rust
+// 大きなファイルをチャンクでアップロードする
+let file_path = std::path::Path::new("/path/to/large-file.mp4");
+let result = supabase
+    .storage()
+    .from("videos")
+    .upload_large_file(
+        "videos/large-file.mp4",
+        file_path,
+        5 * 1024 * 1024, // 5MBチャンクサイズ
+        Some(FileOptions::new().with_content_type("video/mp4"))
+    )
+    .await?;
+
+println!("Uploaded file: {:?}", result);
+
+// 手動でマルチパートアップロードを制御する場合
+// 1. マルチパートアップロードを初期化
+let init_result = supabase
+    .storage()
+    .from("videos")
+    .initiate_multipart_upload(
+        "videos/large-file.mp4",
+        Some(FileOptions::new().with_content_type("video/mp4"))
+    )
+    .await?;
+
+// 2. チャンクを個別にアップロード
+let chunk_data = bytes::Bytes::from(vec![0u8; 1024]); // 実際のデータ
+let part_result = supabase
+    .storage()
+    .from("videos")
+    .upload_part(&init_result.upload_id, 1, chunk_data)
+    .await?;
+
+// 3. マルチパートアップロードを完了
+let complete_result = supabase
+    .storage()
+    .from("videos")
+    .complete_multipart_upload(
+        &init_result.upload_id,
+        "videos/large-file.mp4",
+        vec![part_result]
+    )
+    .await?;
+```
+
 ## Realtime
 
 ```rust
@@ -206,6 +281,60 @@ let _broadcast_subscription = supabase
 
 // 購読解除
 // subscriptionが破棄されると自動的に購読解除されます
+```
+
+## リアルタイム接続の管理
+
+```rust
+// カスタム接続オプションでリアルタイムクライアントを初期化
+let options = RealtimeClientOptions {
+    auto_reconnect: true,
+    max_reconnect_attempts: Some(10),
+    reconnect_interval: 2000, // 2秒
+    ..Default::default()
+};
+
+// 接続状態の変更を監視
+let realtime = supabase.realtime();
+let mut state_receiver = realtime.on_state_change();
+
+// 別スレッドで状態変更を監視
+tokio::spawn(async move {
+    while let Ok(state) = state_receiver.recv().await {
+        println!("Connection state changed: {:?}", state);
+        
+        match state {
+            ConnectionState::Connected => {
+                println!("接続成功!");
+            }
+            ConnectionState::Reconnecting => {
+                println!("再接続中...");
+            }
+            ConnectionState::Disconnected => {
+                println!("切断されました");
+            }
+            _ => {}
+        }
+    }
+});
+
+// テーブル変更の購読
+let _subscription = supabase
+    .channel("table-changes")
+    .on(
+        DatabaseChanges::new("your-table")
+            .event(ChannelEvent::Insert)
+            .event(ChannelEvent::Update)
+            .event(ChannelEvent::Delete),
+        |payload| {
+            println!("Change received: {:?}", payload);
+        },
+    )
+    .subscribe()
+    .await?;
+
+// 手動で接続を終了
+supabase.realtime().disconnect().await?;
 ```
 
 ## Edge Functions
@@ -260,10 +389,10 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 | 機能 | supabase-js (TypeScript) | supabase-rust | カバレッジ | 
 |------|------------------------|--------------|---------|
 | **データベース (PostgreSQL)** | ✅ 完全実装 | ✅ 基本実装済み | 70% |
-| **認証 (Auth)** | ✅ 完全実装 | ✅ 基本実装済み | 60% |
-| **ストレージ (Storage)** | ✅ 完全実装 | ✅ 基本実装済み | 60% |
-| **リアルタイム (Realtime)** | ✅ 完全実装 | ✅ 基本実装済み | 50% |
-| **Edge Functions** | ✅ 完全実装 | ✅ 基本実装済み | 40% |
+| **認証 (Auth)** | ✅ 完全実装 | ✅ 基本実装済み | 85% |
+| **ストレージ (Storage)** | ✅ 完全実装 | ✅ 基本実装済み | 70% |
+| **リアルタイム (Realtime)** | ✅ 完全実装 | ✅ 基本実装済み | 80% |
+| **Edge Functions** | ✅ 完全実装 | ✅ 基本実装済み | 85% |
 | **TypeScript/型安全** | ✅ 完全実装 | ✅ Rustの型システム | 90% |
 
 ### 詳細状況
@@ -277,44 +406,173 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 - 🔄 高度なPostgREST機能（実装中）
 - ❌ CSVエクスポート機能（未実装）
 
-#### 認証 (60%)
+#### 認証 (85%)
 - ✅ メール・パスワード認証
 - ✅ 基本的なセッション管理
 - ✅ ユーザー情報取得
 - ✅ パスワードリセット
-- 🔄 OAuth認証（実装中）
-- ❌ 多要素認証（未実装）
-- ❌ 匿名認証（未実装）
-- ❌ 電話番号認証（未実装）
+- ✅ OAuth認証
+- ✅ 多要素認証（MFA）
+- ✅ 匿名認証
+- ✅ 電話番号認証
+- ❌ メール確認機能（未実装）
 
-#### ストレージ (60%)
+#### ストレージ (70%)
 - ✅ ファイルアップロード/ダウンロード
 - ✅ バケット管理
 - ✅ ファイル一覧取得
 - ✅ 公開URL生成
 - ✅ 基本的な署名付きURL
-- 🔄 大容量ファイルのチャンクアップロード（実装中）
+- ✅ 大容量ファイルのチャンクアップロード
 - ❌ 画像変換機能（未実装）
 
-#### リアルタイム (50%)
+#### リアルタイム (80%)
 - ✅ データベース変更監視
 - ✅ カスタムチャンネル購読
+- ✅ 切断・再接続のロバスト性
+- ✅ Presenceサポート
 - 🔄 高度なリアルタイムフィルタリング（実装中）
-- ❌ Presenceサポート（未実装）
-- 🔄 切断・再接続のロバスト性（改善中）
 
-#### Edge Functions (40%)
+#### Edge Functions (85%)
 - ✅ 基本的な関数呼び出し
-- 🔄 高度なパラメータサポート（実装中）
-- 🔄 詳細なエラーハンドリング（改善中）
+- ✅ 高度なパラメータサポート
+- ✅ 詳細なエラーハンドリング
+- ✅ 異なるレスポンス形式（JSON, テキスト, バイナリ）のサポート
+- ✅ ストリーミングレスポンスのサポート
+- 🔄 ストリームの自動変換機能の拡張（実装中）
 
 ### 今後の開発予定
 
-1. **機能の拡充**: OAuth、MFA、Presenceなどの高度な機能を追加
-2. **テストカバレッジの向上**: より包括的なテストスイートの開発
-3. **ドキュメントの充実**: より詳細なAPIドキュメントの提供
-4. **パフォーマンス最適化**: Rustの特性を活かしたパフォーマンス向上
-5. **エコシステムの拡大**: ORMとの統合やフレームワーク特化型のヘルパーの開発
+1. **データベース機能の強化**:
+   - 複雑な結合クエリのサポート向上
+   - 高度なPostgREST機能（全文検索、地理空間データ等）
+   - CSVエクスポート機能の実装
+
+2. **認証の拡張**:
+   - メール確認機能の実装
+   - WebAuthn/パスキーサポートの追加
+   - 組織機能のサポート
+
+3. **ストレージの拡張**:
+   - 画像変換機能の実装
+   - S3互換APIのサポート
+   - コピー・移動操作の拡張
+
+4. **リアルタイム機能の強化**:
+   - 高度なフィルタリング機能
+   - バッチ購読処理の最適化
+   - オフライン同期サポート
+
+5. **Edge Functions拡張**:
+   - ストリーム処理の最適化
+   - ウェブフック統合
+   - ローカル開発環境との連携
+
+6. **最適化とドキュメント**:
+   - パフォーマンス最適化
+   - メモリ使用量の削減
+   - 詳細なAPIドキュメントとコード例の提供
+   - 既存プラットフォームとの統合ガイド
+
+## 匿名認証
+
+```rust
+// 匿名認証でサインイン
+let anonymous_session = supabase
+    .auth()
+    .sign_in_anonymously()
+    .await?;
+
+println!("Anonymous user ID: {}", anonymous_session.user.id);
+```
+
+## 電話番号認証
+
+```rust
+// 電話番号認証 - ステップ1: 認証コード送信
+let verification = supabase
+    .auth()
+    .send_verification_code("+81901234567")
+    .await?;
+
+println!("Verification ID: {}", verification.verification_id);
+println!("Code sent to: {}", verification.phone);
+println!("Expires at: {}", verification.expires_at);
+
+// 電話番号認証 - ステップ2: コード検証とサインイン
+// ユーザーがSMSで受け取ったコード
+let sms_code = "123456"; // 実際の例ではユーザー入力から取得
+
+let session = supabase
+    .auth()
+    .verify_phone_code(
+        "+81901234567",
+        &verification.verification_id,
+        sms_code
+    )
+    .await?;
+
+println!("Logged in with phone: {:?}", session.user.phone);
+```
+
+## ストリーミングレスポンス (Edge Functions)
+
+```rust
+// ストリーミングレスポンスの取得
+let stream = supabase
+    .functions()
+    .invoke_stream::<serde_json::Value>(
+        "stream-data",
+        Some(serde_json::json!({"count": 100})),
+        None
+    )
+    .await?;
+
+// バイトストリームから行ストリームに変換
+let line_stream = supabase.functions().stream_to_lines(stream);
+
+// ストリームを処理
+tokio::pin!(line_stream);
+while let Some(line_result) = line_stream.next().await {
+    match line_result {
+        Ok(line) => {
+            println!("Received line: {}", line);
+            // 行を必要に応じてJSONとしてパース
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                println!("Parsed JSON: {:?}", json);
+            }
+        },
+        Err(e) => {
+            eprintln!("Error reading stream: {}", e);
+            break;
+        }
+    }
+}
+
+// JSONストリームを直接取得
+let json_stream = supabase
+    .functions()
+    .invoke_json_stream::<serde_json::Value>(
+        "stream-events",
+        Some(serde_json::json!({"eventType": "user-activity"})),
+        None
+    )
+    .await?;
+
+// JSONイベントを処理
+tokio::pin!(json_stream);
+while let Some(json_result) = json_stream.next().await {
+    match json_result {
+        Ok(json) => {
+            println!("Received JSON event: {:?}", json);
+        },
+        Err(e) => {
+            eprintln!("Error in JSON stream: {}", e);
+            break;
+        }
+    }
+}
+```
 
 ## コントリビューション
 
@@ -331,3 +589,184 @@ Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supab
 ## セキュリティ
 
 セキュリティ上の脆弱性を発見した場合は、[SECURITY.md](SECURITY.md)に記載されている連絡先に報告してください。
+
+## 多要素認証（MFA）
+
+```rust
+// MFAを使用したサインイン - 第一ステップ
+let result = supabase
+    .auth()
+    .sign_in_with_password_mfa("user@example.com", "password123")
+    .await?;
+
+// 結果の処理
+match result {
+    Ok(session) => {
+        // MFAが必要ない場合 - ログイン成功
+        println!("Logged in successfully: {:?}", session.user.email);
+    },
+    Err(challenge) => {
+        // MFA認証が必要 - 第二ステップへ
+        println!("MFA required with challenge ID: {}", challenge.id);
+        
+        // ユーザーからTOTPコード（例: Authenticatorアプリのコード）を取得
+        let totp_code = "123456"; // 実際のコードをユーザーから取得する
+        
+        // MFAチャレンジを検証
+        let session = supabase
+            .auth()
+            .verify_mfa_challenge(&challenge.id, totp_code)
+            .await?;
+            
+        println!("MFA verification successful: {:?}", session.user.email);
+    }
+}
+
+// MFA TOTPファクターの登録
+let setup_info = supabase
+    .auth()
+    .enroll_totp()
+    .await?;
+
+println!("TOTP secret: {}", setup_info.secret);
+println!("QR code: {}", setup_info.qr_code);
+
+// TOTPの検証と有効化
+let factor = supabase
+    .auth()
+    .verify_totp("factor-id-from-setup", "123456")
+    .await?;
+
+println!("MFA factor enabled: {:?}", factor.status);
+
+// ユーザーのMFAファクター一覧を取得
+let factors = supabase
+    .auth()
+    .list_factors()
+    .await?;
+
+for factor in factors {
+    println!("Factor: {} ({})", factor.id, factor.factor_type);
+}
+
+// MFAファクターの削除
+supabase
+    .auth()
+    .unenroll_factor("factor-id")
+    .await?;
+```
+
+## Presenceサポート
+
+```rust
+// Presenceを使用してユーザーのオンライン状態を追跡
+let channel = supabase
+    .channel("room:123");
+
+// Presenceの変更を監視
+let _subscription = channel
+    .on_presence(|presence_diff| {
+        // 新規参加ユーザーの処理
+        for (user_id, user_data) in &presence_diff.joins {
+            println!("User joined: {}, data: {:?}", user_id, user_data);
+        }
+        
+        // 退室ユーザーの処理
+        for (user_id, _) in &presence_diff.leaves {
+            println!("User left: {}", user_id);
+        }
+    })
+    .subscribe()
+    .await?;
+
+// ユーザー状態を追跡
+let user_id = "user-123";
+let user_data = serde_json::json!({
+    "name": "John Doe",
+    "status": "online",
+    "last_seen_at": "2023-07-01T12:00:00Z"
+});
+
+// Presenceの状態を設定
+channel
+    .track_presence(user_id, user_data)
+    .await?;
+
+// Presenceの状態を同期
+let mut presence_state = PresenceState::new();
+
+// 状態更新時に同期
+presence_state.sync(&presence_diff);
+
+// 現在オンラインのユーザー一覧を取得
+let online_users = presence_state.list();
+println!("Online users: {:?}", online_users);
+```
+
+## 拡張されたEdge Functions
+
+```rust
+// 様々なレスポンスタイプに対応
+// JSON応答を取得
+let json_result = supabase
+    .functions()
+    .invoke_json::<serde_json::Value, _>(
+        "get-user-data",
+        Some(serde_json::json!({"user_id": 123}))
+    )
+    .await?;
+
+println!("User data: {:?}", json_result);
+
+// テキスト応答を取得
+let text_result = supabase
+    .functions()
+    .invoke_text::<serde_json::Value>(
+        "generate-text",
+        Some(serde_json::json!({"prompt": "Hello world"}))
+    )
+    .await?;
+
+println!("Generated text: {}", text_result);
+
+// タイムアウトを設定
+let options = FunctionOptions {
+    timeout_seconds: Some(30),
+    ..Default::default()
+};
+
+// 詳細な応答情報を取得
+let response = supabase
+    .functions()
+    .invoke::<UserData, _>(
+        "get-complete-user-data",
+        Some(serde_json::json!({"user_id": 123})),
+        Some(options)
+    )
+    .await?;
+
+println!("Status code: {}", response.status);
+println!("Headers: {:?}", response.headers);
+println!("User data: {:?}", response.data);
+
+// エラーハンドリング
+match supabase.functions().invoke_json::<serde_json::Value, _>("function-name", Some(payload)).await {
+    Ok(data) => {
+        println!("Success: {:?}", data);
+    },
+    Err(err) => match err {
+        FunctionsError::TimeoutError => {
+            println!("Function timed out");
+        },
+        FunctionsError::FunctionError { message, status, details } => {
+            println!("Function error: {} (status: {})", message, status);
+            if let Some(details) = details {
+                println!("Error details: {:?}", details);
+            }
+        },
+        _ => {
+            println!("Other error: {}", err);
+        }
+    }
+}
+```

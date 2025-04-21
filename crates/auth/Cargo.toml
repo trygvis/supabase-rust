@@ -25,6 +25,7 @@ log = "0.4"
 http = "0.2"
 uuid = { version = "1.4", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+urlencoding = "2.1"
 
 [dev-dependencies]
 tokio-test = "0.4"

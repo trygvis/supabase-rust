@@ -8,6 +8,7 @@ use std::sync::RwLock;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
+use urlencoding;
 
 /// エラー型
 #[derive(Error, Debug)]
@@ -76,6 +77,125 @@ impl Default for AuthOptions {
             detect_session_in_url: true,
         }
     }
+}
+
+/// OAuth プロバイダ
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum OAuthProvider {
+    Google,
+    Facebook,
+    Twitter,
+    Github,
+    Apple,
+    Discord,
+    Gitlab,
+    Bitbucket,
+    Linkedin,
+    Microsoft,
+    Slack,
+    Spotify,
+}
+
+impl OAuthProvider {
+    fn to_string(&self) -> &'static str {
+        match self {
+            Self::Google => "google",
+            Self::Facebook => "facebook",
+            Self::Twitter => "twitter",
+            Self::Github => "github",
+            Self::Apple => "apple",
+            Self::Discord => "discord",
+            Self::Gitlab => "gitlab",
+            Self::Bitbucket => "bitbucket",
+            Self::Linkedin => "linkedin",
+            Self::Microsoft => "microsoft", 
+            Self::Slack => "slack",
+            Self::Spotify => "spotify",
+        }
+    }
+}
+
+/// OAuth サインイン設定
+#[derive(Debug, Clone, Serialize)]
+pub struct OAuthSignInOptions {
+    pub redirect_to: Option<String>,
+    pub scopes: Option<String>,
+    pub provider_scope: Option<String>,
+    pub skip_browser_redirect: Option<bool>,
+}
+
+impl Default for OAuthSignInOptions {
+    fn default() -> Self {
+        Self {
+            redirect_to: None,
+            scopes: None,
+            provider_scope: None,
+            skip_browser_redirect: None,
+        }
+    }
+}
+
+/// MFAファクターのタイプ
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MFAFactorType {
+    Totp,
+}
+
+/// MFAファクターの状態
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MFAFactorStatus {
+    Unverified,
+    Verified,
+}
+
+/// MFAファクター情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MFAFactor {
+    pub id: String,
+    pub friendly_name: Option<String>,
+    #[serde(rename = "factor_type")]
+    pub factor_type: MFAFactorType,
+    pub status: MFAFactorStatus,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// TOTP MFAチャレンジ
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MFAChallenge {
+    pub id: String,
+    #[serde(rename = "factor_id")]
+    pub factor_id: String,
+    pub created_at: String,
+    pub expires_at: Option<String>,
+}
+
+/// MFAチャレンジ検証結果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MFAVerifyResponse {
+    pub access_token: String,
+    pub refresh_token: Option<String>,
+    #[serde(rename = "type")]
+    pub token_type: String,
+    pub expires_in: i64,
+}
+
+/// TOTP設定情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TOTPSetupInfo {
+    pub qr_code: String,
+    pub secret: String,
+    pub uri: String,
+}
+
+/// 電話番号認証のレスポンス
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PhoneVerificationResponse {
+    pub phone: String,
+    pub verification_id: String,
+    pub expires_at: String,
 }
 
 /// Auth クライアント
@@ -270,6 +390,378 @@ impl Auth {
         
         Ok(())
     }
+    
+    /// OAuth プロバイダを通じたサインインのためのURL生成
+    pub fn get_oauth_sign_in_url(&self, provider: OAuthProvider, options: Option<OAuthSignInOptions>) -> String {
+        let provider_id = provider.to_string();
+        let options = options.unwrap_or_default();
+        
+        let mut url = format!("{}/auth/v1/authorize?provider={}", self.url, provider_id);
+        
+        if let Some(redirect_to) = options.redirect_to {
+            url.push_str(&format!("&redirect_to={}", urlencoding::encode(&redirect_to)));
+        }
+        
+        if let Some(scopes) = options.scopes {
+            url.push_str(&format!("&scopes={}", urlencoding::encode(&scopes)));
+        }
+        
+        if let Some(provider_scope) = options.provider_scope {
+            url.push_str(&format!("&provider_scope={}", urlencoding::encode(&provider_scope)));
+        }
+        
+        url
+    }
+    
+    /// OAuthで認証をリクエスト
+    pub async fn sign_in_with_oauth(
+        &self,
+        provider: OAuthProvider,
+        options: Option<OAuthSignInOptions>
+    ) -> Result<String, AuthError> {
+        // OAuth認証URLを生成
+        let url = self.get_oauth_sign_in_url(provider, options.clone());
+        
+        // 自動リダイレクトオプション
+        let skip_browser_redirect = options
+            .and_then(|opt| opt.skip_browser_redirect)
+            .unwrap_or(false);
+            
+        if skip_browser_redirect {
+            return Ok(url);
+        }
+        
+        // 通常はクライアント側でURLにリダイレクトする必要があるため、
+        // ここではURLを返します。Rustの場合、環境によって適切なブラウザ起動方法が異なります。
+        Ok(url)
+    }
+    
+    /// OAuthコールバックからのコードを処理してセッション取得
+    pub async fn exchange_code_for_session(&self, code: &str) -> Result<Session, AuthError> {
+        let url = format!("{}/auth/v1/token?grant_type=authorization_code", self.url);
+        
+        let payload = serde_json::json!({
+            "code": code,
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let session: Session = response.json().await?;
+        
+        // セッションを保存
+        if self.options.persist_session {
+            let mut write_guard = self.current_session.write().unwrap();
+            *write_guard = Some(session.clone());
+        }
+        
+        Ok(session)
+    }
+    
+    /// MFAで保護されたサインイン - 最初のステップ（パスワードでの認証）
+    /// 
+    /// このメソッドは通常のサインインプロセスと同様ですが、ユーザーが
+    /// MFAを有効化している場合は、次のステップで検証が必要なチャレンジを返します。
+    pub async fn sign_in_with_password_mfa(&self, email: &str, password: &str) -> Result<Result<Session, MFAChallenge>, AuthError> {
+        let url = format!("{}/auth/v1/token?grant_type=password", self.url);
+        
+        let payload = serde_json::json!({
+            "email": email,
+            "password": password,
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+        
+        // サインイン結果をパース
+        let status = response.status();
+        let body = response.text().await?;
+        
+        if status.is_success() {
+            // 通常のサインイン成功（MFAが必要ない）
+            let session: Session = serde_json::from_str(&body)?;
+            
+            // セッションを保存
+            if self.options.persist_session {
+                let mut write_guard = self.current_session.write().unwrap();
+                *write_guard = Some(session.clone());
+            }
+            
+            Ok(Ok(session))
+        } else if status.as_u16() == 401 {
+            // MFA認証が必要かチェック
+            if let Ok(challenge) = serde_json::from_str::<MFAChallenge>(&body) {
+                // MFAチャレンジ
+                Ok(Err(challenge))
+            } else {
+                // 通常の認証エラー
+                Err(AuthError::ApiError(body))
+            }
+        } else {
+            // その他のエラー
+            Err(AuthError::ApiError(body))
+        }
+    }
+    
+    /// MFAチャレンジの検証 - 第二ステップ（コードによる検証）
+    pub async fn verify_mfa_challenge(&self, challenge_id: &str, code: &str) -> Result<Session, AuthError> {
+        let url = format!("{}/auth/v1/mfa/verify", self.url);
+        
+        let payload = serde_json::json!({
+            "challenge_id": challenge_id,
+            "code": code,
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let verify_response: MFAVerifyResponse = response.json().await?;
+        
+        // セッションオブジェクトに変換
+        let user = self.get_user_by_token(&verify_response.access_token).await?;
+        
+        let session = Session {
+            access_token: verify_response.access_token,
+            refresh_token: verify_response.refresh_token.unwrap_or_default(),
+            expires_in: verify_response.expires_in,
+            token_type: verify_response.token_type,
+            user,
+        };
+        
+        // セッションを保存
+        if self.options.persist_session {
+            let mut write_guard = self.current_session.write().unwrap();
+            *write_guard = Some(session.clone());
+        }
+        
+        Ok(session)
+    }
+    
+    /// MFAファクターを登録する
+    pub async fn enroll_totp(&self) -> Result<TOTPSetupInfo, AuthError> {
+        let session = self.get_session().ok_or(AuthError::MissingSession)?;
+        
+        let url = format!("{}/auth/v1/mfa/totp", self.url);
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Authorization", format!("Bearer {}", session.access_token))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let setup_info: TOTPSetupInfo = response.json().await?;
+        
+        Ok(setup_info)
+    }
+    
+    /// TOTP MFAファクターを検証して有効化
+    pub async fn verify_totp(&self, factor_id: &str, code: &str) -> Result<MFAFactor, AuthError> {
+        let session = self.get_session().ok_or(AuthError::MissingSession)?;
+        
+        let url = format!("{}/auth/v1/mfa/totp/verify", self.url);
+        
+        let payload = serde_json::json!({
+            "factor_id": factor_id,
+            "code": code,
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Authorization", format!("Bearer {}", session.access_token))
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let factor: MFAFactor = response.json().await?;
+        
+        Ok(factor)
+    }
+    
+    /// ユーザーの登録済みMFAファクター一覧を取得
+    pub async fn list_factors(&self) -> Result<Vec<MFAFactor>, AuthError> {
+        let session = self.get_session().ok_or(AuthError::MissingSession)?;
+        
+        let url = format!("{}/auth/v1/mfa/factors", self.url);
+        
+        let response = self.http_client.get(&url)
+            .header("apikey", &self.key)
+            .header("Authorization", format!("Bearer {}", session.access_token))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let factors: Vec<MFAFactor> = response.json().await?;
+        
+        Ok(factors)
+    }
+    
+    /// MFAファクターを無効化（削除）
+    pub async fn unenroll_factor(&self, factor_id: &str) -> Result<(), AuthError> {
+        let session = self.get_session().ok_or(AuthError::MissingSession)?;
+        
+        let url = format!("{}/auth/v1/mfa/factors/{}", self.url, factor_id);
+        
+        let response = self.http_client.delete(&url)
+            .header("apikey", &self.key)
+            .header("Authorization", format!("Bearer {}", session.access_token))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        Ok(())
+    }
+    
+    /// トークンを使ってユーザー情報を取得（内部メソッド）
+    async fn get_user_by_token(&self, token: &str) -> Result<User, AuthError> {
+        let url = format!("{}/auth/v1/user", self.url);
+        
+        let response = self.http_client.get(&url)
+            .header("apikey", &self.key)
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let user: User = response.json().await?;
+        
+        Ok(user)
+    }
+    
+    /// 匿名認証でサインイン
+    pub async fn sign_in_anonymously(&self) -> Result<Session, AuthError> {
+        let url = format!("{}/auth/v1/signup", self.url);
+        
+        // 匿名認証のリクエスト
+        let payload = serde_json::json!({
+            "data": { "is_anonymous": true }
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let session: Session = response.json().await?;
+        
+        // セッションを保存
+        if self.options.persist_session {
+            let mut write_guard = self.current_session.write().unwrap();
+            *write_guard = Some(session.clone());
+        }
+        
+        Ok(session)
+    }
+    
+    /// 電話番号で認証コードを送信
+    pub async fn send_verification_code(&self, phone: &str) -> Result<PhoneVerificationResponse, AuthError> {
+        let url = format!("{}/auth/v1/otp", self.url);
+        
+        let payload = serde_json::json!({
+            "phone": phone,
+            "channel": "sms"
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let verification: PhoneVerificationResponse = response.json().await?;
+        Ok(verification)
+    }
+    
+    /// 電話番号と検証コードでサインイン
+    pub async fn verify_phone_code(&self, phone: &str, verification_id: &str, code: &str) -> Result<Session, AuthError> {
+        let url = format!("{}/auth/v1/verify", self.url);
+        
+        let payload = serde_json::json!({
+            "phone": phone,
+            "verification_id": verification_id,
+            "code": code,
+            "type": "sms"
+        });
+        
+        let response = self.http_client.post(&url)
+            .header("apikey", &self.key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(AuthError::ApiError(error_text));
+        }
+        
+        let session: Session = response.json().await?;
+        
+        // セッションを保存
+        if self.options.persist_session {
+            let mut write_guard = self.current_session.write().unwrap();
+            *write_guard = Some(session.clone());
+        }
+        
+        Ok(session)
+    }
 }
 
 #[cfg(test)]
@@ -316,5 +808,30 @@ mod tests {
         let session = result.unwrap();
         assert_eq!(session.access_token, "test_access_token");
         assert_eq!(session.user.email, Some("test@example.com".to_string()));
+    }
+    
+    #[tokio::test]
+    async fn test_oauth_sign_in_url() {
+        let client = Client::new();
+        let auth = Auth::new(
+            "https://example.supabase.co",
+            "test-key",
+            client,
+            AuthOptions::default()
+        );
+        
+        let url = auth.get_oauth_sign_in_url(super::OAuthProvider::Google, None);
+        assert!(url.contains("provider=google"));
+        
+        let options = super::OAuthSignInOptions {
+            redirect_to: Some("https://example.com/callback".to_string()),
+            scopes: Some("email profile".to_string()),
+            ..Default::default()
+        };
+        
+        let url_with_options = auth.get_oauth_sign_in_url(super::OAuthProvider::Github, Some(options));
+        assert!(url_with_options.contains("provider=github"));
+        assert!(url_with_options.contains("redirect_to="));
+        assert!(url_with_options.contains("scopes="));
     }
 }

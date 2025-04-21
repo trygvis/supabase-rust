@@ -168,6 +168,32 @@ pub struct Bucket {
     pub updated_at: String,
 }
 
+/// チャンクアップロードの初期化結果
+#[derive(Debug, Clone, Deserialize)]
+pub struct InitiateMultipartUploadResponse {
+    pub id: String,
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    pub key: String,
+    pub bucket: String,
+}
+
+/// アップロードされたチャンク情報
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UploadedPartInfo {
+    #[serde(rename = "partNumber")]
+    pub part_number: u32,
+    pub etag: String,
+}
+
+/// チャンクアップロードの完了リクエスト
+#[derive(Debug, Clone, Serialize)]
+struct CompleteMultipartUploadRequest {
+    #[serde(rename = "uploadId")]
+    pub upload_id: String,
+    pub parts: Vec<UploadedPartInfo>,
+}
+
 /// ストレージバケットクライアント
 pub struct StorageBucketClient<'a> {
     parent: &'a StorageClient,
@@ -457,6 +483,226 @@ impl<'a> StorageBucketClient<'a> {
         
         Ok(signed_url.signed_url)
     }
+
+    /// マルチパートアップロードを初期化
+    pub async fn initiate_multipart_upload(
+        &self,
+        path: &str,
+        options: Option<FileOptions>
+    ) -> Result<InitiateMultipartUploadResponse, StorageError> {
+        let url = format!(
+            "{}/storage/v1/upload/initiate",
+            self.parent.base_url
+        );
+        
+        let options = options.unwrap_or_default();
+        
+        let cache_control = options.cache_control.unwrap_or_else(|| "max-age=3600".to_string());
+        let content_type = options.content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+        let upsert = options.upsert.unwrap_or(false);
+        
+        let payload = serde_json::json!({
+            "bucket": self.bucket_id,
+            "name": path,
+            "cacheControl": cache_control,
+            "contentType": content_type,
+            "upsert": upsert,
+        });
+        
+        let response = self.parent.http_client.post(&url)
+            .header("apikey", &self.parent.api_key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(StorageError::ApiError(error_text));
+        }
+        
+        let initiate_response: InitiateMultipartUploadResponse = response.json().await?;
+        
+        Ok(initiate_response)
+    }
+    
+    /// チャンクをアップロード
+    pub async fn upload_part(
+        &self,
+        upload_id: &str,
+        part_number: u32,
+        data: Bytes
+    ) -> Result<UploadedPartInfo, StorageError> {
+        let url = format!(
+            "{}/storage/v1/upload/part",
+            self.parent.base_url
+        );
+        
+        let body = reqwest::Body::from(data);
+        
+        let response = self.parent.http_client.post(&url)
+            .header("apikey", &self.parent.api_key)
+            .query(&[
+                ("uploadId", upload_id),
+                ("partNumber", &part_number.to_string()),
+                ("bucket", &self.bucket_id),
+            ])
+            .body(body)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(StorageError::ApiError(error_text));
+        }
+        
+        let etag = response.headers()
+            .get("etag")
+            .ok_or_else(|| StorageError::new("ETag header not found in response".to_string()))?
+            .to_str()
+            .map_err(|e| StorageError::new(format!("Invalid ETag header: {}", e)))?
+            .to_string();
+        
+        let part_info = UploadedPartInfo {
+            part_number,
+            etag,
+        };
+        
+        Ok(part_info)
+    }
+    
+    /// マルチパートアップロードを完了
+    pub async fn complete_multipart_upload(
+        &self,
+        upload_id: &str,
+        path: &str,
+        parts: Vec<UploadedPartInfo>
+    ) -> Result<FileObject, StorageError> {
+        let url = format!(
+            "{}/storage/v1/upload/complete",
+            self.parent.base_url
+        );
+        
+        let payload = CompleteMultipartUploadRequest {
+            upload_id: upload_id.to_string(),
+            parts,
+        };
+        
+        let response = self.parent.http_client.post(&url)
+            .header("apikey", &self.parent.api_key)
+            .header("Content-Type", "application/json")
+            .query(&[
+                ("bucket", &self.bucket_id),
+                ("key", &path),
+            ])
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(StorageError::ApiError(error_text));
+        }
+        
+        let file_object: FileObject = response.json().await?;
+        
+        Ok(file_object)
+    }
+    
+    /// マルチパートアップロードを中止
+    pub async fn abort_multipart_upload(
+        &self,
+        upload_id: &str,
+        path: &str
+    ) -> Result<(), StorageError> {
+        let url = format!(
+            "{}/storage/v1/upload/abort",
+            self.parent.base_url
+        );
+        
+        let payload = serde_json::json!({
+            "uploadId": upload_id,
+            "bucket": self.bucket_id,
+            "key": path,
+        });
+        
+        let response = self.parent.http_client.post(&url)
+            .header("apikey", &self.parent.api_key)
+            .header("Content-Type", "application/json")
+            .json(&payload)
+            .send()
+            .await?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(StorageError::ApiError(error_text));
+        }
+        
+        Ok(())
+    }
+    
+    /// 大容量ファイルをチャンクでアップロード
+    /// 
+    /// このメソッドは大きなファイルを自動的にチャンクに分割してアップロードします。
+    /// 各チャンクは非同期でアップロードされ、すべてのチャンクがアップロードされると
+    /// 自動的にマルチパートアップロードを完了します。
+    pub async fn upload_large_file(
+        &self,
+        path: &str,
+        file_path: &Path,
+        chunk_size: usize,
+        options: Option<FileOptions>
+    ) -> Result<FileObject, StorageError> {
+        // ファイルを開く
+        let mut file = File::open(file_path).await?;
+        
+        // ファイルサイズを取得
+        let file_size = file.metadata().await?.len() as usize;
+        
+        // チャンク数を計算
+        let chunk_count = (file_size + chunk_size - 1) / chunk_size;
+        
+        if chunk_count == 0 {
+            return Err(StorageError::new("File is empty".to_string()));
+        }
+        
+        // マルチパートアップロードを初期化
+        let init_response = self.initiate_multipart_upload(path, options).await?;
+        
+        // 部分アップロード情報を保持するベクター
+        let mut uploaded_parts = Vec::with_capacity(chunk_count);
+        
+        // バッファを準備
+        let mut buffer = vec![0u8; chunk_size];
+        
+        // 各チャンクをアップロード
+        for part_number in 1..=chunk_count as u32 {
+            // バッファにデータを読み込む
+            let n = file.read(&mut buffer).await?;
+            
+            if n == 0 {
+                break;
+            }
+            
+            // 実際に読み込んだサイズに合わせてバッファを調整
+            let chunk_data = Bytes::from(buffer[0..n].to_vec());
+            
+            // チャンクをアップロード
+            let part_info = self.upload_part(&init_response.upload_id, part_number, chunk_data).await?;
+            
+            // アップロードした部分情報を保存
+            uploaded_parts.push(part_info);
+        }
+        
+        // マルチパートアップロードを完了
+        let file_object = self.complete_multipart_upload(
+            &init_response.upload_id,
+            path,
+            uploaded_parts
+        ).await?;
+        
+        Ok(file_object)
+    }
 }
 
 #[cfg(test)]
@@ -466,5 +712,11 @@ mod tests {
     #[tokio::test]
     async fn test_list_buckets() {
         // TODO: モック実装を用いたテスト
+    }
+
+    #[tokio::test]
+    async fn test_multipart_upload() {
+        // このテストは実際のAPIと通信するため、モックサーバーを使用するべきですが、
+        // 簡略化のため省略しています。実際の実装ではモックサーバーを使用してください。
     }
 }
