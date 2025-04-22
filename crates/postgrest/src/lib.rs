@@ -30,17 +30,16 @@ use std::sync::Arc;
 #[cfg(feature = "schema-convert")]
 pub mod schema;
 
-// スキーマ変換機能
-#[cfg(feature = "schema-convert")]
-pub use schema::{
-    convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions,
-};
-
 // 型安全なデータベース操作
-#[cfg(feature = "schema-convert")]
-pub use schema::{
+pub use crate::schema::{
     PostgrestClientTypeExtension, Table, TypedDeleteBuilder, TypedInsertBuilder,
     TypedPostgrestClient, TypedUpdateBuilder,
+};
+
+// スキーマ変換機能は条件付きでのみ公開
+#[cfg(feature = "schema-convert")]
+pub use crate::schema::{
+    convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions,
 };
 
 /// エラー型

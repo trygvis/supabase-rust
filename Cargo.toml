@@ -21,10 +21,15 @@ base64 = "0.21"
 async-trait = "0.1"
 jsonwebtoken = "9.1"
 supabase-rust-auth = { path = "crates/auth", version = "0.1.1" }
-supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.1" }
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.1", features = ["schema-convert"] }
 supabase-rust-storage = { path = "crates/storage", version = "0.1.1" }
 supabase-rust-realtime = { path = "crates/realtime", version = "0.1.1" }
 supabase-rust-functions = { path = "crates/functions", version = "0.1.1" }
+clap = { version = "3.0", optional = true }
+
+[features]
+default = []
+schema-convert = ["clap", "supabase-rust-postgrest/schema-convert"]
 
 [workspace]
 members = [

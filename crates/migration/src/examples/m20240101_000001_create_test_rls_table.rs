@@ -1,7 +1,7 @@
-use sea_orm_migration::prelude::*;
 use sea_orm::Statement;
+use sea_orm_migration::prelude::*;
 // Use helpers from the library root (lib.rs)
-use crate::utils::{RlsCommand, RlsPolicy, RlsRole, enable_rls_sql, disable_rls_sql};
+use crate::utils::{disable_rls_sql, enable_rls_sql, RlsCommand, RlsPolicy, RlsRole};
 
 // Define identifiers for the table and columns
 #[derive(DeriveIden)]
@@ -66,7 +66,8 @@ impl MigrationTrait for Migration {
         };
 
         let create_policy_sql = select_policy.create_policy_sql();
-        let create_policy_stmt = Statement::from_string(manager.get_database_backend(), create_policy_sql);
+        let create_policy_stmt =
+            Statement::from_string(manager.get_database_backend(), create_policy_sql);
         manager.get_connection().execute(create_policy_stmt).await?;
         println!(" -> RLS policy '{}' created.", select_policy.name);
 
@@ -81,17 +82,18 @@ impl MigrationTrait for Migration {
         // --- 1. Drop RLS Policy ---
         // Construct a temporary policy just to get the drop SQL
         let policy_to_drop = RlsPolicy {
-             name: "Allow auth user select own data".to_string(),
-             table: TestRlsTable::Table.to_string(),
-             // Other fields are not needed for drop_policy_sql but need defaults
-             command: RlsCommand::All, 
-             role: RlsRole::Public, 
-             using: String::new(), 
-             check: None, 
-             schema: Some("public".to_string()),
+            name: "Allow auth user select own data".to_string(),
+            table: TestRlsTable::Table.to_string(),
+            // Other fields are not needed for drop_policy_sql but need defaults
+            command: RlsCommand::All,
+            role: RlsRole::Public,
+            using: String::new(),
+            check: None,
+            schema: Some("public".to_string()),
         };
         let drop_policy_sql = policy_to_drop.drop_policy_sql();
-        let drop_policy_stmt = Statement::from_string(manager.get_database_backend(), drop_policy_sql);
+        let drop_policy_stmt =
+            Statement::from_string(manager.get_database_backend(), drop_policy_sql);
         manager.get_connection().execute(drop_policy_stmt).await?;
         println!(" -> RLS policy '{}' dropped.", policy_to_drop.name);
 
@@ -102,7 +104,6 @@ impl MigrationTrait for Migration {
         // manager.get_connection().execute(disable_stmt).await?;
         // println!(" -> RLS disabled for 'test_rls_table'.");
 
-
         // --- 3. Drop Table ---
         manager
             .drop_table(Table::drop().table(TestRlsTable::Table).to_owned())
@@ -111,4 +112,4 @@ impl MigrationTrait for Migration {
 
         Ok(())
     }
-} 
+}

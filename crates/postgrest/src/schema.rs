@@ -63,13 +63,13 @@ pub trait PostgrestClientTypeExtension {
     fn query_typed<T: Table + DeserializeOwned>(&self) -> TypedPostgrestClient<T>;
 
     /// 挿入操作のための型安全なメソッド
-    fn insert_typed<T: Table + Serialize>(
+    fn insert_typed<T: Table + Serialize + DeserializeOwned>(
         &self,
         values: &T,
     ) -> Result<TypedInsertBuilder<T>, crate::PostgrestError>;
 
     /// 更新操作のための型安全なメソッド
-    fn update_typed<T: Table + Serialize>(
+    fn update_typed<T: Table + Serialize + DeserializeOwned>(
         &self,
         values: &T,
     ) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError>;
@@ -342,7 +342,7 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
         }
     }
 
-    fn insert_typed<T: Table + Serialize>(
+    fn insert_typed<T: Table + Serialize + DeserializeOwned>(
         &self,
         values: &T,
     ) -> Result<TypedInsertBuilder<T>, crate::PostgrestError> {
@@ -360,7 +360,7 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
         })
     }
 
-    fn update_typed<T: Table + Serialize>(
+    fn update_typed<T: Table + Serialize + DeserializeOwned>(
         &self,
         values: &T,
     ) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError> {
@@ -396,7 +396,6 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
 
 /// TypeScript型定義ファイルをRustの型定義に変換するオプション
 #[cfg(feature = "schema-convert")]
-#[derive(Debug, Clone)]
 pub struct SchemaConvertOptions {
     /// 出力ディレクトリ
     pub output_dir: PathBuf,
@@ -412,8 +411,8 @@ pub struct SchemaConvertOptions {
 impl Default for SchemaConvertOptions {
     fn default() -> Self {
         Self {
-            output_dir: PathBuf::from("src/generated"),
-            module_name: "schema".to_string(),
+            output_dir: PathBuf::from("./src/models"),
+            module_name: "models".to_string(),
             derives: vec![
                 "Debug".to_string(),
                 "Clone".to_string(),

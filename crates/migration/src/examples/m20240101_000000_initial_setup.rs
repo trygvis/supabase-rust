@@ -10,7 +10,7 @@ impl MigrationTrait for Migration {
         // Replace the following with your schema creation logic
         println!("Applying initial setup migration (placeholder)");
         let db = manager.get_connection();
-        
+
         // Example: Create a simple table (adjust as needed)
         // manager
         //     .create_table(
@@ -58,4 +58,4 @@ impl MigrationTrait for Migration {
 
         Ok(())
     }
-} 
+}
