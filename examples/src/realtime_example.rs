@@ -105,7 +105,7 @@ async fn run_advanced_filter_example(
         };
 
         println!("タスクを作成: {}", task.title);
-        let insert_result = postgrest.insert(json!(task)).await?;
+        let insert_result = supabase.from("tasks").insert(json!(task)).await?;
 
         let task_id = if let Some(task) = insert_result.get(0) {
             task["id"].as_i64().unwrap()
@@ -116,7 +116,7 @@ async fn run_advanced_filter_example(
         // 偶数番目のタスクを完了済みに更新（フィルターに合致）
         if i % 2 == 0 {
             println!("タスク {} を完了済みに更新（フィルターに合致）", i);
-            let update_result = postgrest
+            let update_result = supabase.from("tasks")
                 .eq("id", &task_id.to_string())
                 .update(json!({ "is_complete": true }))
                 .await?;
@@ -194,7 +194,7 @@ async fn run_advanced_filter_example(
         println!("タスク {} の説明を更新（複合フィルターに合致）", i);
 
         // タスクを取得
-        let task_list: Vec<serde_json::Value> = postgrest
+        let task_list: Vec<serde_json::Value> = supabase.from("tasks")
             .select("*")
             .eq("title", &task_title)
             .eq("user_id", &user_id)
@@ -205,7 +205,8 @@ async fn run_advanced_filter_example(
             let task_id = task_list[0]["id"].as_i64().unwrap();
 
             // タスクを更新
-            let update_result = postgrest
+            let update_client = supabase.from("tasks");
+            let update_result = update_client
                 .eq("id", &task_id.to_string())
                 .update(json!({
                     "description": format!("複合フィルターテスト用に更新 {}", i)
@@ -247,10 +248,17 @@ async fn run_advanced_filter_example(
     // テスト後のクリーンアップ
     println!("\nテスト後のクリーンアップ...");
 
-    // 作成したテストデータを削除
-    let delete_result = postgrest.eq("user_id", &user_id).delete().await?;
+    // クリーンアップ - 作成したすべてのタスクを削除
+    println!("\nクリーンアップ - すべてのテストタスクを削除");
+
+    let delete_client = supabase.from("tasks");
+    let delete_result = delete_client
+        .eq("user_id", &user_id)
+        .delete()
+        .await?;
 
     println!("削除結果: {:?}", delete_result);
+    println!("すべてのテストタスクを削除しました");
 
     Ok(())
 }
@@ -350,7 +358,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("チャンネルの購読を開始しました");
 
     // いくつかのタスクを作成して更新・削除し、リアルタイムイベントをテスト
-    let postgrest = supabase.from("tasks");
+    // PostgrestClientを直接取得せずに各操作で個別に.from("tasks")を使用
 
     // 1. タスクを作成
     println!("\nテスト用タスクを作成します");
@@ -365,7 +373,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             user_id: user_id.clone(),
         };
 
-        postgrest.insert(json!(task)).await?;
+        supabase.from("tasks").insert(json!(task)).await?;
 
         println!("タスク {} を作成しました", i);
 
@@ -377,7 +385,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nタスク1を「完了」に更新します");
 
     // タスク1を検索
-    let task1_list = postgrest
+    let task1_list = supabase.from("tasks")
         .select("*")
         .eq("title", "Realtime Task 1")
         .eq("user_id", &user_id)
@@ -388,11 +396,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let task1_id = task1_list[0]["id"].as_i64().unwrap();
 
         // タスクを更新
-        postgrest
-            .update(json!({ "is_complete": true }))
+        let update_client = supabase.from("tasks");
+        let update_result = update_client
             .eq("id", &task1_id.to_string())
-            .execute::<serde_json::Value>()
+            .update(json!({ "is_complete": true }))
             .await?;
+        
+        println!("更新結果: {:?}", update_result);
     }
 
     println!("タスク1を更新しました");
@@ -404,7 +414,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nタスク2を削除します");
 
     // タスク2を検索
-    let task2_list = postgrest
+    let task2_list = supabase.from("tasks")
         .select("*")
         .eq("title", "Realtime Task 2")
         .eq("user_id", &user_id)
@@ -415,11 +425,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let task2_id = task2_list[0]["id"].as_i64().unwrap();
 
         // タスクを削除
-        postgrest
-            .delete()
+        let delete_client = supabase.from("tasks");
+        let delete_result = delete_client
             .eq("id", &task2_id.to_string())
-            .execute::<serde_json::Value>()
+            .delete()
             .await?;
+        
+        println!("削除結果: {:?}", delete_result);
     }
 
     println!("タスク2を削除しました");
@@ -440,12 +452,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // クリーンアップ - 作成したすべてのタスクを削除
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
-    postgrest
-        .delete()
+    let delete_client = supabase.from("tasks");
+    let delete_result = delete_client
         .eq("user_id", &user_id)
-        .execute::<serde_json::Value>()
+        .delete()
         .await?;
 
+    println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
 
     // チャンネルの購読を解除
@@ -455,8 +468,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .read_line(&mut input)
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
 
-    // 明示的にチャンネルを解除
-    channel.unsubscribe().await?;
+    // チャンネルを解放すると自動的に購読解除される
+    drop(channel);
     println!("チャンネルの購読を解除しました");
 
     println!("Realtime example completed");

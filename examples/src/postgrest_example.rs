@@ -28,7 +28,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Using Supabase URL: {}", supabase_url);
 
     // Initialize the Supabase client
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    let supabase_client = Supabase::new(&supabase_url, &supabase_key);
 
     println!("Starting PostgREST advanced example");
 
@@ -36,21 +36,21 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let test_email = format!("test-postgrest-{}@example.com", uuid::Uuid::new_v4());
     let test_password = "password123";
 
-    let sign_up_result = supabase.auth().sign_up(&test_email, test_password).await?;
+    let sign_up_result = supabase_client.auth().sign_up(&test_email, test_password).await?;
 
     let user_id = sign_up_result.user.id.clone();
     let access_token = sign_up_result.access_token.clone();
     println!("Created test user with ID: {}", user_id);
 
     // Get the PostgREST client and attach the authorization token
-    let postgrest = supabase.from("tasks").with_auth(&access_token)?;
+    let postgrest = supabase_client.from("tasks").with_auth(&access_token)?;
 
     // Example 1: Basic operations
     println!("Example 1: Basic operations");
 
-    // PostgreStを初期化
-    let base_url = "https://api.supabase.io";
-    let api_key = "your_api_key";
+    // PostgreStを初期化 - 実際のURLとキーを使用
+    let base_url = &supabase_url;
+    let api_key = &supabase_key;
     let http_client = Client::new();
 
     // PostgreStクライアントを作成
@@ -383,17 +383,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         "Rollback wasn't successful, found tasks that should have been rolled back"
     );
 
-    // Example 12: Cleanup - delete all tasks for our test user
-    println!("\nExample 12: Cleanup - delete all tasks for our test user");
-
-    let _ = supabase
-        .from("tasks")
-        .with_auth(&access_token)?
+    // Example 10: final cleanup
+    println!("\nExample 10: final cleanup");
+    
+    let final_postgrest = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
+    let _ = final_postgrest
         .eq("user_id", &user_id)
         .delete()
         .await?;
 
-    println!("Deleted all tasks for test user");
+    println!("Cleaned up all test data");
 
     println!("PostgREST example completed");
 

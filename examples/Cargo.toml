@@ -14,6 +14,7 @@ futures = "0.3"
 mime = "0.3"
 bytes = "1.0"
 tempfile = "3.7"
+reqwest = "0.11"
 
 [[bin]]
 name = "auth_example"
@@ -38,3 +39,11 @@ path = "src/postgrest_example.rs"
 [[bin]]
 name = "functions_example"
 path = "src/functions_example.rs"
+
+[[bin]]
+name = "auth_admin_example"
+path = "src/auth_admin_example.rs"
+
+[[bin]]
+name = "functions_binary_example"
+path = "src/functions_binary_example.rs"

@@ -1,13 +1,13 @@
 use dotenv::dotenv;
-use futures_util::StreamExt;
+use futures::StreamExt;
 use serde_json::json;
 use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use supabase_rust::functions::FunctionOptions;
-use supabase_rust::prelude::*;
-use supabase_rust::Supabase;
+use supabase_rust_gftd::functions::FunctionOptions;
+use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::Supabase;
 
 // このサンプルは、Supabase Edge Functionsからバイナリデータを
 // ストリーミングで取得し処理する例を示しています

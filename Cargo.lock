@@ -1771,6 +1771,7 @@ dependencies = [
  "dotenv",
  "futures",
  "mime",
+ "reqwest",
  "serde",
  "serde_json",
  "supabase-rust-gftd",

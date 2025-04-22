@@ -1,11 +1,12 @@
 use dotenv::dotenv;
+use reqwest::Client;
 use serde_json::json;
 use std::env;
-use supabase_rust::prelude::*;
-use supabase_rust::Supabase;
+use supabase_rust_gftd::auth::AdminAuth;
+use supabase_rust_gftd::Supabase;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // .envファイルから環境変数を読み込む
     dotenv().ok();
 
@@ -18,14 +19,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
         .expect("SUPABASE_SERVICE_ROLE_KEY must be set");
 
-    // Supabaseクライアントを初期化
-    let mut supabase = Supabase::new(&supabase_url, &supabase_key);
+    // HTTPクライアントを初期化
+    let http_client = Client::new();
     
-    // Auth Admin機能を初期化（サーバーサイドでのみ使用！）
-    let auth = supabase.auth().init_admin(&service_role_key);
-    
-    // Admin APIクライアントへの参照を取得
-    let admin = auth.admin().expect("Admin client should be initialized");
+    // AdminAuthクライアントを直接初期化
+    let admin = AdminAuth::new(
+        &format!("{}/auth/v1", supabase_url),
+        &service_role_key,
+        http_client
+    );
 
     println!("Auth Admin API の例を開始します");
 
