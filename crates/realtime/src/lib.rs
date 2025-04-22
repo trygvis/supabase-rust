@@ -109,23 +109,24 @@ pub enum FilterOperator {
     ILike,
 }
 
-impl ToString for FilterOperator {
-    fn to_string(&self) -> String {
-        match self {
-            FilterOperator::Eq => "eq".to_string(),
-            FilterOperator::Neq => "neq".to_string(),
-            FilterOperator::Gt => "gt".to_string(),
-            FilterOperator::Gte => "gte".to_string(),
-            FilterOperator::Lt => "lt".to_string(),
-            FilterOperator::Lte => "lte".to_string(),
-            FilterOperator::In => "in".to_string(),
-            FilterOperator::NotIn => "not.in".to_string(),
-            FilterOperator::ContainedBy => "contained_by".to_string(),
-            FilterOperator::Contains => "contains".to_string(),
-            FilterOperator::ContainedByArray => "contained_by_array".to_string(),
-            FilterOperator::Like => "like".to_string(),
-            FilterOperator::ILike => "ilike".to_string(),
-        }
+impl std::fmt::Display for FilterOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            FilterOperator::Eq => "eq",
+            FilterOperator::Neq => "neq",
+            FilterOperator::Gt => "gt",
+            FilterOperator::Gte => "gte",
+            FilterOperator::Lt => "lt",
+            FilterOperator::Lte => "lte",
+            FilterOperator::In => "in",
+            FilterOperator::NotIn => "not.in",
+            FilterOperator::ContainedBy => "contained_by",
+            FilterOperator::Contains => "contains",
+            FilterOperator::ContainedByArray => "contained_by_array",
+            FilterOperator::Like => "like",
+            FilterOperator::ILike => "ilike",
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -264,7 +265,7 @@ impl DatabaseChanges {
         })
     }
 
-    // to_channel_configメソッドを更新
+    #[allow(dead_code)]
     fn to_channel_config(&self) -> serde_json::Value {
         let mut events_str = String::new();
 
@@ -292,7 +293,7 @@ impl DatabaseChanges {
             let mut filter_obj = serde_json::Map::new();
 
             for filter in filters {
-                let filter_key = format!("{}:{}", filter.column, filter.operator.to_string());
+                let filter_key = format!("{}:{}", filter.column, filter.operator);
                 filter_obj.insert(filter_key, filter.value.clone());
             }
 
@@ -414,10 +415,13 @@ impl Drop for Subscription {
     }
 }
 
+/// A type alias for the callback function type
+type CallbackFn = Box<dyn Fn(Payload) + Send + Sync>;
+
 struct Channel {
     topic: String,
     socket: Arc<RwLock<Option<mpsc::Sender<Message>>>>,
-    callbacks: RwLock<HashMap<String, Box<dyn Fn(Payload) + Send + Sync>>>,
+    callbacks: RwLock<HashMap<String, CallbackFn>>,
 }
 
 /// 接続状態
@@ -734,9 +738,10 @@ impl RealtimeClient {
                         "ref": null
                     });
 
-                    if let Err(_) = socket_clone
+                    if socket_clone
                         .send(Message::Text(heartbeat_msg.to_string()))
                         .await
+                        .is_err()
                     {
                         break;
                     }

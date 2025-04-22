@@ -86,7 +86,7 @@ pub enum IsolationLevel {
 
 impl IsolationLevel {
     /// 分離レベルを文字列に変換
-    fn to_string(&self) -> &'static str {
+    fn display(&self) -> &'static str {
         match self {
             IsolationLevel::ReadCommitted => "read committed",
             IsolationLevel::RepeatableRead => "repeatable read",
@@ -104,7 +104,7 @@ pub enum TransactionMode {
 
 impl TransactionMode {
     /// トランザクションモードを文字列に変換
-    fn to_string(&self) -> &'static str {
+    fn display(&self) -> &'static str {
         match self {
             TransactionMode::ReadWrite => "read write",
             TransactionMode::ReadOnly => "read only",
@@ -672,8 +672,8 @@ impl PostgrestClient {
 
         // トランザクション開始リクエストを構築
         let mut request_body = json!({
-            "isolation_level": isolation.to_string(),
-            "mode": mode.to_string(),
+            "isolation_level": isolation.display(),
+            "mode": mode.display(),
         });
 
         if let Some(timeout) = timeout_seconds {
@@ -984,11 +984,13 @@ impl Drop for PostgrestTransaction {
             let url = format!("{}/rest/v1/rpc/rollback_transaction", self.base_url);
 
             let client = Client::new();
-            let _ = client
+            // Using drop to explicitly drop the future and avoid the warning
+            let future = client
                 .post(url)
                 .headers(self.headers.clone())
                 .json(&json!({ "transaction_id": self.transaction_id }))
                 .send();
+            std::mem::drop(future);
         }
     }
 }
