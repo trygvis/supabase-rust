@@ -35,7 +35,7 @@ members = [
     "crates/storage",
     "crates/realtime",
     "crates/functions",
-    "crates/supabase-rust-migration"
+    "crates/migration"
 ]
 
 [dev-dependencies]
