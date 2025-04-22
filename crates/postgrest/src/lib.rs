@@ -2,6 +2,17 @@
 //!
 //! This crate provides database functionality for Supabase,
 //! allowing for querying, filtering, and manipulating data in PostgreSQL.
+//!
+//! # Features
+//!
+//! - Query API (`select`, `insert`, `update`, `delete`)
+//! - Filtering (`eq`, `gt`, `lt`, etc.)
+//! - Ordering and pagination
+//! - Transactions
+//! - RPC function calls
+//! - CSV export
+//! - Schema conversion from TypeScript to Rust types
+//! - Type-safe database operations using Rust structs
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;
@@ -14,6 +25,20 @@ use url::Url;
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+// モジュール
+#[cfg(feature = "schema-convert")]
+pub mod schema;
+
+// スキーマ変換機能
+#[cfg(feature = "schema-convert")]
+pub use schema::{convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions};
+
+// 型安全なデータベース操作
+pub use schema::{
+    PostgrestClientTypeExtension, Table, TypedPostgrestClient,
+    TypedInsertBuilder, TypedUpdateBuilder, TypedDeleteBuilder,
+};
 
 /// エラー型
 #[derive(Error, Debug)]
