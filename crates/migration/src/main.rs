@@ -2,7 +2,6 @@ use sea_orm_migration::prelude::*;
 use std::env;
 
 // Make sure the lib module is accessible
-// The crate name is supabase-rust-migration, so we use that.
 use supabase_rust_migration::Migrator;
 
 #[tokio::main]
@@ -17,35 +16,43 @@ async fn main() {
     match command {
         "up" => {
             println!("Running migrations up...");
-            let schema_manager = SchemaManager::new(get_database_connection().await);
-            Migrator::up(&schema_manager, None).await.unwrap();
+            let db = get_database_connection().await;
+            Migrator::up(&db, None).await.unwrap();
             println!("Completed migrations up.");
         }
         "down" => {
             println!("Running migrations down...");
-            let schema_manager = SchemaManager::new(get_database_connection().await);
-            Migrator::down(&schema_manager, None).await.unwrap();
+            let db = get_database_connection().await;
+            Migrator::down(&db, None).await.unwrap();
             println!("Completed migrations down.");
         }
         "fresh" => {
             println!("Refreshing database (down then up)...");
-            let schema_manager = SchemaManager::new(get_database_connection().await);
-            Migrator::down(&schema_manager, None).await.unwrap();
-            Migrator::up(&schema_manager, None).await.unwrap();
+            let db = get_database_connection().await;
+            Migrator::down(&db, None).await.unwrap();
+            Migrator::up(&db, None).await.unwrap();
             println!("Database refresh completed.");
         }
         "status" => {
             println!("Checking migration status...");
-            let schema_manager = SchemaManager::new(get_database_connection().await);
-            let status = Migrator::status(&schema_manager).await.unwrap();
+            let db = get_database_connection().await;
             
-            println!("Migration Status:");
-            for migration in status {
-                println!(
-                    "{}: {}",
-                    migration.name,
-                    if migration.applied { "Applied" } else { "Pending" }
-                );
+            // 実際にどんな値を返すか確かめるためにデバッグ出力
+            println!("Migration status_list debugging:");
+            let result = Migrator::status(&db).await;
+            match result {
+                Ok(()) => {
+                    println!("Status command executed successfully (returned unit type)");
+                },
+                Err(e) => {
+                    println!("Error checking migration status: {}", e);
+                }
+            }
+            
+            // 代わりにMigratorのmigrationsリストを取得して表示
+            println!("\nConfigured migrations:");
+            for migration in Migrator::migrations() {
+                println!("- {}", migration.name());
             }
         }
         _ => {
@@ -64,4 +71,4 @@ async fn get_database_connection() -> sea_orm::DatabaseConnection {
     sea_orm::Database::connect(&database_url)
         .await
         .expect("Failed to connect to the database")
-} 
+}

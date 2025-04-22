@@ -1,10 +1,13 @@
-use sea_orm_migration::prelude::*;
+pub use sea_orm_migration::prelude::*;
 
-// Declare the examples module (which contains its own mod.rs)
+// 例のマイグレーションモジュールを宣言
 mod examples;
 
-// Declare real migration modules here, directly under src/
-// mod m2024XXXX_YYYYYY_create_my_table;
+// init コマンドで生成された新しいマイグレーション
+mod m20220101_000001_create_table;
+
+// RLS ポリシー用のユーティリティ
+pub mod utils;
 
 pub struct Migrator;
 
@@ -12,14 +15,18 @@ pub struct Migrator;
 impl MigratorTrait for Migrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         let mut migrations: Vec<Box<dyn MigrationTrait>> = vec![];
-
-        // Add migrations from the examples module
+        
+        // examples ディレクトリからのマイグレーション
         migrations.push(Box::new(examples::m20240101_000000_initial_setup::Migration));
+        // RLS マイグレーションを有効化
         migrations.push(Box::new(examples::m20240101_000001_create_test_rls_table::Migration));
         
-        // Add real migrations here
-        // migrations.push(Box::new(m2024XXXX_YYYYYY_create_my_table::Migration));
-
+        // init コマンドで生成された新しいマイグレーション (開発テスト用)
+        migrations.push(Box::new(m20220101_000001_create_table::Migration));
+        
+        // 実際のプロジェクトマイグレーションはここに追加
+        // migrations.push(Box::new(m20240510_123000_create_users_table::Migration));
+        
         migrations
     }
-} 
+}

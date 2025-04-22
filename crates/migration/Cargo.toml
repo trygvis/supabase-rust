@@ -2,12 +2,28 @@
 name = "supabase-rust-migration"
 version = "0.1.0"
 edition = "2021"
+publish = false
+
+[lib]
+name = "supabase_rust_migration"
+path = "src/lib.rs"
 
 [dependencies]
-sea-orm = { version = "^0.12", features = [ "sqlx-postgres", "runtime-tokio-rustls", "macros" ] }
-sea-orm-migration = { version = "^0.12", features = [ "runtime-tokio-rustls", "sqlx-postgres" ] }
 tokio = { version = "1", features = ["full"] }
 dotenvy = "0.15"
-async-trait = "^0.1" # Required by sea-orm-migration
+async-trait = "^0.1"
 
-# Add other dependencies as needed, e.g., for specific migration logic 
+[dependencies.sea-orm-migration]
+version = "1.1.0"
+features = [
+  "runtime-tokio-rustls",  # `ASYNC_RUNTIME` feature
+  "sqlx-postgres",         # `DATABASE_DRIVER` feature
+]
+
+[dependencies.sea-orm]
+version = "1.1.0"
+features = [
+  "runtime-tokio-rustls",
+  "sqlx-postgres", 
+  "macros"
+]
