@@ -1,8 +1,28 @@
+use sea_orm_migration::prelude::*;
 // Re-export RLS helpers from the library crate
 pub use supabase_rust_migration_lib::{RlsCommand, RlsPolicy, RlsRole, enable_rls_sql, disable_rls_sql};
 
-// --- Example Migration demonstrating RLS usage ---
+// Import the new migration module (use the actual timestamp from your filename)
+mod m20240101_000001_create_test_rls_table;
 
+// Define the Migrator struct
+// This struct will discover and run migrations defined in this module
+#[derive(Debug, Clone)]
+pub struct Migrator;
+
+#[async_trait::async_trait]
+impl MigratorTrait for Migrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        vec![
+            // Register the new migration
+            Box::new(m20240101_000001_create_test_rls_table::Migration),
+            // Add more migrations here as they are created
+        ]
+    }
+}
+
+// Example Migration (commented out initially)
+// ... keep the commented-out example for reference ...
 /*
 mod m20240727_000001_create_profiles_table {
     use sea_orm_migration::prelude::*;
@@ -137,4 +157,8 @@ mod m20240727_000001_create_profiles_table {
 }
 */
 
-// ... (Rest of the file, including the TODO placeholder for RLS) ... 
+// --- Helper functions/structs for Supabase-specific features (like RLS) ---
+// NOTE: These are now defined in `rls.rs` and re-exported from `lib.rs`
+
+// TODO: Define structs/enums/functions for type-safe INDEX generation?
+// sea-orm-migration has Index::create() which is already type-safe. 
