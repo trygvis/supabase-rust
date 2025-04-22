@@ -34,7 +34,8 @@ members = [
     "crates/postgrest",
     "crates/storage",
     "crates/realtime",
-    "crates/functions"
+    "crates/functions",
+    "crates/supabase-rust-migration"
 ]
 
 [dev-dependencies]

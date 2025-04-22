@@ -1,0 +1,20 @@
+[package]
+name = "supabase-rust-migration"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+sea-orm-migration = { version = "1.0.0-rc.5", features = [ "runtime-tokio-native-tls", "sqlx-postgres" ] }
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+dotenv = "0.15" # To load DATABASE_URL from .env
+chrono = "0.4" # Added for timestamp in 'new' command
+
+[lib]
+name = "supabase_rust_migration_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "supabase-migration"
+path = "src/main.rs" 
