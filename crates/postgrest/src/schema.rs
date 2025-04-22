@@ -2,7 +2,7 @@
 //!
 //! supabase gen types typescript で生成された型定義をRustの型に変換する機能を提供します。
 //! schema-convert featureが有効な場合にのみ使用可能です。
-//! 
+//!
 //! また、型安全なデータベース操作のためのトレイトも提供します。
 
 #[cfg(feature = "schema-convert")]
@@ -35,25 +35,25 @@ pub trait Table {
 /// データベース操作を型安全に行うための拡張トレイト
 pub trait PostgrestClientTypeExtension {
     /// 型安全なクエリメソッド
-    /// 
+    ///
     /// # 例
-    /// 
+    ///
     /// ```
     /// use supabase_rust_postgrest::{PostgrestClient, Table};
-    /// 
+    ///
     /// #[derive(serde::Serialize, serde::Deserialize, Debug)]
     /// struct User {
     ///     id: i32,
     ///     name: String,
     ///     email: String,
     /// }
-    /// 
+    ///
     /// impl Table for User {
     ///     fn table_name() -> &'static str {
     ///         "users"
     ///     }
     /// }
-    /// 
+    ///
     /// async fn fetch_users(client: &PostgrestClient) -> Result<Vec<User>, Box<dyn std::error::Error>> {
     ///     // 型安全なクエリ
     ///     let users = client.query_typed::<User>().execute().await?;
@@ -61,13 +61,19 @@ pub trait PostgrestClientTypeExtension {
     /// }
     /// ```
     fn query_typed<T: Table + DeserializeOwned>(&self) -> TypedPostgrestClient<T>;
-    
+
     /// 挿入操作のための型安全なメソッド
-    fn insert_typed<T: Table + Serialize>(&self, values: &T) -> Result<TypedInsertBuilder<T>, crate::PostgrestError>;
-    
+    fn insert_typed<T: Table + Serialize>(
+        &self,
+        values: &T,
+    ) -> Result<TypedInsertBuilder<T>, crate::PostgrestError>;
+
     /// 更新操作のための型安全なメソッド
-    fn update_typed<T: Table + Serialize>(&self, values: &T) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError>;
-    
+    fn update_typed<T: Table + Serialize>(
+        &self,
+        values: &T,
+    ) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError>;
+
     /// 削除操作のための型安全なメソッド
     fn delete_typed<T: Table>(&self) -> TypedDeleteBuilder<T>;
 }
@@ -116,22 +122,26 @@ where
     pub async fn execute(&self) -> Result<Vec<T>, crate::PostgrestError> {
         self.client.execute().await
     }
-    
+
     /// 型安全な単一レコード取得
     pub async fn single(&self) -> Result<T, crate::PostgrestError> {
         let mut results: Vec<T> = self.client.execute().await?;
-        
+
         if results.is_empty() {
-            return Err(crate::PostgrestError::ApiError("No records found".to_string()));
+            return Err(crate::PostgrestError::ApiError(
+                "No records found".to_string(),
+            ));
         }
-        
+
         if results.len() > 1 {
-            return Err(crate::PostgrestError::ApiError("More than one record found".to_string()));
+            return Err(crate::PostgrestError::ApiError(
+                "More than one record found".to_string(),
+            ));
         }
-        
+
         Ok(results.remove(0))
     }
-    
+
     /// 選択するカラムを指定
     pub fn select(self, columns: &str) -> Self {
         Self {
@@ -139,7 +149,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// 等価条件フィルタ
     pub fn eq(self, column: &str, value: &str) -> Self {
         Self {
@@ -147,7 +157,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// より大きい条件フィルタ
     pub fn gt(self, column: &str, value: &str) -> Self {
         Self {
@@ -155,7 +165,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// 以上条件フィルタ
     pub fn gte(self, column: &str, value: &str) -> Self {
         Self {
@@ -163,7 +173,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// より小さい条件フィルタ
     pub fn lt(self, column: &str, value: &str) -> Self {
         Self {
@@ -171,7 +181,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// 以下条件フィルタ
     pub fn lte(self, column: &str, value: &str) -> Self {
         Self {
@@ -179,7 +189,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// LIKE条件フィルタ
     pub fn like(self, column: &str, pattern: &str) -> Self {
         Self {
@@ -187,7 +197,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// ILIKE条件フィルタ (大文字小文字を区別しない)
     pub fn ilike(self, column: &str, pattern: &str) -> Self {
         Self {
@@ -195,7 +205,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// IN条件フィルタ
     pub fn in_list(self, column: &str, values: &[&str]) -> Self {
         Self {
@@ -203,7 +213,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// NOT条件フィルタ
     pub fn not(self, column: &str, operator_with_value: &str) -> Self {
         Self {
@@ -211,7 +221,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// 並び順指定
     pub fn order(self, column: &str, direction: crate::SortOrder) -> Self {
         Self {
@@ -219,7 +229,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// 取得件数制限
     pub fn limit(self, count: i32) -> Self {
         Self {
@@ -227,7 +237,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// オフセット指定
     pub fn offset(self, count: i32) -> Self {
         Self {
@@ -235,7 +245,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// GROUP BY句
     pub fn group_by(self, columns: &str) -> Self {
         Self {
@@ -243,7 +253,7 @@ where
             _phantom: PhantomData,
         }
     }
-    
+
     /// レコード数カウント
     pub fn count(self, exact: bool) -> Self {
         Self {
@@ -258,13 +268,16 @@ where
     T: Table + Serialize,
 {
     /// 挿入操作の実行
-    pub async fn execute(&self) -> Result<T, crate::PostgrestError> 
+    pub async fn execute(&self) -> Result<T, crate::PostgrestError>
     where
         T: DeserializeOwned,
     {
         let result = self.client.insert(&self.values).await?;
         let inserted: T = serde_json::from_value(result).map_err(|e| {
-            crate::PostgrestError::DeserializationError(format!("Failed to deserialize result: {}", e))
+            crate::PostgrestError::DeserializationError(format!(
+                "Failed to deserialize result: {}",
+                e
+            ))
         })?;
         Ok(inserted)
     }
@@ -281,11 +294,14 @@ where
     {
         let result = self.client.update(&self.values).await?;
         let updated: T = serde_json::from_value(result).map_err(|e| {
-            crate::PostgrestError::DeserializationError(format!("Failed to deserialize result: {}", e))
+            crate::PostgrestError::DeserializationError(format!(
+                "Failed to deserialize result: {}",
+                e
+            ))
         })?;
         Ok(updated)
     }
-    
+
     /// 等価条件フィルタ
     pub fn eq(mut self, column: &str, value: &str) -> Self {
         self.client = self.client.eq(column, value);
@@ -302,7 +318,7 @@ where
         self.client.delete().await?;
         Ok(())
     }
-    
+
     /// 等価条件フィルタ
     pub fn eq(mut self, column: &str, value: &str) -> Self {
         self.client = self.client.eq(column, value);
@@ -319,14 +335,17 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
             T::table_name(),
             self.http_client.clone(),
         );
-        
+
         TypedPostgrestClient {
             client,
             _phantom: PhantomData,
         }
     }
-    
-    fn insert_typed<T: Table + Serialize>(&self, values: &T) -> Result<TypedInsertBuilder<T>, crate::PostgrestError> {
+
+    fn insert_typed<T: Table + Serialize>(
+        &self,
+        values: &T,
+    ) -> Result<TypedInsertBuilder<T>, crate::PostgrestError> {
         // 元のクライアントから新しいクライアントを作成し、テーブル名を設定
         let client = crate::PostgrestClient::new(
             &self.base_url,
@@ -334,14 +353,17 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
             T::table_name(),
             self.http_client.clone(),
         );
-        
+
         Ok(TypedInsertBuilder {
             client,
             values: serde_json::from_value(serde_json::to_value(values)?)?,
         })
     }
-    
-    fn update_typed<T: Table + Serialize>(&self, values: &T) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError> {
+
+    fn update_typed<T: Table + Serialize>(
+        &self,
+        values: &T,
+    ) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError> {
         // 元のクライアントから新しいクライアントを作成し、テーブル名を設定
         let client = crate::PostgrestClient::new(
             &self.base_url,
@@ -349,13 +371,13 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
             T::table_name(),
             self.http_client.clone(),
         );
-        
+
         Ok(TypedUpdateBuilder {
             client,
             values: serde_json::from_value(serde_json::to_value(values)?)?,
         })
     }
-    
+
     fn delete_typed<T: Table>(&self) -> TypedDeleteBuilder<T> {
         // 元のクライアントから新しいクライアントを作成し、テーブル名を設定
         let client = crate::PostgrestClient::new(
@@ -364,7 +386,7 @@ impl PostgrestClientTypeExtension for crate::PostgrestClient {
             T::table_name(),
             self.http_client.clone(),
         );
-        
+
         TypedDeleteBuilder {
             client,
             _phantom: PhantomData,
@@ -413,35 +435,37 @@ pub fn convert_typescript_to_rust(
     let mut file = File::open(typescript_file).map_err(|e| {
         PostgrestError::InvalidParameters(format!("Failed to open TypeScript file: {}", e))
     })?;
-    
+
     let mut content = String::new();
     file.read_to_string(&mut content).map_err(|e| {
         PostgrestError::InvalidParameters(format!("Failed to read TypeScript file: {}", e))
     })?;
-    
+
     // TypeScript型定義をパースする
     let type_defs = TypeDefinitions::parse(&content).map_err(|e| {
         PostgrestError::InvalidParameters(format!("Failed to parse TypeScript: {}", e))
     })?;
-    
+
     // Rust型定義に変換する
     let rust_code = convert_type_definitions_to_rust(&type_defs, &options)?;
-    
+
     // 出力ディレクトリを作成する
     fs::create_dir_all(&options.output_dir).map_err(|e| {
         PostgrestError::InvalidParameters(format!("Failed to create output directory: {}", e))
     })?;
-    
+
     // Rust型定義を保存する
-    let output_file = options.output_dir.join(format!("{}.rs", options.module_name));
+    let output_file = options
+        .output_dir
+        .join(format!("{}.rs", options.module_name));
     let mut file = File::create(&output_file).map_err(|e| {
         PostgrestError::InvalidParameters(format!("Failed to create output file: {}", e))
     })?;
-    
+
     file.write_all(rust_code.as_bytes()).map_err(|e| {
         PostgrestError::InvalidParameters(format!("Failed to write output file: {}", e))
     })?;
-    
+
     Ok(output_file)
 }
 
@@ -452,36 +476,39 @@ fn convert_type_definitions_to_rust(
     options: &SchemaConvertOptions,
 ) -> Result<String, PostgrestError> {
     let mut rust_code = String::new();
-    
+
     // ヘッダーとドキュメンテーション
     rust_code.push_str("//! Generated database schema types\n");
     rust_code.push_str("//! This file is automatically generated from Supabase schema.\n");
     rust_code.push_str("//! Do not edit this file directly.\n\n");
-    
+
     // インポート
     rust_code.push_str("use serde::{Deserialize, Serialize};\n");
     rust_code.push_str("use std::collections::HashMap;\n\n");
-    
+
     // 型定義
     for interface in &type_defs.interfaces {
         rust_code.push_str(&convert_interface_to_rust(interface, options)?);
         rust_code.push_str("\n\n");
     }
-    
+
     // 型エイリアスの処理
     for type_alias in &type_defs.type_aliases {
         let name = pascal_case(&type_alias.name);
         let rust_type = get_rust_type_for_typescript_type(&type_alias.value, options)?;
-        
-        rust_code.push_str(&format!("/// TypeScript: type {} = {}\n", type_alias.name, type_alias.value));
-        
+
+        rust_code.push_str(&format!(
+            "/// TypeScript: type {} = {}\n",
+            type_alias.name, type_alias.value
+        ));
+
         // 複雑な型エイリアスの場合は処理が必要
         if let Type::Union(_) = &type_alias.value {
             let mut inner_rust_code = String::new();
             add_union_to_rust(
-                &type_alias.value, 
-                &mut inner_rust_code, 
-                &name, 
+                &type_alias.value,
+                &mut inner_rust_code,
+                &name,
                 &options.derives,
             )?;
             rust_code.push_str(&inner_rust_code);
@@ -491,10 +518,10 @@ fn convert_type_definitions_to_rust(
             rust_code.push_str(&format!("#[derive({})]\n", derives));
             rust_code.push_str(&format!("pub type {} = {};\n", name, rust_type));
         }
-        
+
         rust_code.push_str("\n");
     }
-    
+
     Ok(rust_code)
 }
 
@@ -506,46 +533,55 @@ fn convert_interface_to_rust(
 ) -> Result<String, PostgrestError> {
     let struct_name = pascal_case(&interface.name);
     let derives = options.derives.join(", ");
-    
+
     let mut rust_code = String::new();
-    
+
     // ドキュメント
     rust_code.push_str(&format!("/// TypeScript Interface: {}\n", interface.name));
-    
+
     // デリバティブ
     rust_code.push_str(&format!("#[derive({})]\n", derives));
-    
+
     // 構造体定義
     rust_code.push_str(&format!("pub struct {} {{\n", struct_name));
-    
+
     // 必須フィールド
     for field in &interface.required_fields {
         let field_name = snake_case(&field.name);
         let rust_type = get_rust_type_for_typescript_type(&field.value, options)?;
-        
-        rust_code.push_str(&format!("    /// TypeScript: {}: {}\n", field.name, field.value));
+
+        rust_code.push_str(&format!(
+            "    /// TypeScript: {}: {}\n",
+            field.name, field.value
+        ));
         rust_code.push_str(&format!("    #[serde(rename = \"{}\")]\n", field.name));
         rust_code.push_str(&format!("    pub {}: {},\n\n", field_name, rust_type));
     }
-    
+
     // オプショナルフィールド
     for field in &interface.optional_fields {
         let field_name = snake_case(&field.name);
         let rust_type = get_rust_type_for_typescript_type(&field.value, options)?;
-        
-        rust_code.push_str(&format!("    /// TypeScript: {}?: {}\n", field.name, field.value));
+
+        rust_code.push_str(&format!(
+            "    /// TypeScript: {}?: {}\n",
+            field.name, field.value
+        ));
         rust_code.push_str(&format!("    #[serde(rename = \"{}\")]\n", field.name));
-        
+
         if field.name.contains("-") || field.name.contains(".") {
             rust_code.push_str(&format!("    #[serde(rename = \"{}\")]\n", field.name));
         }
-        
-        rust_code.push_str(&format!("    pub {}: Option<{}>,\n\n", field_name, rust_type));
+
+        rust_code.push_str(&format!(
+            "    pub {}: Option<{}>,\n\n",
+            field_name, rust_type
+        ));
     }
-    
+
     // 構造体の終わり
     rust_code.push_str("}\n");
-    
+
     Ok(rust_code)
 }
 
@@ -559,11 +595,11 @@ fn add_union_to_rust(
 ) -> Result<(), PostgrestError> {
     if let Type::Union(union) = union_type {
         let derives_str = derives.join(", ");
-        
+
         // ドキュメントとデリバティブ
         rust_code.push_str(&format!("/// TypeScript Union Type\n"));
         rust_code.push_str(&format!("#[derive({})]\n", derives_str));
-        
+
         // セルダ付きenumを作成する必要がある場合
         if union.union_types.iter().any(|t| match t {
             Type::String(_) | Type::Number(_) | Type::Boolean(_) | Type::Null => false,
@@ -571,53 +607,59 @@ fn add_union_to_rust(
         }) {
             // serdeタグを付加
             rust_code.push_str("#[serde(tag = \"type\")]\n");
-            
+
             // enum定義開始
             rust_code.push_str(&format!("pub enum {} {{\n", enum_name));
-            
+
             // バリアント
             for (i, variant_type) in union.union_types.iter().enumerate() {
                 let variant_name = match variant_type {
                     Type::String(s) => pascal_case(s),
                     Type::Number(n) => format!("Num{}", n),
-                    Type::Boolean(b) => if *b { "True".to_string() } else { "False".to_string() },
+                    Type::Boolean(b) => {
+                        if *b {
+                            "True".to_string()
+                        } else {
+                            "False".to_string()
+                        }
+                    }
                     Type::Null => "Null".to_string(),
                     Type::Literal(lit) => pascal_case(&format!("{}", lit)),
                     Type::Identifier(id) => pascal_case(id),
                     Type::Reference(r) => pascal_case(&r),
                     _ => format!("Variant{}", i),
                 };
-                
+
                 rust_code.push_str(&format!("    {},\n", variant_name));
             }
-            
+
             // enum定義終了
             rust_code.push_str("}\n");
         } else {
             // 単純な型のユニオンはnewtype patternを使用
             rust_code.push_str(&format!("pub enum {} {{\n", enum_name));
-            
+
             for (i, variant_type) in union.union_types.iter().enumerate() {
                 match variant_type {
                     Type::String(s) => {
                         rust_code.push_str(&format!("    /// {}\n", s));
                         rust_code.push_str(&format!("    String(String),\n"));
-                    },
+                    }
                     Type::Number(_) => {
                         rust_code.push_str("    Number(f64),\n");
-                    },
+                    }
                     Type::Boolean(_) => {
                         rust_code.push_str("    Boolean(bool),\n");
-                    },
+                    }
                     Type::Null => {
                         rust_code.push_str("    Null,\n");
-                    },
+                    }
                     _ => {
                         rust_code.push_str(&format!("    Variant{}(String),\n", i));
                     }
                 }
             }
-            
+
             rust_code.push_str("}\n");
         }
     } else {
@@ -625,7 +667,7 @@ fn add_union_to_rust(
             "Expected union type".to_string(),
         ));
     }
-    
+
     Ok(())
 }
 
@@ -648,7 +690,7 @@ fn get_rust_type_for_typescript_type(
         Type::Array(array_type) => {
             let inner_type = get_rust_type_for_typescript_type(array_type, options)?;
             Ok(format!("Vec<{}>", inner_type))
-        },
+        }
         Type::Tuple(tuple_types) => {
             let mut tuple_elements = Vec::new();
             for t in tuple_types {
@@ -656,13 +698,11 @@ fn get_rust_type_for_typescript_type(
                 tuple_elements.push(rust_type);
             }
             Ok(format!("({})", tuple_elements.join(", ")))
-        },
+        }
         Type::Literal(lit) => {
             Ok("String".to_string()) // リテラル型はStringにマッピング
-        },
-        Type::Object(obj) => {
-            Ok("HashMap<String, serde_json::Value>".to_string())
-        },
+        }
+        Type::Object(obj) => Ok("HashMap<String, serde_json::Value>".to_string()),
         Type::Identifier(id) => {
             // カスタムの型マッピングを適用
             if let Some(type_mapping) = &options.type_mapping {
@@ -670,7 +710,7 @@ fn get_rust_type_for_typescript_type(
                     return Ok(mapped_type.clone());
                 }
             }
-            
+
             // 一般的な型マッピング
             match id.as_str() {
                 "string" => Ok("String".to_string()),
@@ -683,14 +723,18 @@ fn get_rust_type_for_typescript_type(
                 "Record" => Ok("HashMap<String, serde_json::Value>".to_string()),
                 _ => Ok(pascal_case(id)), // 他のすべての型は同じ名前でPascalCaseに変換
             }
-        },
+        }
         Type::Reference(ref_name) => {
             Ok(pascal_case(ref_name)) // 型参照もPascalCaseに変換
-        },
+        }
         Type::Union(union) => {
             // 単純なオプション型の場合
-            if union.union_types.len() == 2 && union.union_types.iter().any(|t| matches!(t, Type::Null)) {
-                let non_null_type = union.union_types.iter()
+            if union.union_types.len() == 2
+                && union.union_types.iter().any(|t| matches!(t, Type::Null))
+            {
+                let non_null_type = union
+                    .union_types
+                    .iter()
                     .find(|t| !matches!(t, Type::Null))
                     .unwrap_or(&Type::Any);
                 let inner_type = get_rust_type_for_typescript_type(non_null_type, options)?;
@@ -700,18 +744,19 @@ fn get_rust_type_for_typescript_type(
                 // 実際のenum定義は別途生成する
                 Ok("serde_json::Value".to_string()) // 複雑なユニオン型の場合は汎用型を使用
             }
-        },
+        }
         Type::Intersection(_) => {
             // 交差型はRustでは直接表現できないため、汎用型を使用
             Ok("serde_json::Value".to_string())
-        },
+        }
         Type::Function(_) => {
             // 関数型はRustでは通常シリアライズしないため、汎用型を使用
             Ok("serde_json::Value".to_string())
-        },
-        _ => Err(PostgrestError::InvalidParameters(
-            format!("Unsupported TypeScript type: {:?}", ts_type),
-        )),
+        }
+        _ => Err(PostgrestError::InvalidParameters(format!(
+            "Unsupported TypeScript type: {:?}",
+            ts_type
+        ))),
     }
 }
 
@@ -743,10 +788,10 @@ pub fn generate_rust_from_typescript_cli(
             .unwrap_or_else(|| "schema".to_string()),
         ..Default::default()
     };
-    
+
     let input_path = PathBuf::from(input_file);
     let output_path = convert_typescript_to_rust(&input_path, options)?;
-    
+
     println!("✅ Successfully generated Rust types at: {:?}", output_path);
     Ok(())
 }
@@ -759,6 +804,7 @@ pub fn generate_rust_from_typescript_cli(
     _module_name: Option<&str>,
 ) -> Result<(), crate::PostgrestError> {
     Err(crate::PostgrestError::InvalidParameters(
-        "schema-convert feature is not enabled. Enable it with --features schema-convert".to_string(),
+        "schema-convert feature is not enabled. Enable it with --features schema-convert"
+            .to_string(),
     ))
-} 
+}

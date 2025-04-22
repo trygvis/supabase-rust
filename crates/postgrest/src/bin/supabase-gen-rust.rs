@@ -13,16 +13,16 @@ use supabase_rust_postgrest::schema::generate_rust_from_typescript_cli;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    
+
     if args.len() < 2 {
         print_usage();
         return;
     }
-    
+
     let mut input_file = None;
     let mut output_dir = None;
     let mut module_name = None;
-    
+
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -67,7 +67,7 @@ fn main() {
             }
         }
     }
-    
+
     let input_file = match input_file {
         Some(path) => path,
         None => {
@@ -76,7 +76,7 @@ fn main() {
             return;
         }
     };
-    
+
     match generate_rust_from_typescript_cli(
         &input_file,
         output_dir.as_deref(),
@@ -103,4 +103,4 @@ fn print_usage() {
     println!();
     println!("Example:");
     println!("  supabase-gen-rust --input-file ./supabase/types.ts --output-dir ./src/generated --module-name schema");
-} 
+}
