@@ -20,11 +20,11 @@ url = "2.3"
 base64 = "0.21"
 async-trait = "0.1"
 jsonwebtoken = "9.1"
-supabase-rust-auth = { path = "crates/auth" }
-supabase-rust-postgrest = { path = "crates/postgrest" }
-supabase-rust-storage = { path = "crates/storage" }
-supabase-rust-realtime = { path = "crates/realtime" }
-supabase-rust-functions = { path = "crates/functions" }
+supabase-rust-auth = { path = "crates/auth", version = "0.1.1" }
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.1" }
+supabase-rust-storage = { path = "crates/storage", version = "0.1.1" }
+supabase-rust-realtime = { path = "crates/realtime", version = "0.1.1" }
+supabase-rust-functions = { path = "crates/functions", version = "0.1.1" }
 
 [workspace]
 members = [
