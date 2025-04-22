@@ -9,6 +9,11 @@ mod m20220101_000001_create_table;
 // RLS ポリシー用のユーティリティ
 pub mod utils;
 
+// スキーマベースのマイグレーション
+pub mod schema_migrations;
+// Re-export schema migration components
+pub use schema_migrations::{SchemaMigrator, DirectoryMigrator};
+
 pub struct Migrator;
 
 #[async_trait::async_trait]
