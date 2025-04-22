@@ -32,12 +32,15 @@ pub mod schema;
 
 // スキーマ変換機能
 #[cfg(feature = "schema-convert")]
-pub use schema::{convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions};
+pub use schema::{
+    convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions,
+};
 
 // 型安全なデータベース操作
+#[cfg(feature = "schema-convert")]
 pub use schema::{
-    PostgrestClientTypeExtension, Table, TypedPostgrestClient,
-    TypedInsertBuilder, TypedUpdateBuilder, TypedDeleteBuilder,
+    PostgrestClientTypeExtension, Table, TypedDeleteBuilder, TypedInsertBuilder,
+    TypedPostgrestClient, TypedUpdateBuilder,
 };
 
 /// エラー型
