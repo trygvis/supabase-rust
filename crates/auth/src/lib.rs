@@ -115,8 +115,7 @@ impl OAuthProvider {
 }
 
 /// OAuth サインイン設定
-#[derive(Debug, Clone, Serialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct OAuthSignInOptions {
     pub redirect_to: Option<String>,
     pub scopes: Option<String>,
@@ -124,14 +123,11 @@ pub struct OAuthSignInOptions {
     pub skip_browser_redirect: Option<bool>,
 }
 
-
 /// メール確認設定
-#[derive(Debug, Clone, Serialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct EmailConfirmOptions {
     pub redirect_to: Option<String>,
 }
-
 
 /// MFAファクターのタイプ
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

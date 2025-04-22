@@ -976,8 +976,7 @@ impl<'a> ChannelBuilder<'a> {
             });
 
             let message = Message::Text(
-                serde_json::to_string(&join_payload)
-                    .map_err(RealtimeError::SerializationError)?,
+                serde_json::to_string(&join_payload).map_err(RealtimeError::SerializationError)?,
             );
 
             socket.send(message).await.map_err(|e| {

@@ -867,10 +867,7 @@ impl<'a> StorageBucketClient<'a> {
             )));
         }
 
-        let bytes = res
-            .bytes()
-            .await
-            .map_err(StorageError::NetworkError)?;
+        let bytes = res.bytes().await.map_err(StorageError::NetworkError)?;
         Ok(bytes)
     }
 
