@@ -1,5 +1,4 @@
 use dotenv::dotenv;
-use serde_json::json;
 use std::env;
 use supabase_rust_gftd::Supabase;
 use uuid::Uuid;
