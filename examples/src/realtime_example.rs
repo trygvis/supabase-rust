@@ -116,7 +116,8 @@ async fn run_advanced_filter_example(
         // 偶数番目のタスクを完了済みに更新（フィルターに合致）
         if i % 2 == 0 {
             println!("タスク {} を完了済みに更新（フィルターに合致）", i);
-            let update_result = supabase.from("tasks")
+            let update_result = supabase
+                .from("tasks")
                 .eq("id", &task_id.to_string())
                 .update(json!({ "is_complete": true }))
                 .await?;
@@ -194,7 +195,8 @@ async fn run_advanced_filter_example(
         println!("タスク {} の説明を更新（複合フィルターに合致）", i);
 
         // タスクを取得
-        let task_list: Vec<serde_json::Value> = supabase.from("tasks")
+        let task_list: Vec<serde_json::Value> = supabase
+            .from("tasks")
             .select("*")
             .eq("title", &task_title)
             .eq("user_id", &user_id)
@@ -252,10 +254,7 @@ async fn run_advanced_filter_example(
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
     let delete_client = supabase.from("tasks");
-    let delete_result = delete_client
-        .eq("user_id", &user_id)
-        .delete()
-        .await?;
+    let delete_result = delete_client.eq("user_id", &user_id).delete().await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
@@ -385,7 +384,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nタスク1を「完了」に更新します");
 
     // タスク1を検索
-    let task1_list = supabase.from("tasks")
+    let task1_list = supabase
+        .from("tasks")
         .select("*")
         .eq("title", "Realtime Task 1")
         .eq("user_id", &user_id)
@@ -401,7 +401,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .eq("id", &task1_id.to_string())
             .update(json!({ "is_complete": true }))
             .await?;
-        
+
         println!("更新結果: {:?}", update_result);
     }
 
@@ -414,7 +414,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nタスク2を削除します");
 
     // タスク2を検索
-    let task2_list = supabase.from("tasks")
+    let task2_list = supabase
+        .from("tasks")
         .select("*")
         .eq("title", "Realtime Task 2")
         .eq("user_id", &user_id)
@@ -430,7 +431,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .eq("id", &task2_id.to_string())
             .delete()
             .await?;
-        
+
         println!("削除結果: {:?}", delete_result);
     }
 
@@ -453,10 +454,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
     let delete_client = supabase.from("tasks");
-    let delete_result = delete_client
-        .eq("user_id", &user_id)
-        .delete()
-        .await?;
+    let delete_result = delete_client.eq("user_id", &user_id).delete().await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");

@@ -36,16 +36,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Deno.serve(async (req) => {
     //   try {
     //     const { width, height, format } = await req.json();
-    //     
+    //
     //     // 画像生成ロジック...
     //     const imageData = generateImage(width, height);
-    //     
+    //
     //     return new Response(
     //       imageData,
-    //       { 
-    //         headers: { 
+    //       {
+    //         headers: {
     //           'Content-Type': format === 'png' ? 'image/png' : 'image/jpeg'
-    //         } 
+    //         }
     //       }
     //     );
     //   } catch (error) {
@@ -71,14 +71,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     {
         Ok(binary_data) => {
             println!("バイナリデータを受信しました: {} バイト", binary_data.len());
-            
+
             // 受信したデータをファイルに保存
             let output_path = "received_image.png";
-            
+
             // ファイルに書き込み
             let mut file = File::create(output_path)?;
             file.write_all(&binary_data)?;
-            
+
             println!("バイナリデータを {} に保存しました", output_path);
         }
         Err(e) => {
@@ -89,7 +89,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // 2. 大きなバイナリデータをストリーミングで取得
     println!("\n大きなバイナリデータをストリーミングで取得する例");
-    
+
     let large_image_params = json!({
         "width": 2000,
         "height": 2000,
@@ -102,21 +102,25 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     };
 
     match functions
-        .invoke_binary_stream("generate-large-image", Some(large_image_params), Some(options))
+        .invoke_binary_stream(
+            "generate-large-image",
+            Some(large_image_params),
+            Some(options),
+        )
         .await
     {
         Ok(stream) => {
             println!("バイナリストリームの受信を開始しました");
-            
+
             // 出力ファイルを準備
             let output_path = "received_large_image.png";
             let output_file = Path::new(output_path);
             let mut file = File::create(output_file)?;
-            
+
             // カウンター
             let mut bytes_received = 0;
             let mut chunks_received = 0;
-            
+
             // ストリームを処理
             let mut stream = stream;
             while let Some(chunk_result) = stream.next().await {
@@ -124,12 +128,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     Ok(chunk) => {
                         bytes_received += chunk.len();
                         chunks_received += 1;
-                        
+
                         // 進捗表示
                         if chunks_received % 10 == 0 {
-                            println!("  進捗: {} チャンク, {} バイト受信", chunks_received, bytes_received);
+                            println!(
+                                "  進捗: {} チャンク, {} バイト受信",
+                                chunks_received, bytes_received
+                            );
                         }
-                        
+
                         // ファイルに書き込み
                         file.write_all(&chunk)?;
                     }
@@ -139,8 +146,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            
-            println!("ストリーム受信完了: {} チャンク, 合計 {} バイト", chunks_received, bytes_received);
+
+            println!(
+                "ストリーム受信完了: {} チャンク, 合計 {} バイト",
+                chunks_received, bytes_received
+            );
             println!("データを {} に保存しました", output_path);
         }
         Err(e) => {
@@ -150,7 +160,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // 3. バイナリデータをチャンクで処理する高度な例
     println!("\nバイナリデータをチャンク単位で処理する例");
-    
+
     let video_params = json!({
         "duration": 10,
         "format": "mp4"
@@ -162,14 +172,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     {
         Ok(stream) => {
             println!("動画ストリームの受信を開始しました");
-            
+
             // 出力ファイルを準備
             let output_path = "processed_video.mp4";
             let mut file = File::create(output_path)?;
-            
+
             // チャンクサイズを定義（例: 64KB）
             let chunk_size = 64 * 1024;
-            
+
             // チャンク処理関数
             // 実際のアプリケーションでは、ここでフレーム解析や変換などを行うことができます
             let processor = |data: &[u8]| -> Result<bytes::Bytes, String> {
@@ -177,26 +187,29 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                 // 実際のアプリケーションでは何らかの処理を行うことができます
                 Ok(bytes::Bytes::copy_from_slice(data))
             };
-            
+
             // ストリームを処理
             let processed_stream = functions.process_binary_chunks(stream, chunk_size, processor);
-            
+
             // 処理済みデータを保存
             let mut bytes_processed = 0;
             let mut chunks_processed = 0;
-            
+
             tokio::pin!(processed_stream);
             while let Some(chunk_result) = processed_stream.next().await {
                 match chunk_result {
                     Ok(processed_chunk) => {
                         bytes_processed += processed_chunk.len();
                         chunks_processed += 1;
-                        
+
                         // 進捗表示
                         if chunks_processed % 5 == 0 {
-                            println!("  進捗: {} チャンク, {} バイト処理済み", chunks_processed, bytes_processed);
+                            println!(
+                                "  進捗: {} チャンク, {} バイト処理済み",
+                                chunks_processed, bytes_processed
+                            );
                         }
-                        
+
                         // ファイルに書き込み
                         file.write_all(&processed_chunk)?;
                     }
@@ -206,8 +219,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            
-            println!("処理完了: {} チャンク, 合計 {} バイト", chunks_processed, bytes_processed);
+
+            println!(
+                "処理完了: {} チャンク, 合計 {} バイト",
+                chunks_processed, bytes_processed
+            );
             println!("処理済みデータを {} に保存しました", output_path);
         }
         Err(e) => {
@@ -218,4 +234,4 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("バイナリ・ストリーミングの例が完了しました");
 
     Ok(())
-} 
+}

@@ -36,7 +36,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let test_email = format!("test-postgrest-{}@example.com", uuid::Uuid::new_v4());
     let test_password = "password123";
 
-    let sign_up_result = supabase_client.auth().sign_up(&test_email, test_password).await?;
+    let sign_up_result = supabase_client
+        .auth()
+        .sign_up(&test_email, test_password)
+        .await?;
 
     let user_id = sign_up_result.user.id.clone();
     let access_token = sign_up_result.access_token.clone();
@@ -385,12 +388,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Example 10: final cleanup
     println!("\nExample 10: final cleanup");
-    
+
     let final_postgrest = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-    let _ = final_postgrest
-        .eq("user_id", &user_id)
-        .delete()
-        .await?;
+    let _ = final_postgrest.eq("user_id", &user_id).delete().await?;
 
     println!("Cleaned up all test data");
 

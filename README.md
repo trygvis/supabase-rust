@@ -1,107 +1,107 @@
 # Supabase Rust
 
-Rust クライアントライブラリ for [Supabase](https://supabase.com) - JavaScript版 [supabase-js](https://github.com/supabase/supabase-js) と互換性を持つRust実装です。
+Rust client library for [Supabase](https://supabase.com) - A Rust implementation compatible with JavaScript's [supabase-js](https://github.com/supabase/supabase-js).
 
 [![Crate](https://img.shields.io/crates/v/supabase-rust.svg)](https://crates.io/crates/supabase-rust)
 [![Docs](https://docs.rs/supabase-rust/badge.svg)](https://docs.rs/supabase-rust)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Supabase JS との互換性と実装完成度
+## Compatibility with Supabase JS and Implementation Status
 
-このセクションでは、各モジュールの現在の実装状況とJavaScript版Supabase (v2.x) との互換性を説明します。
+This section explains the current implementation status and compatibility with the JavaScript version of Supabase (v2.x).
 
-### 全体概要
+### Overview
 
-|モジュール|実装状況|互換API比率|備考|
-|---------|-------|-----------|-----|
-|Auth|✅|38/40 (95%)|認証機能：メール・パスワード認証, OAuth, 電話認証, MFA, パスワードリセット, 管理者APIなど実装済み|
-|PostgresT|90%|27/30|トランザクション対応済み、高度なフィルタリング対応|
-|Storage|95%|19/20|画像変換機能など一部JS版より機能拡張|
-|Realtime|75%|11/14|基本的なPubSub、Postgres変更監視対応|
-|Functions|85%|5/6|基本機能とストリーミング機能実装済み、バイナリ対応強化中|
+|Module|Status|API Compatibility|Notes|
+|------|------|----------------|-----|
+|Auth|✅|38/40 (95%)|Authentication features: Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented|
+|PostgresT|90%|27/30|Transaction support, advanced filtering implemented|
+|Storage|95%|19/20|Image transformation and extensions beyond JS version|
+|Realtime|75%|11/14|Basic PubSub, Postgres changes monitoring implemented|
+|Functions|85%|5/6|Basic and streaming functionality implemented, enhancing binary support|
 
-### 詳細互換性レポート
+### Detailed Compatibility Report
 
 #### Auth (`@supabase/auth-js`)
 
-**互換API**: 38/40 (95%)
+**API Compatibility**: 38/40 (95%)
 
-- ✅ メール/パスワードでのサインアップ・サインイン
-- ✅ セッション管理 (取得・更新・破棄)
-- ✅ パスワードリセット
-- ✅ OAuthプロバイダ認証 (Google, GitHub, Facebookなど全12プロバイダ対応)
-- ✅ ワンタイムパスワード(OTP)認証
-- ✅ ユーザー情報取得・更新
-- ✅ メール確認フロー
-- ✅ 匿名認証
-- ✅ 電話番号認証
-- ✅ 多要素認証(MFA) - 基本機能実装済み、高度な機能も実装済み
-- ⚠️ JWT検証 - 基本実装済み、高度な検証機能開発中
-- ⚠️ 管理者用メソッド - ユーザー管理、一覧表示、更新は実装済み、組織管理機能開発中
+- ✅ Email/password signup and signin
+- ✅ Session management (get, refresh, destroy)
+- ✅ Password reset
+- ✅ OAuth provider authentication (All 12 providers supported: Google, GitHub, Facebook, etc.)
+- ✅ One-time password (OTP) authentication
+- ✅ User information retrieval and updates
+- ✅ Email confirmation flow
+- ✅ Anonymous authentication
+- ✅ Phone number authentication
+- ✅ Multi-factor authentication (MFA) - Basic and advanced features implemented
+- ⚠️ JWT verification - Basic implementation complete, advanced verification in development
+- ⚠️ Admin methods - User management, listing, updates implemented; organization management in development
 
 #### PostgresT (`@supabase/postgrest-js`)
 
-**互換API**: 27/30 (90%) 
+**API Compatibility**: 27/30 (90%)
 
-- ✅ テーブル/ビューに対する基本CRUD操作
-- ✅ 複雑なフィルタリング(条件演算子、JSON操作、全文検索)
-- ✅ ORDER BY, LIMIT, OFFSET, RANGEによる結果制御
-- ✅ トランザクションサポート(セーブポイント、ロールバック対応)
-- ✅ RPC(リモートプロシージャコール)
-- ✅ 結果件数取得オプション
-- ✅ レスポンスフォーマット制御(CSV出力対応)
-- ✅ 単一/複数行処理の最適化
-- ⚠️ 関係性自動展開 - 基本実装済み、ネスト関係は開発中
-- ❌ Row Level Security(RLS)向け高度なポリシー対応 - 開発中
+- ✅ Basic CRUD operations for tables/views
+- ✅ Complex filtering (conditional operators, JSON operations, full-text search)
+- ✅ Result control via ORDER BY, LIMIT, OFFSET, RANGE
+- ✅ Transaction support (savepoints, rollbacks)
+- ✅ RPC (Remote Procedure Calls)
+- ✅ Count options for results
+- ✅ Response format control (CSV output support)
+- ✅ Single/multiple row processing optimization
+- ⚠️ Relationship auto-expansion - Basic implementation complete, nested relationships in development
+- ❌ Advanced Row Level Security (RLS) policy support - In development
 
 ### PostgresT RLS (Row Level Security)
 
-Row Level Security (RLS) は PostgreSQL の強力なセキュリティ機能で、データベースのテーブルに対するアクセス制御を行単位で実現します。Supabase Rust クライアントでは、以下のように RLS を操作できます。
+Row Level Security (RLS) is a powerful PostgreSQL security feature that enables row-level access control for database tables. The Supabase Rust client allows you to work with RLS as follows:
 
-#### RLS を無視する (管理者権限)
+#### Bypassing RLS (Admin Privileges)
 
-管理者ロールを使用して RLS ポリシーを無視する場合：
+Using admin role to bypass RLS policies:
 
 ```rust
-// 注意: このメソッドを使用するには、サービスロールキーが必要です
+// Note: Using this method requires a service role key
 let service_client = supabase.with_service_key("your-service-role-key");
 
-// RLS を無視してすべてのユーザーデータにアクセス
+// Access all user data by bypassing RLS
 let all_users = service_client
     .from("users")
     .select("*")
-    .ignore_rls()  // RLS ポリシーを無視
+    .ignore_rls()  // Bypass RLS policies
     .execute()
     .await?;
 ```
 
-#### RLS ポリシーの利用例
+#### RLS Policy Usage Example
 
-ユーザーが自分のデータだけにアクセスできるようにする典型的な RLS 設定：
+Typical RLS setup to allow users to access only their own data:
 
-1. まず PostgreSQL でポリシーを設定します:
+1. First, set up policies in PostgreSQL:
 
 ```sql
--- テーブルで RLS を有効化
+-- Enable RLS on table
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 
--- デフォルトで全アクセスを拒否するポリシーを設定
-CREATE POLICY "プロファイルは所有者のみが表示可能" 
+-- Set policy that allows viewing only owned profiles
+CREATE POLICY "Profiles are viewable by owners only" 
 ON profiles 
 FOR SELECT 
 USING (auth.uid() = user_id);
 
--- 所有者のみが更新可能
-CREATE POLICY "プロファイルは所有者のみが更新可能" 
+-- Set policy that allows updating only owned profiles
+CREATE POLICY "Profiles are updatable by owners only" 
 ON profiles 
 FOR UPDATE 
 USING (auth.uid() = user_id);
 ```
 
-2. Rust クライアントでは、JWTを使ってアクセスします:
+2. In the Rust client, access with JWT:
 
 ```rust
-// ユーザー認証
+// Authenticate user
 let session = supabase
     .auth()
     .sign_in_with_password(SignInWithPasswordCredentials {
@@ -111,25 +111,25 @@ let session = supabase
     })
     .await?;
 
-// セッションのJWTトークンを使用してデータにアクセス
-// RLS ポリシーが自動的に適用される
+// Access data with session JWT token
+// RLS policies are automatically applied
 let my_profile = supabase
     .from("profiles")
     .select("*")
-    .with_auth(&session.access_token)  // JWT トークンを設定
+    .with_auth(&session.access_token)  // Set JWT token
     .execute()
     .await?;
 
-// 結果には、現在のユーザーが所有するプロファイルのみが含まれる
+// Results only include profiles owned by the current user
 ```
 
-#### 動的な RLS フィルタリング
+#### Dynamic RLS Filtering
 
-より複雑なユースケースでは、関数やJSONBデータを使った動的なフィルタリングも可能です：
+For more complex use cases, dynamic filtering with functions and JSONB data is possible:
 
 ```sql
--- ユーザーの役割に基づくアクセス制御
-CREATE POLICY "管理者はすべてのデータにアクセス可能"
+-- Access control based on user roles
+CREATE POLICY "Admins can access all data"
 ON documents
 FOR ALL
 USING (
@@ -139,27 +139,27 @@ USING (
 ```
 
 ```rust
-// 管理者ロールを持つユーザーは、すべてのドキュメントを見ることができる
-// 一般ユーザーは自分のドキュメントのみ見ることができる
+// Users with admin role can see all documents
+// Regular users can only see their own documents
 let documents = supabase
     .from("documents")
     .select("*")
-    .with_auth(&session.access_token)  // JWT トークンを設定
+    .with_auth(&session.access_token)  // Set JWT token
     .execute()
     .await?;
 ```
 
-#### セキュリティのベストプラクティス
+#### Security Best Practices
 
-1. **常にRLSを有効化**: すべての重要なテーブルでRLSを有効にし、デフォルトで拒否ポリシーを設定します
-2. **最小権限の原則**: 各ユーザーに必要最小限のアクセス権限のみを付与します
-3. **サービスロールの限定使用**: `ignore_rls()`はバックエンドサーバーのみで使用し、クライアントには公開しないでください
-4. **JWT検証**: 偽造されたJWTを防ぐため、JWTの署名を常に検証します
+1. **Always Enable RLS**: Enable RLS on all important tables and set default deny policies
+2. **Principle of Least Privilege**: Grant users only the minimum access permissions needed
+3. **Limited Service Role Usage**: Use `ignore_rls()` only on backend servers, never expose to clients
+4. **JWT Verification**: Always verify JWT signatures to prevent forged JWTs
 
 ```rust
-// 必ず検証済みのトークンを使用
+// Always use verified tokens
 if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? {
-    // 検証済みトークンを使用してデータにアクセス
+    // Access data with verified token
     let data = supabase
         .from("secured_table")
         .select("*")
@@ -171,1263 +171,210 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Storage (`@supabase/storage-js`)
 
-**互換API**: 19/20 (95%)
+**API Compatibility**: 19/20 (95%)
 
-- ✅ バケット管理(作成・取得・更新・削除)
-- ✅ ファイル操作(アップロード・ダウンロード・一覧取得・削除)
-- ✅ ファイル移動・コピー
-- ✅ 署名付きURL生成
-- ✅ 公開URL生成
-- ✅ マルチパートアップロード(大容量ファイル対応)
-- ✅ 画像変換機能(リサイズ・フォーマット変換・品質制御)
-- ⚠️ フォルダ操作 - 基本実装済み、再帰的操作は開発中
-- ⚠️ アクセス制御 - 基本実装済み、詳細なポリシー対応は開発中
+- ✅ Bucket management (create, get, update, delete)
+- ✅ File operations (upload, download, list, delete)
+- ✅ File moving and copying
+- ✅ Signed URL generation
+- ✅ Public URL generation
+- ✅ Multipart uploads (large file support)
+- ✅ Image transformation (resize, format conversion, quality control)
+- ⚠️ Folder operations - Basic implementation complete, recursive operations in development
+- ⚠️ Access control - Basic implementation complete, detailed policy support in development
 
 #### Realtime (`@supabase/realtime-js`)
 
-**互換API**: 11/14 (75%)
+**API Compatibility**: 11/14 (75%)
 
-- ✅ チャンネル作成・管理
-- ✅ ブロードキャストメッセージング
-- ✅ Postgres変更監視(INSERT/UPDATE/DELETE)
-- ✅ イベントフィルタリング
-- ✅ 自動再接続機能
-- ⚠️ Presence機能 - 基本実装済み、状態同期は改善中
-- ❌ Channel Status Notifications - 開発中
-- ❌ 複雑なJOINテーブル監視 - 計画中
+- ✅ Channel creation and management
+- ✅ Broadcast messaging
+- ✅ Postgres changes monitoring (INSERT/UPDATE/DELETE)
+- ✅ Event filtering
+- ✅ Automatic reconnection
+- ⚠️ Presence feature - Basic implementation complete, state synchronization being improved
+- ❌ Channel Status Notifications - In development
+- ❌ Complex JOIN table monitoring - Planned
 
 #### Functions (`@supabase/functions-js`)
 
-**互換API**: 5/6 (85%)
+**API Compatibility**: 5/6 (85%)
 
-- ✅ Edge関数呼び出し
-- ✅ パラメータ付き関数実行
-- ✅ 認証統合
-- ✅ エラーハンドリング
-- ✅ ストリーミングレスポンス - テキスト・JSONストリーム対応済み、バイナリストリーム実装済み (v0.1.2)
-- ❌ バイナリデータ対応 - 基本実装済み、アドバンス機能開発中
+- ✅ Edge function invocation
+- ✅ Function execution with parameters
+- ✅ Authentication integration
+- ✅ Error handling
+- ✅ Streaming responses - Text/JSON streaming supported, binary streaming implemented (v0.1.2)
+- ❌ Binary data support - Basic implementation complete, advanced features in development
 
-### 今後の開発予定
+### Future Development
 
-1. **優先実装項目** (〜2024年Q2):
-   - Admin API機能の拡張
-     - 組織・チーム管理
-     - 詳細な権限設定
-   - Row Level Security (RLS)向け高度な機能
-     - 複雑なポリシー条件のサポート
-     - ポリシー適用状態の検証機能
-   - 非同期処理の最適化
-     - スループット向上
-     - エラーハンドリングの強化
+1. **Priority Implementation Items** (Through Q2 2024):
+   - Admin API Extensions
+     - Organization/team management
+     - Detailed permission settings
+   - Advanced Row Level Security (RLS) Features
+     - Support for complex policy conditions
+     - Policy application verification
+   - Async Processing Optimization
+     - Throughput improvements
+     - Error handling enhancements
 
-2. **モジュール別詳細ロードマップ**:
+2. **Module-Specific Roadmap**:
 
-   **Auth** (95% → 100%, 〜2024年Q2末):
-   - 多要素認証(MFA)の高度な機能実装
-     - WebAuthn/パスキー対応の改善
-     - バックアップコード管理
-   - 高度なJWT検証機能
-     - カスタムクレーム検証
-     - JWKSサポート強化
-   - 管理者用API拡張
-     - 組織管理機能
-     - リスク管理・監査機能
+   **Auth** (95% → 100%, by Q2 2024):
+   - Advanced multi-factor authentication (MFA) features
+     - WebAuthn/passkey support improvements
+     - Backup code management
+   - Advanced JWT verification
+     - Custom claim validation
+     - JWKS support enhancements
+   - Admin API extensions
+     - Organization management
+     - Risk management and auditing
 
-   **PostgresT** (90% → 100%, 〜2024年Q2):
-   - ネスト関係を含む関係性自動展開
-     - 多階層関係の効率的な取得
-     - 循環参照対策
-   - 高度なRLS対応
-     - 複雑なポリシー条件適用
-     - RLS検証ツール
+   **PostgresT** (90% → 100%, by Q2 2024):
+   - Relationship auto-expansion with nested relationships
+     - Efficient retrieval of multi-level relationships
+     - Circular reference handling
+   - Advanced RLS support
+     - Complex policy condition application
+     - RLS verification tools
 
-   **Storage** (95% → 100%, 〜2024年Q2):
-   - 再帰的フォルダ操作
-     - 深いディレクトリ構造の効率的な処理
-     - バッチ操作の最適化
-   - 詳細アクセス制御
-     - カスタムポリシー定義
-     - 時間制限付きアクセス
+   **Storage** (95% → 100%, by Q2 2024):
+   - Recursive folder operations
+     - Efficient handling of deep directory structures
+     - Batch operation optimization
+   - Detailed access control
+     - Custom policy definitions
+     - Time-limited access
 
-   **Realtime** (75% → 100%, 〜2024年Q3):
-   - Presence機能の状態同期改善
-     - 競合解決アルゴリズム
-     - リアルタイム差分同期
-   - Channel Status Notifications実装
-     - 接続状態監視
-     - 自動再接続強化
-   - 複雑なJOINテーブル監視
-     - リレーション変更の効率的な検知
+## Getting Started
 
-   **Functions** (85% → 100%, 〜2024年Q2):
-   - ストリーミングレスポンスの最適化
-     - バックプレッシャー対応
-   - バイナリデータ高度機能
-     - 効率的なバイナリ転送
-     - メモリ使用量最適化
+### Installation
 
-3. **クロスプラットフォーム対応強化** (〜2024年Q3):
-   - WASM対応(ブラウザでの利用)
-     - コア機能のWASM互換実装
-     - ブラウザ固有の最適化
-   - 軽量クライアント実装(組み込み環境向け)
-     - 低メモリフットプリント版
-     - 機能選択的コンパイル
-
-4. **セキュリティ強化** (継続的改善):
-   - 暗号化機能の拡張
-     - エンドツーエンド暗号化オプション
-     - 保存データの暗号化
-   - セキュリティ監査ツール統合
-     - 脆弱性スキャン
-     - 認証ログ分析
-
-### 次期リリース予定機能（2024年Q2）
-
-1. **Auth**:
-   - WebAuthn/パスキー認証の改善
-   - 組織管理APIの基本セット実装
-
-2. **PostgresT**:
-   - ネスト関係を含む関係性自動展開の基本機能
-   - RLSポリシー検証の強化
-
-3. **Functions**:
-   - ストリーミングレスポンス最適化
-   - 大規模バイナリデータハンドリングの改善
-
-4. **Realtime**:
-   - 改善されたPresence機能
-   - Channel Status通知の基本実装
-
-## Features
-
-- **Authentication**: Sign up, sign in, sign out, reset password, etc.
-- **Database**: Query, insert, update, delete, and filter data with PostgREST.
-- **Storage**: Upload, download, and manage files.
-- **Realtime**: Subscribe to database changes.
-- **Functions**: Call serverless functions.
-
-### Recently Completed Implementations
-
-The following features have been fully implemented with improved error handling and functionality:
-
-#### Storage
-- Image transformation with resize, format conversion, and quality control
-- Multipart uploads for large files
-- Public and signed URL generation for transformed images
-- S3-compatible API support
-
-#### Realtime
-- Enhanced channel subscriptions with automatic reconnection
-- Advanced filtering for database changes
-- Event-specific callbacks with typed payloads
-- Presence tracking for real-time user state
-
-#### PostgreST
-- Transaction support with savepoints and rollbacks
-- Advanced query building with joins and relationships
-- CSV export functionality
-- Comprehensive error handling for database operations
-
-## Installation
-
-Add this to your `Cargo.toml`:
+Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-supabase-rust = "0.1.0"
-tokio = { version = "1", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+supabase-rust = "0.1.2"
 ```
 
-## 基本的な使い方
-
-### クライアント初期化
+### Basic Usage
 
 ```rust
-use supabase_rust::prelude::*;
+use supabase_rust::{Supabase, PostgrestError};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Profile {
+    id: String,
+    username: String,
+    avatar_url: Option<String>,
+}
 
 #[tokio::main]
-async fn main() -> Result<(), Error> {
-    // Supabase クライアントの初期化
-    let supabase = Supabase::new("https://your-project-url.supabase.co", "your-anon-key");
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize client
+    let supabase = Supabase::new("https://your-project.supabase.co", "your-anon-key");
+    
+    // Authenticate
+    let session = supabase
+        .auth()
+        .sign_in_with_password("user@example.com", "password123")
+        .await?;
+    
+    // Query data with authentication
+    let profiles: Vec<Profile> = supabase
+        .from("profiles")
+        .select("*")
+        .with_auth(&session.access_token)
+        .execute()
+        .await?
+        .data()?;
+        
+    println!("Retrieved profiles: {:?}", profiles);
     
     Ok(())
 }
 ```
 
-### データベース操作
+### Advanced Features
+
+#### Transactions
 
 ```rust
-// データの取得
-let data = supabase
-    .from("your-table")
-    .select("*")
-    .execute()
-    .await?;
+// Start a transaction
+let transaction = supabase.from("profiles").transaction();
 
-println!("Data: {:?}", data);
-
-// フィルタリング
-let filtered_data = supabase
-    .from("your-table")
-    .select("id, name, created_at")
-    .eq("status", "active")
-    .order("created_at", Some(Direction::Descending))
-    .limit(10)
-    .execute()
-    .await?;
-
-// 複雑な結合クエリ
-let joined_data = supabase
-    .from("posts")
-    .select("id, title, content")
-    .include("comments", "post_id", Some("id, text, user_id"))
-    .inner_join("users", "user_id", "id")
-    .execute()
-    .await?;
-
-// 全文検索
-let search_results = supabase
-    .from("articles")
-    .select("id, title, content")
-    .text_search("content", "search terms", Some("english"))
-    .execute()
-    .await?;
-
-// CSVエクスポート
-let csv_data = supabase
-    .from("large_table")
-    .select("*")
-    .limit(1000)
-    .export_csv()
-    .await?;
-
-// ファイルとして保存
-std::fs::write("export.csv", csv_data)?;
-
-// データの挿入
-let new_record = serde_json::json!({
-    "name": "New Item",
-    "description": "Description"
-});
-
-let insert_result = supabase
-    .from("your-table")
-    .insert(new_record)
-    .execute()
-    .await?;
-
-// データの更新
-let update_result = supabase
-    .from("your-table")
-    .update(serde_json::json!({"status": "inactive"}))
-    .eq("id", 123)
-    .execute()
-    .await?;
-
-// データの削除
-let delete_result = supabase
-    .from("your-table")
-    .delete()
-    .eq("id", 123)
-    .execute()
-    .await?;
-
-// RPC関数の呼び出し
-let rpc_result = supabase
-    .rpc("calculate_total", serde_json::json!({"user_id": 123}))
-    .execute()
-    .await?;
-```
-
-## トランザクション
-
-```rust
-// トランザクションを開始
-let transaction = supabase
-    .from("users")
-    .begin_transaction(
-        Some(IsolationLevel::ReadCommitted),  // 分離レベル
-        Some(TransactionMode::ReadWrite),     // 読み書きモード
-        Some(30)                              // タイムアウト（秒）
-    )
-    .await?;
-
-// トランザクション内で複数の操作を実行
-// 1. データの挿入
-let insert_result = transaction
-    .from("users")
-    .insert(serde_json::json!({
-        "name": "トランザクションユーザー",
-        "email": "transaction@example.com"
-    }))
-    .execute()
-    .await?;
-
-let user_id = insert_result[0]["id"].as_i64().unwrap();
-
-// 2. 関連データの挿入
-let profile_result = transaction
+// Perform operations within transaction
+let update_result = transaction
     .from("profiles")
-    .insert(serde_json::json!({
-        "user_id": user_id,
-        "bio": "トランザクションで作成されたプロフィール"
-    }))
+    .update(json!({ "status": "active" }))
+    .eq("id", "123")
     .execute()
     .await?;
-
-// 3. セーブポイントを作成
-transaction.savepoint("user_created").await?;
-
-// 4. データの更新
-transaction
-    .from("users")
-    .update(serde_json::json!({ "status": "active" }))
-    .eq("id", &user_id.to_string())
+    
+let insert_result = transaction
+    .from("logs")
+    .insert(json!({ "user_id": "123", "action": "status_update" }))
     .execute()
     .await?;
-
-// 5. トランザクションをコミット
+    
+// Commit the transaction (or rollback on error)
 transaction.commit().await?;
-
-// エラー処理を含む例
-let transaction = supabase
-    .from("items")
-    .begin_transaction(None, None, None)
-    .await?;
-
-transaction
-    .from("items")
-    .insert(serde_json::json!({ "name": "アイテム1" }))
-    .execute()
-    .await?;
-
-// セーブポイントを作成
-transaction.savepoint("item1_inserted").await?;
-
-// 何らかの条件でロールバックが必要になった場合
-if some_condition {
-    // セーブポイントにロールバック
-    transaction.rollback_to_savepoint("item1_inserted").await?;
-} else if another_condition {
-    // トランザクション全体をロールバック
-    transaction.rollback().await?;
-    return Err("トランザクションがロールバックされました".into());
-} else {
-    // すべての操作が成功した場合はコミット
-    transaction.commit().await?;
-}
 ```
 
-## 認証
+#### Storage with Image Transformations
 
 ```rust
-// ユーザー登録
-let auth_response = supabase
-    .auth()
-    .sign_up("user@example.com", "password123")
-    .await?;
-
-// ログイン
-let auth_response = supabase
-    .auth()
-    .sign_in_with_password("user@example.com", "password123")
-    .await?;
-
-// 現在のユーザー情報の取得
-let user = supabase.auth().get_user().await?;
-
-// セッションの更新
-let session = supabase.auth().refresh_session().await?;
-
-// ログアウト
-supabase.auth().sign_out().await?;
-
-// パスワードリセット
-supabase
-    .auth()
-    .reset_password_for_email("user@example.com")
-    .await?;
-
-// メール確認機能
-// メール確認リクエストの送信
-let options = EmailConfirmOptions {
-    redirect_to: Some("https://your-app.com/confirm-success".to_string()),
-};
-
-supabase
-    .auth()
-    .send_confirm_email_request("user@example.com", Some(options))
-    .await?;
-
-// メール確認トークンの検証（確認リンクからのトークン）
-let session = supabase
-    .auth()
-    .verify_email("confirmation-token-from-email")
-    .await?;
-
-println!("Email confirmed for user: {}", session.user.email.unwrap_or_default());
-
-// パスワードリセットトークンの検証と新パスワード設定
-let session = supabase
-    .auth()
-    .verify_password_reset("reset-token-from-email", "new-secure-password")
-    .await?;
-
-println!("Password reset for user: {}", session.user.email.unwrap_or_default());
-```
-
-## OAuth認証
-
-```rust
-// OAuth認証URLの生成
-let auth_url = supabase
-    .auth()
-    .get_oauth_sign_in_url(
-        OAuthProvider::Google,
-        Some(OAuthSignInOptions {
-            redirect_to: Some("https://your-app.com/callback".to_string()),
-            scopes: Some("email profile".to_string()),
-            ..Default::default()
-        })
-    );
-
-println!("Sign in URL: {}", auth_url);
-
-// コールバックからのコードを使用してセッションを取得
-let session = supabase
-    .auth()
-    .exchange_code_for_session("received_code_from_oauth_callback")
-    .await?;
-
-println!("Authenticated user: {:?}", session.user);
-```
-
-## Storage
-
-```rust
-// ファイルのアップロード
-let upload_result = supabase
-    .storage()
-    .from("bucket-name")
-    .upload("folder/file.txt", file_data, Some(FileOptions::new()))
-    .await?;
-
-// ファイルダウンロード
-let file_data = supabase
-    .storage()
-    .from("bucket-name")
-    .download("folder/file.txt")
-    .await?;
-
-// ファイル一覧の取得
-let files = supabase
-    .storage()
-    .from("bucket-name")
-    .list("folder", Some(ListOptions::new().limit(100)))
-    .await?;
-
-// 公開URLの生成
-let public_url = supabase
-    .storage()
-    .from("bucket-name")
-    .get_public_url("folder/file.txt");
-
-// 署名付きURLの生成
-let signed_url = supabase
-    .storage()
-    .from("bucket-name")
-    .create_signed_url("folder/file.txt", 60)
-    .await?;
-
-// 画像変換
-let transform_options = ImageTransformOptions::new()
-    .with_width(300)
-    .with_height(200)
-    .with_resize("cover")
-    .with_format("webp")
-    .with_quality(90);
-
-// 変換された画像を取得
-let transformed_image = supabase
-    .storage()
-    .from("bucket-name")
-    .transform_image("folder/image.png", transform_options.clone())
-    .await?;
-
-// 変換された画像の公開URLを取得
-let public_transform_url = supabase
-    .storage()
-    .from("bucket-name")
-    .get_public_transform_url("folder/image.png", transform_options.clone());
-
-// 変換された画像の署名付きURLを取得
-let signed_transform_url = supabase
-    .storage()
-    .from("bucket-name")
-    .create_signed_transform_url("folder/image.png", transform_options, 60)
-    .await?;
-
-// ファイルの削除
+// Upload an image
+let path = "avatars/profile.jpg";
 supabase
     .storage()
-    .from("bucket-name")
-    .remove(vec!["folder/file.txt", "folder/another-file.txt"])
+    .from("public-bucket")
+    .upload(path, file_bytes)
     .await?;
-```
 
-## 大容量ファイルのチャンクアップロード
-
-```rust
-// 大きなファイルをチャンクでアップロードする
-let file_path = std::path::Path::new("/path/to/large-file.mp4");
-let result = supabase
+// Generate image transformation URL (resize to 100x100, format as webp)
+let transform_url = supabase
     .storage()
-    .from("videos")
-    .upload_large_file(
-        "videos/large-file.mp4",
-        file_path,
-        5 * 1024 * 1024, // 5MBチャンクサイズ
-        Some(FileOptions::new().with_content_type("video/mp4"))
-    )
-    .await?;
-
-println!("Uploaded file: {:?}", result);
-
-// 手動でマルチパートアップロードを制御する場合
-// 1. マルチパートアップロードを初期化
-let init_result = supabase
-    .storage()
-    .from("videos")
-    .initiate_multipart_upload(
-        "videos/large-file.mp4",
-        Some(FileOptions::new().with_content_type("video/mp4"))
-    )
-    .await?;
-
-// 2. チャンクを個別にアップロード
-let chunk_data = bytes::Bytes::from(vec![0u8; 1024]); // 実際のデータ
-let part_result = supabase
-    .storage()
-    .from("videos")
-    .upload_part(&init_result.upload_id, 1, chunk_data)
-    .await?;
-
-// 3. マルチパートアップロードを完了
-let complete_result = supabase
-    .storage()
-    .from("videos")
-    .complete_multipart_upload(
-        &init_result.upload_id,
-        "videos/large-file.mp4",
-        vec![part_result]
-    )
-    .await?;
+    .from("public-bucket")
+    .get_public_transform_url(path, |transform| {
+        transform
+            .width(100)
+            .height(100)
+            .format("webp")
+            .quality(80)
+    });
 ```
 
-## Realtime
+#### Realtime Subscriptions
 
 ```rust
-// リアルタイム購読
-let _subscription = supabase
-    .channel("table-changes")
-    .on(
-        DatabaseChanges::new("your-table")
-            .event(ChannelEvent::Insert)
-            .event(ChannelEvent::Update)
-            .event(ChannelEvent::Delete),
-        |payload| {
-            println!("Change received: {:?}", payload);
-        },
-    )
-    .subscribe()
-    .await?;
-
-// カスタムチャネルの購読
-let _broadcast_subscription = supabase
-    .channel("custom-channel")
-    .on(
-        BroadcastChanges::new("custom-event"),
-        |payload| {
-            println!("Broadcast received: {:?}", payload);
-        },
-    )
-    .subscribe()
-    .await?;
-
-// 購読解除
-// subscriptionが破棄されると自動的に購読解除されます
-```
-
-## リアルタイム接続の管理
-
-```rust
-// カスタム接続オプションでリアルタイムクライアントを初期化
-let options = RealtimeClientOptions {
-    auto_reconnect: true,
-    max_reconnect_attempts: Some(10),
-    reconnect_interval: 2000, // 2秒
-    ..Default::default()
-};
-
-// 接続状態の変更を監視
-let realtime = supabase.realtime();
-let mut state_receiver = realtime.on_state_change();
-
-// 別スレッドで状態変更を監視
-tokio::spawn(async move {
-    while let Ok(state) = state_receiver.recv().await {
-        println!("Connection state changed: {:?}", state);
-        
-        match state {
-            ConnectionState::Connected => {
-                println!("接続成功!");
-            }
-            ConnectionState::Reconnecting => {
-                println!("再接続中...");
-            }
-            ConnectionState::Disconnected => {
-                println!("切断されました");
-            }
-            _ => {}
-        }
-    }
-});
-
-// テーブル変更の購読
-let _subscription = supabase
-    .channel("table-changes")
-    .on(
-        DatabaseChanges::new("your-table")
-            .event(ChannelEvent::Insert)
-            .event(ChannelEvent::Update)
-            .event(ChannelEvent::Delete),
-        |payload| {
-            println!("Change received: {:?}", payload);
-        },
-    )
-    .subscribe()
-    .await?;
-
-// 手動で接続を終了
-supabase.realtime().disconnect().await?;
-```
-
-## Edge Functions
-
-```rust
-// Edge Functionの呼び出し
-let function_result = supabase
-    .functions()
-    .invoke::<serde_json::Value>("function-name", Some(serde_json::json!({"param": "value"})))
-    .await?;
-```
-
-## エラーハンドリング
-
-```rust
-match supabase.from("your-table").select("*").execute().await {
-    Ok(data) => {
-        println!("Success: {:?}", data);
-    }
-    Err(err) => match err {
-        Error::ApiError(api_error) => {
-            println!("API Error: {} ({})", api_error.message, api_error.code);
-        }
-        Error::AuthError(auth_error) => {
-            println!("Auth Error: {}", auth_error);
-        }
-        Error::StorageError(storage_error) => {
-            println!("Storage Error: {}", storage_error);
-        }
-        _ => {
-            println!("Other Error: {}", err);
-        }
-    },
-}
-```
-
-## 実行環境
-
-- サポートRust バージョン: 1.65以上
-- `tokio` ランタイム上での非同期操作
-
-## 互換性
-
-Supabase Rustは、JavaScript版 [supabase-js](https://github.com/supabase/supabase-js) と互換性を持つように設計されています。APIの設計は類似していますが、Rustの言語仕様に合わせた実装になっています。
-
-現在の実装では、supabase-jsの主要機能を提供していますが、一部の高度な機能はまだ実装中です。詳細は「開発状況」セクションをご覧ください。
-
-## 開発状況
-
-### 機能カバレッジ（supabase-jsとの比較）
-
-| 機能 | supabase-js (TypeScript) | supabase-rust | カバレッジ | 
-|------|------------------------|--------------|---------|
-| **データベース (PostgreSQL)** | ✅ 完全実装 | ✅ 完全実装 | 90% |
-| **認証 (Auth)** | ✅ 完全実装 | ✅ 基本実装済み | 90% |
-| **ストレージ (Storage)** | ✅ 完全実装 | ✅ 基本実装済み | 95% |
-| **リアルタイム (Realtime)** | ✅ 完全実装 | ✅ 基本実装済み | 95% |
-| **Edge Functions** | ✅ 完全実装 | ✅ 基本実装済み | 85% |
-| **TypeScript/型安全** | ✅ 完全実装 | ✅ Rustの型システム | 90% |
-
-### 詳細状況
-
-#### データベース機能 (90%)
-- ✅ 基本的なSELECT, INSERT, UPDATE, DELETEオペレーション
-- ✅ 基本的なフィルタリング
-- ✅ RPC関数呼び出し
-- ✅ 基本的なリレーションシップクエリ
-- ✅ 複雑な結合クエリ（内部結合、外部結合、子テーブル含める）
-- ✅ 高度なPostgREST機能（全文検索、地理空間データ検索、グループ化）
-- ✅ CSVエクスポート機能
-- ✅ 行レベルセキュリティ（RLS）対応
-- ✅ トランザクション処理
-
-#### 認証 (90%)
-- ✅ メール・パスワード認証
-- ✅ 基本的なセッション管理
-- ✅ ユーザー情報取得
-- ✅ パスワードリセット
-- ✅ OAuth認証
-- ✅ 多要素認証（MFA）
-- ✅ 匿名認証
-- ✅ 電話番号認証
-- ✅ メール確認機能
-
-#### ストレージ (95%)
-- ✅ ファイルアップロード/ダウンロード
-- ✅ バケット管理
-- ✅ ファイル一覧取得
-- ✅ 公開URL生成
-- ✅ 基本的な署名付きURL
-- ✅ 大容量ファイルのチャンクアップロード
-- ✅ 画像変換機能（リサイズ、フォーマット変換、画質調整）
-- ✅ S3互換APIのサポート
-
-#### リアルタイム (95%)
-- ✅ データベース変更監視
-- ✅ カスタムチャネル購読
-- ✅ 切断・再接続のロバスト性
-- ✅ Presenceサポート
-- ✅ 高度なリアルタイムフィルタリング
-
-#### Edge Functions (85%)
-- ✅ 基本的な関数呼び出し
-- ✅ 高度なパラメータサポート
-- ✅ 詳細なエラーハンドリング
-- ✅ 異なるレスポンス形式（JSON, テキスト, バイナリ）のサポート
-- ✅ ストリーミングレスポンスのサポート
-- 🔄 ストリームの自動変換機能の拡張（実装中）
-
-### 今後の開発予定
-
-1. **データベース機能の強化**:
-   - 複雑な結合クエリの最適化
-   - データベースプールの管理と効率化
-
-2. **認証の拡張**:
-   - WebAuthn/パスキーサポートの追加
-   - 組織機能のサポート
-   - 詳細な権限管理の実装
-
-3. **ストレージの拡張**:
-   - S3互換API機能の拡張
-   - 大容量ファイル処理の最適化
-   - バケット権限管理の詳細制御
-
-4. **リアルタイム機能の強化**:
-   - バッチ購読処理の最適化
-   - オフライン同期サポート
-
-5. **Edge Functions拡張**:
-   - Deno/Rustランタイムサポート
-   - ウェブフック統合
-   - ローカル開発環境との連携
-
-6. **パフォーマンスとセキュリティ**:
-   - メモリ使用量の最適化
-   - スレッド安全性の強化
-   - 暗号化機能の拡張
-
-## 匿名認証
-
-```rust
-// 匿名認証でサインイン
-let anonymous_session = supabase
-    .auth()
-    .sign_in_anonymously()
-    .await?;
-
-println!("Anonymous user ID: {}", anonymous_session.user.id);
-```
-
-## 電話番号認証
-
-```rust
-// 電話番号認証 - ステップ1: 認証コード送信
-let verification = supabase
-    .auth()
-    .send_verification_code("+81901234567")
-    .await?;
-
-println!("Verification ID: {}", verification.verification_id);
-println!("Code sent to: {}", verification.phone);
-println!("Expires at: {}", verification.expires_at);
-
-// 電話番号認証 - ステップ2: コード検証とサインイン
-// ユーザーがSMSで受け取ったコード
-let sms_code = "123456"; // 実際の例ではユーザー入力から取得
-
-let session = supabase
-    .auth()
-    .verify_phone_code(
-        "+81901234567",
-        &verification.verification_id,
-        sms_code
-    )
-    .await?;
-
-println!("Logged in with phone: {:?}", session.user.phone);
-```
-
-## ストリーミングレスポンス (Edge Functions)
-
-```rust
-// テキストベースのストリーミングレスポンス
-// ストリーミングレスポンスの取得
-let stream = supabase
-    .functions()
-    .invoke_stream::<serde_json::Value>(
-        "stream-data",
-        Some(serde_json::json!({"count": 100})),
-        None
-    )
-    .await?;
-
-// バイトストリームから行ストリームに変換
-let line_stream = supabase.functions().stream_to_lines(stream);
-
-// ストリームを処理
-tokio::pin!(line_stream);
-while let Some(line_result) = line_stream.next().await {
-    match line_result {
-        Ok(line) => {
-            println!("Received line: {}", line);
-            // 行を必要に応じてJSONとしてパース
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                println!("Parsed JSON: {:?}", json);
-            }
-        },
-        Err(e) => {
-            eprintln!("Error reading stream: {}", e);
-            break;
-        }
-    }
-}
-
-// JSONストリームを直接取得
-let json_stream = supabase
-    .functions()
-    .invoke_json_stream::<serde_json::Value>(
-        "stream-events",
-        Some(serde_json::json!({"eventType": "user-activity"})),
-        None
-    )
-    .await?;
-
-// JSONイベントを処理
-tokio::pin!(json_stream);
-while let Some(json_result) = json_stream.next().await {
-    match json_result {
-        Ok(json) => {
-            println!("Received JSON event: {:?}", json);
-        },
-        Err(e) => {
-            eprintln!("Error in JSON stream: {}", e);
-            break;
-        }
-    }
-}
-
-// バイナリデータの取得と処理 (v0.1.2で追加)
-// 単一のバイナリレスポンスを取得
-let binary_data = supabase
-    .functions()
-    .invoke_binary(
-        "generate-image", 
-        Some(serde_json::json!({"width": 100, "height": 100})),
-        None
-    )
-    .await?;
-
-// バイナリデータをファイルに保存
-std::fs::write("image.png", &binary_data)?;
-
-// 大きなバイナリデータをストリーミングで取得
-let binary_stream = supabase
-    .functions()
-    .invoke_binary_stream(
-        "generate-large-image",
-        Some(serde_json::json!({"width": 2000, "height": 2000})),
-        Some(FunctionOptions {
-            timeout_seconds: Some(60), // 大きなデータのため、タイムアウトを60秒に設定
-            ..Default::default()
-        })
-    )
-    .await?;
-
-// ストリームからバイナリデータを処理
-let mut file = std::fs::File::create("large-image.png")?;
-tokio::pin!(binary_stream);
-while let Some(chunk_result) = binary_stream.next().await {
-    match chunk_result {
-        Ok(chunk) => {
-            file.write_all(&chunk)?;
-        },
-        Err(e) => {
-            eprintln!("Error in binary stream: {}", e);
-            break;
-        }
-    }
-}
-
-// バイナリデータをチャンク単位で高度に処理
-let processor = |data: &[u8]| -> Result<bytes::Bytes, String> {
-    // データ処理ロジック（例: 画像変換、暗号化/復号化など）
-    Ok(bytes::Bytes::copy_from_slice(data))
-};
-
-let processed_stream = supabase
-    .functions()
-    .process_binary_chunks(binary_stream, 64 * 1024, processor);
-```
-
-## コントリビューション
-
-バグ報告、機能リクエスト、プルリクエストなど、あらゆる形でのコントリビューションを歓迎します。詳細は[コントリビューションガイド](CONTRIBUTING.md)をご覧ください。
-
-## ライセンス
-
-[MIT License](LICENSE)
-
-## 貢献
-
-貢献は歓迎します！詳細は [CONTRIBUTING.md](CONTRIBUTING.md) をご覧ください。
-
-## セキュリティ
-
-セキュリティ上の脆弱性を発見した場合は、[SECURITY.md](SECURITY.md)に記載されている連絡先に報告してください。
-
-## 多要素認証（MFA）
-
-```rust
-// MFAを使用したサインイン - 第一ステップ
-let result = supabase
-    .auth()
-    .sign_in_with_password_mfa("user@example.com", "password123")
-    .await?;
-
-// 結果の処理
-match result {
-    Ok(session) => {
-        // MFAが必要ない場合 - ログイン成功
-        println!("Logged in successfully: {:?}", session.user.email);
-    },
-    Err(challenge) => {
-        // MFA認証が必要 - 第二ステップへ
-        println!("MFA required with challenge ID: {}", challenge.id);
-        
-        // ユーザーからTOTPコード（例: Authenticatorアプリのコード）を取得
-        let totp_code = "123456"; // 実際のコードをユーザーから取得する
-        
-        // MFAチャレンジを検証
-        let session = supabase
-            .auth()
-            .verify_mfa_challenge(&challenge.id, totp_code)
-            .await?;
-            
-        println!("MFA verification successful: {:?}", session.user.email);
-    }
-}
-
-// MFA TOTPファクターの登録
-let setup_info = supabase
-    .auth()
-    .enroll_totp()
-    .await?;
-
-println!("TOTP secret: {}", setup_info.secret);
-println!("QR code: {}", setup_info.qr_code);
-
-// TOTPの検証と有効化
-let factor = supabase
-    .auth()
-    .verify_totp("factor-id-from-setup", "123456")
-    .await?;
-
-println!("MFA factor enabled: {:?}", factor.status);
-
-// ユーザーのMFAファクター一覧を取得
-let factors = supabase
-    .auth()
-    .list_factors()
-    .await?;
-
-for factor in factors {
-    println!("Factor: {} ({})", factor.id, factor.factor_type);
-}
-
-// MFAファクターの削除
-supabase
-    .auth()
-    .unenroll_factor("factor-id")
-    .await?;
-```
-
-## Presenceサポート
-
-```rust
-// Presenceを使用してユーザーのオンライン状態を追跡
-let channel = supabase
-    .channel("room:123");
-
-// Presenceの変更を監視
-let _subscription = channel
-    .on_presence(|presence_diff| {
-        // 新規参加ユーザーの処理
-        for (user_id, user_data) in &presence_diff.joins {
-            println!("User joined: {}, data: {:?}", user_id, user_data);
-        }
-        
-        // 退室ユーザーの処理
-        for (user_id, _) in &presence_diff.leaves {
-            println!("User left: {}", user_id);
-        }
+// Subscribe to database changes
+let subscription = supabase
+    .realtime()
+    .channel("schema-db-changes")
+    .on_postgres_changes("profiles", |changes| {
+        changes
+            .event("INSERT")
+            .event("UPDATE")
+            .event("DELETE")
     })
-    .subscribe()
-    .await?;
-
-// ユーザー状態を追跡
-let user_id = "user-123";
-let user_data = serde_json::json!({
-    "name": "John Doe",
-    "status": "online",
-    "last_seen_at": "2023-07-01T12:00:00Z"
-});
-
-// Presenceの状態を設定
-channel
-    .track_presence(user_id, user_data)
-    .await?;
-
-// Presenceの状態を同期
-let mut presence_state = PresenceState::new();
-
-// 状態更新時に同期
-presence_state.sync(&presence_diff);
-
-// 現在オンラインのユーザー一覧を取得
-let online_users = presence_state.list();
-println!("Online users: {:?}", online_users);
-```
-
-## 拡張されたEdge Functions
-
-```rust
-// 様々なレスポンスタイプに対応
-// JSON応答を取得
-let json_result = supabase
-    .functions()
-    .invoke_json::<serde_json::Value, _>(
-        "get-user-data",
-        Some(serde_json::json!({"user_id": 123}))
-    )
-    .await?;
-
-println!("User data: {:?}", json_result);
-
-// テキスト応答を取得
-let text_result = supabase
-    .functions()
-    .invoke_text::<serde_json::Value>(
-        "generate-text",
-        Some(serde_json::json!({"prompt": "Hello world"}))
-    )
-    .await?;
-
-println!("Generated text: {}", text_result);
-
-// タイムアウトを設定
-let options = FunctionOptions {
-    timeout_seconds: Some(30),
-    ..Default::default()
-};
-
-// 詳細な応答情報を取得
-let response = supabase
-    .functions()
-    .invoke::<UserData, _>(
-        "get-complete-user-data",
-        Some(serde_json::json!({"user_id": 123})),
-        Some(options)
-    )
-    .await?;
-
-println!("Status code: {}", response.status);
-println!("Headers: {:?}", response.headers);
-println!("User data: {:?}", response.data);
-
-// エラーハンドリング
-match supabase.functions().invoke_json::<serde_json::Value, _>("function-name", Some(payload)).await {
-    Ok(data) => {
-        println!("Success: {:?}", data);
-    },
-    Err(err) => match err {
-        FunctionsError::TimeoutError => {
-            println!("Function timed out");
-        },
-        FunctionsError::FunctionError { message, status, details } => {
-            println!("Function error: {} (status: {})", message, status);
-            if let Some(details) = details {
-                println!("Error details: {:?}", details);
-            }
-        },
-        _ => {
-            println!("Other error: {}", err);
-        }
-    }
-}
-```
-
-## S3互換APIの使用
-
-```rust
-// S3互換APIの使用例
-use supabase_rust::storage::s3::S3Options;
-use std::collections::HashMap;
-use bytes::Bytes;
-
-// S3互換オプションを設定
-let s3_options = S3Options {
-    access_key_id: "your-access-key".to_string(),
-    secret_access_key: "your-secret-key".to_string(),
-    region: Some("auto".to_string()),
-    ..Default::default()
-};
-
-// S3互換クライアントを取得
-let storage_client = supabase.storage();
-let bucket_client = storage_client.from("test-bucket");
-let s3_client = bucket_client.s3_compatible(s3_options);
-
-// オブジェクトをアップロード
-let content = "This is a test file";
-let data = Bytes::from(content.as_bytes());
-s3_client.put_object(
-    "path/to/file.txt",
-    data,
-    Some("text/plain".to_string()),
-    Some({
-        let mut metadata = HashMap::new();
-        metadata.insert("description".to_string(), "Test file".to_string());
-        metadata
+    .subscribe(move |payload| {
+        println!("Change detected: {:?}", payload);
     })
-).await?;
-
-// オブジェクトをダウンロード
-let downloaded_data = s3_client.get_object("path/to/file.txt").await?;
-let text = String::from_utf8_lossy(&downloaded_data);
-
-// メタデータを取得
-let metadata = s3_client.head_object("path/to/file.txt").await?;
-
-// オブジェクト一覧を取得
-let objects = s3_client.list_objects(
-    Some("path/to/"),  // プレフィックス
-    Some("/"),         // デリミタ
-    Some(100)          // 最大取得数
-).await?;
-
-// オブジェクトをコピー
-s3_client.copy_object("path/to/file.txt", "path/to/copy.txt").await?;
-
-// オブジェクトを削除
-s3_client.delete_object("path/to/file.txt").await?;
+    .await?;
+    
+// Later, unsubscribe when no longer needed
+subscription.unsubscribe().await?;
 ```
 
-## 高度なリアルタイムフィルタリング
+## Contributing
 
-```rust
-// 高度なリアルタイムフィルタリングの使用例
-use supabase_rust::realtime::{DatabaseChanges, ChannelEvent, DatabaseFilter, FilterOperator};
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-// リアルタイムクライアントを取得
-let realtime = supabase.realtime();
+## License
 
-// 完了済みタスクだけを監視するチャンネルを作成
-let channel = realtime
-    .channel("filtered-channel")
-    .on(
-        DatabaseChanges::new("tasks")
-            .event(ChannelEvent::Insert)
-            .event(ChannelEvent::Update)
-            // is_completeがtrueのレコードだけを対象にする
-            .eq("is_complete", true),
-        |payload| {
-            println!("完了済みタスクが更新されました: {:?}", payload);
-        },
-    )
-    .subscribe()
-    .await?;
-
-// 複合条件によるフィルタリング
-let complex_channel = realtime
-    .channel("complex-filter")
-    .on(
-        DatabaseChanges::new("users")
-            .event(ChannelEvent::Insert)
-            .event(ChannelEvent::Update)
-            // 年齢が30以上で、
-            .gte("age", 30)
-            // statusがactiveか、premiumのユーザー
-            .in_values("status", vec!["active", "premium"]),
-        |payload| {
-            println!("条件に一致するユーザーが更新されました: {:?}", payload);
-        },
-    )
-    .subscribe()
-    .await?;
-
-// 使用可能なフィルター演算子:
-// .eq() - 等しい
-// .neq() - 等しくない
-// .gt() - より大きい
-// .gte() - 以上
-// .lt() - より小さい
-// .lte() - 以下
-// .in_values() - いずれかの値に一致
-// .contains() - 配列に含まれる
-// .like() - ワイルドカードマッチング
-// .ilike() - 大文字小文字を区別しないワイルドカードマッチング
-
-// カスタムフィルターを直接作成する場合
-let custom_channel = realtime
-    .channel("custom-filter")
-    .on(
-        DatabaseChanges::new("products")
-            .filter(DatabaseFilter {
-                column: "name".to_string(),
-                operator: FilterOperator::ILike,
-                value: serde_json::Value::String("%smartphone%".to_string()),
-            }),
-        |payload| {
-            println!("スマートフォン関連の製品が更新されました: {:?}", payload);
-        },
-    )
-    .subscribe()
-    .await?;
-```
+This project is licensed under the MIT License - see the LICENSE file for details.

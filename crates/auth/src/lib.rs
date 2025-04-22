@@ -220,16 +220,22 @@ impl AdminAuth {
         }
     }
 
-    /// 指定されたIDのユーザーを取得します
+    /// Gets a user by their ID.
     ///
-    /// # 引数
+    /// # Example
     ///
-    /// * `user_id` - 取得するユーザーのID
-    ///
-    /// # 例
-    ///
-    /// ```
-    /// let user = supabase.auth().admin().get_user_by_id("some-user-id").await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{AdminAuth, User, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let auth_url = "https://example.supabase.co/auth/v1";
+    /// # let service_key = "service-role-key";
+    /// # let admin_auth = AdminAuth::new(auth_url, service_key, Client::new());
+    /// let user = admin_auth.get_user_by_id("some-user-id").await?;
+    /// println!("User: {:?}", user);
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn get_user_by_id(&self, user_id: &str) -> Result<User, AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
@@ -261,17 +267,22 @@ impl AdminAuth {
         }
     }
 
-    /// 全ユーザーを取得します
+    /// Lists users with pagination.
     ///
-    /// # 引数
+    /// # Example
     ///
-    /// * `page` - ページ番号（オプション、デフォルトは1）
-    /// * `per_page` - ページあたりのユーザー数（オプション、デフォルトは50）
-    ///
-    /// # 例
-    ///
-    /// ```
-    /// let users = supabase.auth().admin().list_users(Some(1), Some(100)).await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{AdminAuth, User, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let auth_url = "https://example.supabase.co/auth/v1";
+    /// # let service_key = "service-role-key";
+    /// # let admin_auth = AdminAuth::new(auth_url, service_key, Client::new());
+    /// let users = admin_auth.list_users(Some(1), Some(100)).await?;
+    /// println!("Users: {:?}", users);
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn list_users(
         &self,
@@ -671,10 +682,15 @@ impl Auth {
     ///
     /// # 例
     ///
-    /// ```
-    /// // サーバーサイドでのみ使用！
-    /// let auth = supabase.auth().init_admin("your-service-role-key");
-    /// let admin_client = auth.admin().unwrap();
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AuthOptions};
+    /// # use reqwest::Client;
+    /// #
+    /// # fn example() {
+    /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    /// # let mut auth = auth;
+    /// let auth = auth.init_admin("your-service-role-key");
+    /// # }
     /// ```
     pub fn init_admin(&mut self, service_role_key: &str) -> &Self {
         self.admin = Some(AdminAuth::new(
@@ -689,11 +705,19 @@ impl Auth {
     ///
     /// # 例
     ///
-    /// ```
-    /// // サーバーサイドでのみ使用！
-    /// if let Some(admin) = supabase.auth().admin() {
-    ///     let users = admin.list_users(None, None).await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AuthOptions};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    /// # let auth = auth.init_admin("your-service-role-key");
+    /// if let Some(admin) = auth.admin() {
+    ///     // Use admin API here
+    ///     // let users = admin.list_users(None, None).await?;
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn admin(&self) -> Option<&AdminAuth> {
         self.admin.as_ref()
@@ -1244,17 +1268,19 @@ impl Auth {
     ///
     /// # Example
     ///
-    /// ```
-    /// use supabase_auth::{Auth, EmailConfirmOptions};
-    ///
-    /// let auth = // Auth インスタンスの初期化
-    /// # Auth::new("", "", reqwest::Client::new(), Default::default());
-    ///
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AuthOptions, EmailConfirmOptions};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
     /// let options = EmailConfirmOptions {
     ///     redirect_to: Some("https://example.com/confirm-success".to_string()),
     /// };
     ///
-    /// let result = auth.send_confirm_email_request("user@example.com", Some(options));
+    /// auth.send_confirm_email_request("user@example.com", Some(options)).await?;
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn send_confirm_email_request(
         &self,
@@ -1301,13 +1327,16 @@ impl Auth {
     ///
     /// # Example
     ///
-    /// ```
-    /// use supabase_auth::Auth;
-    ///
-    /// let auth = // Auth インスタンスの初期化
-    /// # Auth::new("", "", reqwest::Client::new(), Default::default());
-    ///
-    /// let result = auth.verify_email("confirmation-token-from-email");
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AuthOptions};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    /// let session = auth.verify_email("confirmation-token-from-email").await?;
+    /// println!("Email verified for user: {:?}", session.user.email);
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn verify_email(&self, token: &str) -> Result<Session, AuthError> {
         let endpoint = format!("{}/auth/v1/verify", self.url);
@@ -1349,13 +1378,16 @@ impl Auth {
     ///
     /// # Example
     ///
-    /// ```
-    /// use supabase_auth::Auth;
-    ///
-    /// let auth = // Auth インスタンスの初期化
-    /// # Auth::new("", "", reqwest::Client::new(), Default::default());
-    ///
-    /// let result = auth.verify_password_reset("reset-token-from-email", "new-secure-password");
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AuthOptions};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    /// let session = auth.verify_password_reset("reset-token-from-email", "new-secure-password").await?;
+    /// println!("Password reset for user: {:?}", session.user.email);
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn verify_password_reset(
         &self,
@@ -1495,8 +1527,7 @@ mod tests {
 
             Mock::given(method("POST"))
                 .and(path("/auth/v1/signup"))
-                .respond_with(ResponseTemplate::new(200)
-                    .set_body_json(&response_body))
+                .respond_with(ResponseTemplate::new(200).set_body_json(&response_body))
                 .mount(&mock_server)
                 .await;
 
