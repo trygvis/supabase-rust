@@ -8,4 +8,4 @@
 fn main() {
     println!("Schema conversion is disabled in this version.");
     println!("This feature will be available in a future release.");
-} 
+}
