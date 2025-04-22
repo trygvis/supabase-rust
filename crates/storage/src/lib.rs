@@ -137,9 +137,9 @@ pub struct SortBy {
     pub order: SortOrder,
 }
 
-impl ToString for SortBy {
-    fn to_string(&self) -> String {
-        format!("{}:{:?}", self.column, self.order).to_lowercase()
+impl std::fmt::Display for SortBy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{:?}", self.column, self.order).map(|_| ())
     }
 }
 

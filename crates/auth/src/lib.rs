@@ -96,7 +96,7 @@ pub enum OAuthProvider {
 }
 
 impl OAuthProvider {
-    fn to_string(&self) -> &'static str {
+    fn display(&self) -> &'static str {
         match self {
             Self::Google => "google",
             Self::Facebook => "facebook",
@@ -917,7 +917,7 @@ impl Auth {
         provider: OAuthProvider,
         options: Option<OAuthSignInOptions>,
     ) -> String {
-        let provider_id = provider.to_string();
+        let provider_id = provider.display();
         let options = options.unwrap_or_default();
 
         let mut url = format!("{}/auth/v1/authorize?provider={}", self.url, provider_id);
