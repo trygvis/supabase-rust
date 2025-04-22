@@ -20,7 +20,9 @@ SQL_FILE="$SCRIPT_DIR/schema/create_tables.sql"
 
 # Execute the SQL file against the local Supabase instance
 echo "Running SQL script to create tables..."
-cat "$SQL_FILE" | supabase db execute
+cd "$(dirname "$SCRIPT_DIR")" # Navigate to project root
+export PGPASSWORD=postgres
+psql -h 127.0.0.1 -p 54332 -U postgres -d postgres -f "$SQL_FILE"
 
 if [ $? -eq 0 ]; then
     echo "Database setup completed successfully!"
