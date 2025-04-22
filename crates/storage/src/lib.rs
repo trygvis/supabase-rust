@@ -721,7 +721,8 @@ impl<'a> StorageBucketClient<'a> {
             .query(&[("bucket", &self.bucket_id), ("key", &path.to_string())])
             .json(&payload)
             .send()
-            .await?;
+            .await
+            .map_err(StorageError::NetworkError)?;
 
         if !response.status().is_success() {
             let error_text = response.text().await?;
