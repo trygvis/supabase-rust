@@ -19,9 +19,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt;
 use thiserror::Error;
 use url::Url;
-use std::fmt;
 
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -520,14 +520,17 @@ impl PostgrestClient {
 
         let response = self.http_client.get(url).headers(headers).send().await?;
 
-        if !response.status().is_success() {
+        let status = response.status();
+        if !status.is_success() {
             let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(PostgrestApiErrorDetails {
-                code: None,
-                message: Some(error_text),
-                details: None,
-                hint: None,
-            }));
+            let details = serde_json::from_str::<PostgrestApiErrorDetails>(&error_text)
+                .unwrap_or_else(|_| PostgrestApiErrorDetails {
+                    code: None,
+                    message: Some(error_text.clone()),
+                    details: None,
+                    hint: None,
+                });
+            return Err(PostgrestError::ApiError { details, status });
         }
 
         let csv_data = response.text().await?;
@@ -553,13 +556,17 @@ impl PostgrestClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
-            // Try parsing the error as JSON details
-            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
-            return match details_result {
-                Ok(details) => Err(PostgrestError::ApiError { details, status }),
-                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
-            };
+
+            // Attempt to parse specific error details
+            if let Ok(details) = serde_json::from_str::<PostgrestApiErrorDetails>(&error_text) {
+                return Err(PostgrestError::ApiError { details, status });
+            } else {
+                // If parsing fails, return a less specific error with the raw message
+                return Err(PostgrestError::UnparsedApiError {
+                    message: error_text,
+                    status,
+                });
+            }
         }
 
         response
@@ -588,10 +595,14 @@ impl PostgrestClient {
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+            let details_result: Result<PostgrestApiErrorDetails, _> =
+                serde_json::from_str(&error_text);
             return match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
-                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError {
+                    message: error_text,
+                    status,
+                }),
             };
         }
 
@@ -620,11 +631,15 @@ impl PostgrestClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-                
-            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+
+            let details_result: Result<PostgrestApiErrorDetails, _> =
+                serde_json::from_str(&error_text);
             return match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
-                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError {
+                    message: error_text,
+                    status,
+                }),
             };
         }
 
@@ -653,10 +668,14 @@ impl PostgrestClient {
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+            let details_result: Result<PostgrestApiErrorDetails, _> =
+                serde_json::from_str(&error_text);
             return match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
-                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError {
+                    message: error_text,
+                    status,
+                }),
             };
         }
 
@@ -695,17 +714,23 @@ impl PostgrestClient {
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
-             return match details_result {
+            let details_result: Result<PostgrestApiErrorDetails, _> =
+                serde_json::from_str(&error_text);
+            return match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
-                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError {
+                    message: error_text,
+                    status,
+                }),
             };
         }
 
-        response
-            .json::<T>()
-            .await
-            .map_err(|e| PostgrestError::DeserializationError(format!("Failed to deserialize RPC response: {}", e)))
+        response.json::<T>().await.map_err(|e| {
+            PostgrestError::DeserializationError(format!(
+                "Failed to deserialize RPC response: {}",
+                e
+            ))
+        })
     }
 
     // URLを構築
@@ -882,7 +907,7 @@ impl PostgrestTransaction {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-            
+
             // Treat transaction commit/rollback errors specifically
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to commit transaction: {} (Status: {})",
@@ -973,7 +998,7 @@ impl PostgrestTransaction {
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to create savepoint '{}': {} (Status: {})",
-                 name, error_text, status
+                name, error_text, status
             )));
         }
         Ok(())
@@ -1013,7 +1038,7 @@ impl PostgrestTransaction {
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to rollback to savepoint '{}': {} (Status: {})",
-                 name, error_text, status
+                name, error_text, status
             )));
         }
         Ok(())
@@ -1076,7 +1101,7 @@ mod tests {
 
         let result = client
             .select("*")
-            .execute::<Vec<serde_json::Value>>() // Vec<T> を期待するように修正
+            .execute::<serde_json::Value>()
             .await;
 
         if let Err(e) = &result {
@@ -1086,8 +1111,8 @@ mod tests {
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.len(), 2);
-        assert_eq!(data[0]["name"], "Test Item 1");
-        assert_eq!(data[1]["id"], 2);
+        assert_eq!(data.get(0).and_then(|v: &Value| v.get("name")).and_then(Value::as_str), Some("Test Item 1"));
+        assert_eq!(data.get(1).and_then(|v: &Value| v.get("id")).and_then(Value::as_i64), Some(2));
     }
 
     #[tokio::test]
@@ -1133,7 +1158,13 @@ mod tests {
 
         assert!(result.is_ok());
         let response_data = result.unwrap();
-        assert_eq!(response_data, RpcResponse { result: "success".to_string(), data: 456 });
+        assert_eq!(
+            response_data,
+            RpcResponse {
+                result: "success".to_string(),
+                data: 456
+            }
+        );
     }
 
     #[tokio::test]
@@ -1182,8 +1213,8 @@ mod tests {
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        assert_eq!(data[0]["title"], "First Post");
-        assert_eq!(data[0]["comments"].as_array().unwrap().len(), 2);
+        assert_eq!(data.get(0).and_then(|v: &Value| v.get("title")).and_then(Value::as_str), Some("First Post"));
+        assert_eq!(data.get(0).and_then(|v: &Value| v.get("comments")).and_then(Value::as_array).map(|a| a.len()), Some(2));
     }
 
     #[tokio::test]
@@ -1215,7 +1246,7 @@ mod tests {
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        assert_eq!(data[0]["title"], "Search Result");
+        assert_eq!(data.get(0).and_then(|v: &Value| v.get("title")).and_then(Value::as_str), Some("Search Result"));
     }
 
     #[tokio::test]
@@ -1346,7 +1377,8 @@ mod tests {
             .await;
 
         assert!(query_result.is_ok());
-        assert_eq!(query_result.unwrap()[0]["name"], "テストユーザー");
+        let users = query_result.unwrap();
+        assert_eq!(users.get(0).and_then(|v: &Value| v.get("name")).and_then(Value::as_str), Some("テストユーザー"));
 
         // トランザクションをコミット
         let commit_result = transaction.commit().await;
@@ -1481,46 +1513,63 @@ mod tests {
 
         let contains_value = json!({ "key": "value" });
         let contained_by_value = json!(["a", "b"]);
-        
+
         // contains のモック
         Mock::given(method("GET"))
             .and(path("/rest/v1/data"))
-            .and(query_param("metadata", format!("cs.{}", contains_value.to_string())))
+            .and(query_param(
+                "metadata",
+                format!("cs.{}", contains_value.to_string()),
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id": 1}])))
             .mount(&mock_server)
             .await;
-            
+
         // contained_by のモック
         Mock::given(method("GET"))
             .and(path("/rest/v1/data"))
-            .and(query_param("tags", format!("cd.{}", contained_by_value.to_string())))
+            .and(query_param(
+                "tags",
+                format!("cd.{}", contained_by_value.to_string()),
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id": 2}])))
             .mount(&mock_server)
             .await;
 
-        let client = PostgrestClient::new(
+        let _base_client = PostgrestClient::new(
             &mock_server.uri(),
             "fake-key",
             "data",
             reqwest::Client::new(),
         );
-        
+
         // contains テスト
-        let result_contains = client
-            .clone() // clientを再利用するためclone
-            .contains("metadata", &contains_value)
-            .unwrap() // Resultをunwrap
-            .execute::<Vec<serde_json::Value>>()
-            .await;
+        let result_contains = PostgrestClient::new(
+            // Re-create or adjust structure if needed
+            &mock_server.uri(),
+            "fake-key",
+            "data",
+            reqwest::Client::new(), // Assuming new client instance is ok for test
+        )
+        .contains("metadata", &contains_value)
+        .unwrap() // Result from contains
+        .execute::<serde_json::Value>()
+        .await;
         assert!(result_contains.is_ok());
         assert_eq!(result_contains.unwrap().len(), 1);
-        
+
         // contained_by テスト
-        let result_contained_by = client
-            .contained_by("tags", &contained_by_value)
-            .unwrap()
-            .execute::<Vec<serde_json::Value>>()
-            .await;
+        let result_contained_by = PostgrestClient::new(
+            // Re-create or adjust structure if needed
+            &mock_server.uri(),
+            "fake-key",
+            "data",
+            reqwest::Client::new(), // Assuming new client instance is ok for test
+        )
+        .contained_by("tags", &contained_by_value)
+        .unwrap()
+        .execute::<serde_json::Value>()
+        .await;
         assert!(result_contained_by.is_ok());
         assert_eq!(result_contained_by.unwrap().len(), 1);
     }
@@ -1550,13 +1599,20 @@ mod tests {
         let result = client
             .select("title,author!inner(name)") // joinを含めておく
             .eq("author.name", "Specific Author") // 関連テーブルのカラムを指定してフィルタ
-            .execute::<Vec<serde_json::Value>>()
+            .execute::<serde_json::Value>()
             .await;
+
+        if let Err(e) = &result {
+            println!("Join query failed: {:?}", e);
+        }
 
         assert!(result.is_ok(), "Request failed: {:?}", result.err());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        assert_eq!(data[0]["title"], "Post by Specific Author");
-        assert_eq!(data[0]["author"]["name"], "Specific Author");
+        let post = data.get(0).expect("Post should exist in related table test");
+        assert_eq!(post.get("title").and_then(Value::as_str), Some("Post by Specific Author"));
+        let author_obj: Option<&Value> = post.get("author");
+        let name_val = author_obj.and_then(|a: &Value| a.get("name")).and_then(Value::as_str);
+        assert_eq!(name_val, Some("Specific Author"));
     }
 }

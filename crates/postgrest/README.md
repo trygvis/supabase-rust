@@ -5,27 +5,35 @@ A Rust client library for Supabase PostgreSQL REST API access.
 ## Features
 
 - Basic CRUD operations (`select`, `insert`, `update`, `delete`)
-- Filtering (`eq`, `gt`, `lt`, etc.)
-- Ordering and pagination
-- Transactions
-- RPC function calls
-- CSV export
-- TypeScript to Rust type conversion (with `schema-convert` feature)
-- Type-safe database operations
+- Filtering (`eq`, `gt`, `lt`, `like`, `ilike`, `in_list`, `not`, `contains`, `contained_by`, `text_search`, etc.)
+- Ordering (`order`) and pagination (`limit`, `offset`)
+- Joins (`inner_join`, `left_join`, `include`, `referenced_by`)
+- Transactions (`begin_transaction`, `commit`, `rollback`, `savepoint`)
+- RPC function calls (`rpc`)
+- CSV export (`export_csv`)
+- TypeScript to Rust type conversion infrastructure (via `schema-convert` feature, conversion logic is currently a placeholder)
+- Basic type-safe operation helpers (requires `schema-convert` feature, experimental)
 
 ## Project Status & Roadmap
 
-**Current Status:** Alpha (v0.1.3) - Core API Ready
+**Current Status:** Alpha (v0.1.3) - Core API Implemented, Type Safety Experimental
 
-This crate provides core PostgREST functionality and type generation. It is under active development.
+This crate provides core PostgREST functionality, transaction support, and initial infrastructure for type generation. It is under active development.
 
 **Roadmap:**
 
-*   [ ] Enhanced filtering options (e.g., full-text search, JSONB operations)
-*   [ ] Support for more complex `select` queries (e.g., nested resources)
-*   [ ] Improved error reporting and handling
-*   [ ] Comprehensive integration tests against a live Supabase instance
-*   [ ] Explore potential state machine usage for request building/transaction management
+*   [x] Basic CRUD, Filtering, Ordering, Pagination
+*   [x] RPC Function Calls
+*   [x] Transactions & Savepoints
+*   [x] CSV Export
+*   [x] Full-text search (`text_search`)
+*   [x] Basic JSONB operations (`contains`, `contained_by`)
+*   [ ] Support for more complex `select` queries (e.g., advanced nested resources/embedding)
+*   [ ] Complete the `schema-convert` feature for robust TypeScript -> Rust type generation.
+*   [ ] Enhance type-safe operation helpers based on generated types.
+*   [ ] Improved error reporting and handling details.
+*   [ ] Comprehensive integration tests against a live Supabase instance.
+*   [ ] Explore potential state machine usage for request building/transaction management.
 
 ## Installation
 
@@ -144,6 +152,10 @@ cargo run --features schema-convert --bin supabase-gen-rust -- \
 ### Converting Programmatically
 
 ```rust
+// NOTE: Requires the 'schema-convert' feature to be enabled.
+// The core conversion logic is currently a placeholder.
+# #[cfg(feature = "schema-convert")]
+# {
 use std::path::Path;
 use supabase_rust_postgrest::{
     convert_typescript_to_rust,
@@ -151,90 +163,116 @@ use supabase_rust_postgrest::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let input_file = Path::new("./types.ts");
+    let input_file = Path::new("./types.ts"); // Ensure this file exists
     let options = SchemaConvertOptions::default();
-    
+
+    // This function call might only perform basic setup in the current version.
     let output_path = convert_typescript_to_rust(input_file, options)?;
-    println!("Generated Rust types at: {:?}", output_path);
-    
+    println!("Generated Rust types structure at: {:?}", output_path);
+
     Ok(())
 }
+# }
 ```
 
 ## Type-Safe Database Operations
 
-You can use the generated Rust types for type-safe database operations:
+**Note:** The type-safe operations shown below rely on the `schema-convert` feature and the associated generated types. This feature is currently **experimental**, and the underlying schema conversion logic is incomplete. Use with caution and expect potential limitations or required manual adjustments.
 
 ```rust
+// NOTE: Requires the 'schema-convert' feature and generated types.
+# #[cfg(feature = "schema-convert")]
+# {
 use serde::{Deserialize, Serialize};
 use supabase_rust_postgrest::{
     PostgrestClient, Table, PostgrestClientTypeExtension
 };
+use reqwest::Client; // Added missing import
 
-// When using auto-generated models:
-// mod schema; 
-// use schema::*;
+// Assuming types are generated in src/generated/schema.rs
+// mod generated { include!(\"../src/generated/schema.rs\"); }
+// use generated::schema::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Or define manually for demonstration:
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)] // Added PartialEq for test assertion
 struct User {
-    id: Option<i32>,
-    name: String,
-    email: String,
+    // Make fields public if accessed directly outside the module
+    pub id: Option<i32>,
+    pub name: String,
+    pub email: String,
 }
 
 impl Table for User {
-    fn table_name() -> &'static str {
-        "users"
+    fn table_name() -> &\'static str {
+        "users" // Ensure this matches your actual table name
     }
 }
 
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let http_client = reqwest::Client::new();
+    let http_client = reqwest::Client::new(); // Use the imported Client
+    // Ensure base_url and api_key are correct
     let client = PostgrestClient::new(
-        "https://your-project.supabase.co", 
-        "your-anon-key", 
-        "", // Table name is set automatically
-        http_client
+        "http://localhost:54321", // Example: Replace with your Supabase URL
+        "your-anon-key",      // Example: Replace with your Supabase Anon Key
+        "", // Table name set via Table trait
+        http_client,
     );
-    
-    // Type-safe query
-    let users: Vec<User> = client
-        .query_typed::<User>()
-        .eq("name", "John")
-        .execute()
-        .await?;
-        
-    // Type-safe insert
+
+    // Example: Type-safe query (assuming User with id=1 exists)
+    // let users: Vec<User> = client
+    //     .query_typed::<User>()? // Use query_typed
+    //     .eq("name", "John") // Filter example
+    //     .execute()
+    //     .await?;
+
+    // Example: Type-safe insert
     let new_user = User {
-        id: None,
+        id: None, // ID is usually generated by the database
         name: "Alice".to_string(),
         email: "alice@example.com".to_string(),
     };
-    
-    let inserted: User = client
-        .insert_typed(&new_user)?
-        .execute()
-        .await?;
-        
-    // Type-safe update
-    let mut user_to_update = users[0].clone();
-    user_to_update.name = "Bob".to_string();
-    
-    let updated: User = client
-        .update_typed(&user_to_update)?
-        .eq("id", &user_to_update.id.unwrap().to_string())
-        .execute()
-        .await?;
-        
-    // Type-safe delete
-    client
-        .delete_typed::<User>()
-        .eq("id", &users[0].id.unwrap().to_string())
-        .execute()
-        .await?;
-        
+
+    // The insert_typed method seems missing or part of the experimental feature.
+    // Using standard insert for now:
+    // let inserted_raw = client
+    //      .from(User::table_name()) // Use from() with table name
+    //      .insert(&new_user)      // Standard insert takes serializable data
+    //      .execute::<Vec<User>>() // Expecting a Vec<User> back if RETURNING data
+    //      .await?;
+    // let inserted: User = inserted_raw.into_iter().next().ok_or("Insert failed")?;
+
+
+    // Example: Type-safe update (assuming a user exists)
+    // let mut user_to_update = users.get(0).cloned().ok_or("No user to update")?;
+    // user_to_update.name = "Bob".to_string();
+
+    // Update requires filter + data. update_typed seems missing/experimental.
+    // Using standard update:
+    // let updated_raw = client
+    //     .from(User::table_name())
+    //     .eq("id", &user_to_update.id.unwrap().to_string())
+    //     .update(&serde_json::json!({ "name": user_to_update.name })) // Pass update data
+    //     .execute::<Vec<User>>() // Expecting updated user back
+    //     .await?;
+    // let updated: User = updated_raw.into_iter().next().ok_or("Update failed")?;
+
+
+    // Example: Type-safe delete (assuming a user exists)
+    // let user_to_delete = users.get(0).ok_or("No user to delete")?;
+    // delete_typed seems missing/experimental. Using standard delete:
+    // client
+    //     .from(User::table_name())
+    //     .eq("id", &user_to_delete.id.unwrap().to_string())
+    //     .delete()
+    //     .execute::<serde_json::Value>() // Delete often returns minimal info
+    //     .await?;
+
+
+    println!("Example operations completed (actual execution depends on setup and uncommenting)");
+
     Ok(())
 }
+# }
 ```
 
 ## Testing
