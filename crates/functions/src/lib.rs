@@ -796,4 +796,61 @@ mod tests {
         assert_eq!(data, expected_response);
         server.verify().await;
     }
+
+    // Test error response with details
+    #[tokio::test]
+    async fn test_invoke_json_error_with_details() {
+        // Arrange: Start mock server
+        let server = MockServer::start().await;
+        let mock_uri = server.uri();
+        let api_key = "test-key";
+        let function_name = "error-func";
+
+        // Arrange: Prepare request and error response
+        let request_body = json!({ "input": "invalid" });
+        let error_response_body = json!({
+            "message": "Something went wrong!",
+            "code": "FUNC_ERROR",
+            "details": { "reason": "Internal failure" }
+        });
+
+        // Arrange: Mock the API endpoint to return an error
+        Mock::given(method("POST"))
+            .and(path(format!("/functions/v1/{}", function_name)))
+            .and(header("apikey", api_key))
+            .and(header("Authorization", format!("Bearer {}", api_key).as_str()))
+            .and(body_json(&request_body))
+            .respond_with(
+                ResponseTemplate::new(500)
+                    .set_body_json(&error_response_body)
+                    .insert_header("Content-Type", "application/json"),
+            )
+            .mount(&server)
+            .await;
+
+        // Act: Create client and invoke function
+        let client = FunctionsClient::new(&mock_uri, api_key, reqwest::Client::new());
+        // Use a placeholder type like Value for the expected success type T,
+        // as we expect an error anyway.
+        let result = client
+            .invoke_json::<Value, Value>(function_name, Some(request_body))
+            .await;
+
+        // Assert: Check the error result
+        assert!(result.is_err());
+        match result.err().unwrap() {
+            FunctionsError::FunctionError { message, status, details } => {
+                assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+                assert_eq!(message, "Something went wrong!");
+                assert!(details.is_some());
+                let details_unwrapped = details.unwrap();
+                assert_eq!(details_unwrapped.message, Some("Something went wrong!".to_string()));
+                assert_eq!(details_unwrapped.code, Some("FUNC_ERROR".to_string()));
+                assert!(details_unwrapped.details.is_some());
+                assert_eq!(details_unwrapped.details.unwrap(), json!({ "reason": "Internal failure" }));
+            }
+            _ => panic!("Expected FunctionError, got different error type"),
+        }
+        server.verify().await;
+    }
 }
