@@ -42,7 +42,7 @@ async fn test_connection_and_basic_select() {
     let result = client
         .select("*")
         .limit(1) // Just need to know if the request succeeds
-        .execute::<Vec<serde_json::Value>>()
+        .execute::<serde_json::Value>()
         .await;
 
     // Check if the request was successful (even if it returns an empty vec)
@@ -93,31 +93,11 @@ async fn test_crud_operations() {
     let item_id = inserted_id.and_then(Value::as_i64).unwrap(); // Get ID for later use
     println!("Successfully inserted item with ID: {}", item_id);
 
-    // Defer cleanup using a simple scope guard (ensure deletion even on panic/early return)
-    // Note: This requires the item_id obtained above.
-    struct CleanupGuard<'a> {
-        client: &'a PostgrestClient,
-        table: &'a str,
-        id: i64,
-    }
-    impl<'a> Drop for CleanupGuard<'a> {
-        fn drop(&mut self) {
-            let _client = self.client.clone();
-            let _table = self.table.to_string();
-            let _id_str = self.id.to_string();
-            println!("Cleaning up item with ID: {}", self.id);
-            // We need a separate async runtime or block_on here for drop, which is complex.
-            // For simplicity in this example, we'll just delete after the tests.
-            // A better approach in real tests might involve test fixtures or manual cleanup.
-        }
-    }
-    // let _guard = CleanupGuard { client: &client, table: table_name, id: item_id };
-
     // --- 2. Select (with filter) ---
     let select_result = client
         .select("id, name, data")
         .eq("id", &item_id.to_string())
-        .execute::<Vec<serde_json::Value>>()
+        .execute::<serde_json::Value>()
         .await;
 
     assert!(
@@ -135,6 +115,7 @@ async fn test_crud_operations() {
     println!("Successfully selected item with ID: {}", item_id);
 
     // --- 3. Update ---
+    let client = create_test_client(table_name); // Re-create client
     let update_payload = json!({ "data": updated_data });
     let update_result = client
         .eq("id", &item_id.to_string())
@@ -157,6 +138,7 @@ async fn test_crud_operations() {
     println!("Successfully updated item with ID: {}", item_id);
 
     // --- 4. Delete ---
+    let client = create_test_client(table_name); // Re-create client
     let delete_result = client
         .eq("id", &item_id.to_string())
         .delete()
@@ -172,6 +154,7 @@ async fn test_crud_operations() {
     println!("Successfully deleted item with ID: {}", item_id);
 
     // --- Verify Deletion ---
+    let client = create_test_client(table_name); // Re-create client
     let verify_select_result = client
         .select("id")
         .eq("id", &item_id.to_string())
