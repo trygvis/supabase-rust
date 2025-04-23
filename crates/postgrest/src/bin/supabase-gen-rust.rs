@@ -32,87 +32,90 @@ fn main() {
         std::process::exit(1);
     }
 
-    let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "schema-convert")]
+    {
+        let args: Vec<String> = std::env::args().collect();
 
-    if args.len() < 2 {
-        print_usage();
-        return;
-    }
-
-    let mut input_file = None;
-    let mut output_dir = None;
-    let mut module_name = None;
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--help" | "-h" => {
-                print_usage();
-                return;
-            }
-            "--input-file" | "-i" => {
-                if i + 1 < args.len() {
-                    input_file = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: Missing value for --input-file");
-                    print_usage();
-                    return;
-                }
-            }
-            "--output-dir" | "-o" => {
-                if i + 1 < args.len() {
-                    output_dir = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: Missing value for --output-dir");
-                    print_usage();
-                    return;
-                }
-            }
-            "--module-name" | "-m" => {
-                if i + 1 < args.len() {
-                    module_name = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: Missing value for --module-name");
-                    print_usage();
-                    return;
-                }
-            }
-            _ => {
-                eprintln!("Error: Unknown argument {}", args[i]);
-                print_usage();
-                return;
-            }
-        }
-    }
-
-    let input_file = match input_file {
-        Some(path) => path,
-        None => {
-            eprintln!("Error: --input-file is required");
+        if args.len() < 2 {
             print_usage();
             return;
         }
-    };
 
-    #[cfg(feature = "schema-convert")]
-    match generate_rust_from_typescript_cli(
-        &input_file,
-        output_dir.as_deref(),
-        module_name.as_deref(),
-    ) {
-        Ok(_) => {
-            println!("Successfully generated Rust types from TypeScript types.");
+        let mut input_file = None;
+        let mut output_dir = None;
+        let mut module_name = None;
+
+        let mut i = 1;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--help" | "-h" => {
+                    print_usage();
+                    return;
+                }
+                "--input-file" | "-i" => {
+                    if i + 1 < args.len() {
+                        input_file = Some(args[i + 1].clone());
+                        i += 2;
+                    } else {
+                        eprintln!("Error: Missing value for --input-file");
+                        print_usage();
+                        return;
+                    }
+                }
+                "--output-dir" | "-o" => {
+                    if i + 1 < args.len() {
+                        output_dir = Some(args[i + 1].clone());
+                        i += 2;
+                    } else {
+                        eprintln!("Error: Missing value for --output-dir");
+                        print_usage();
+                        return;
+                    }
+                }
+                "--module-name" | "-m" => {
+                    if i + 1 < args.len() {
+                        module_name = Some(args[i + 1].clone());
+                        i += 2;
+                    } else {
+                        eprintln!("Error: Missing value for --module-name");
+                        print_usage();
+                        return;
+                    }
+                }
+                _ => {
+                    eprintln!("Error: Unknown argument {}", args[i]);
+                    print_usage();
+                    return;
+                }
+            }
         }
-        Err(e) => {
-            eprintln!("Error generating Rust types: {}", e);
-            std::process::exit(1);
+
+        let input_file = match input_file {
+            Some(path) => path,
+            None => {
+                eprintln!("Error: --input-file is required");
+                print_usage();
+                return;
+            }
+        };
+
+        match generate_rust_from_typescript_cli(
+            &input_file,
+            output_dir.as_deref(),
+            module_name.as_deref(),
+        ) {
+            Ok(_) => {
+                println!("Successfully generated Rust types from TypeScript types.");
+            }
+            Err(e) => {
+                eprintln!("Error generating Rust types: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 }
 
+#[cfg(feature = "schema-convert")]
 fn print_usage() {
     println!("Usage: supabase-gen-rust [OPTIONS]");
     println!();

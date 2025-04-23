@@ -1,9 +1,14 @@
 use dotenv::dotenv;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
-use supabase_rust_gftd::postgrest::{IsolationLevel, PostgrestClient, SortOrder, TransactionMode};
+use supabase_rust_gftd::postgrest::{
+    IsolationLevel,
+    SortOrder,
+    TransactionMode,
+    PostgrestClientTypeExtension,
+    Table,
+};
 use supabase_rust_gftd::Supabase;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -14,6 +19,26 @@ struct Task {
     is_complete: bool,
     created_at: Option<String>,
     user_id: String,
+}
+
+impl Table for Task {
+    fn table_name() -> &'static str {
+        "tasks"
+    }
+}
+
+#[derive(Serialize)]
+struct NewTask<'a> {
+    title: String,
+    description: Option<String>,
+    is_complete: bool,
+    user_id: &'a str,
+}
+
+impl<'a> Table for NewTask<'a> {
+    fn table_name() -> &'static str {
+        "tasks"
+    }
 }
 
 #[tokio::main]
@@ -45,22 +70,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let access_token = sign_up_result.access_token.clone();
     println!("Created test user with ID: {}", user_id);
 
-    // Get the PostgREST client and attach the authorization token
-    let postgrest = supabase_client.from("tasks").with_auth(&access_token)?;
-
     // Example 1: Basic operations
     println!("Example 1: Basic operations");
-
-    // PostgreStを初期化 - 実際のURLとキーを使用
-    let base_url = &supabase_url;
-    let api_key = &supabase_key;
-    let http_client = Client::new();
-
-    // PostgreStクライアントを作成
-    let supabase = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    // 新しいユーザーIDを生成
-    let user_id = uuid::Uuid::new_v4().to_string();
     println!("Using user_id: {}", user_id);
 
     // Example 2: INSERT and SELECT - タスクを作成して取得
@@ -68,34 +79,32 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // タスクを作成
     for i in 1..6 {
-        let task = Task {
-            id: None,
+        let new_task = NewTask {
             title: format!("Task {}", i),
             description: Some(format!("Description for task {}", i)),
-            is_complete: i % 2 == 0, // 偶数番号のタスクは完了済み
-            created_at: None,
-            user_id: user_id.clone(),
+            is_complete: i % 2 == 0,
+            user_id: &user_id,
         };
-
-        // INSERTリクエストを構築して実行
-        let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-        client.insert(json!(task)).await?;
+        let _inserted_task: Task = supabase_client
+            .from("tasks")
+            .with_auth(&access_token)?
+            .insert_typed(&new_task)?
+            .execute()
+            .await?;
     }
 
     println!("Created 5 tasks");
 
     // 未完了のタスクを取得
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let incomplete_tasks_json = client
+    let incomplete_tasks_json = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .select("*")
         .eq("user_id", &user_id)
         .eq("is_complete", "false")
         .execute::<serde_json::Value>()
         .await?;
 
-    // 手動で型変換する
     let incomplete_tasks: Vec<Task> = incomplete_tasks_json
         .iter()
         .map(|task_json| serde_json::from_value(task_json.clone()).unwrap())
@@ -109,18 +118,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 3: Complex filters and order
     println!("\nExample 3: Complex filters and order");
 
-    // Query with filters and ordering (OR条件の代わりにin_listを使用)
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let filtered_tasks_json = client
+    let filtered_tasks_json = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .select("*")
-        .in_list("title", &["Task 1", "Task 2"]) // Title is either "Task 1" or "Task 2"
-        .order("created_at", SortOrder::Ascending) // Order by created_at ascending
+        .eq("user_id", &user_id)
+        .in_list("title", &["Task 1", "Task 2"])
+        .order("created_at", SortOrder::Ascending)
         .limit(10)
         .execute::<serde_json::Value>()
         .await?;
 
-    // 手動で型変換する
     let filtered_tasks: Vec<Task> = filtered_tasks_json
         .iter()
         .map(|task_json| serde_json::from_value(task_json.clone()).unwrap())
@@ -134,16 +142,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 4: UPDATE with filters
     println!("\nExample 4: UPDATE with filters");
 
-    // Update all tasks to be complete
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let update_result = client
+    let update_result = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .eq("user_id", &user_id)
         .eq("is_complete", "false")
         .update(json!({ "is_complete": true }))
         .await?;
 
-    // jsonの配列としてカウント
     println!(
         "Updated {} tasks to be complete",
         update_result.as_array().unwrap_or(&vec![]).len()
@@ -152,32 +158,31 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 5: Using range queries
     println!("\nExample 5: Using range queries");
 
-    // Insert tasks with explicit IDs for range example
     for i in 100..105 {
-        let task = Task {
-            id: Some(i),
+        let new_task = NewTask {
             title: format!("Range Task {}", i),
             description: Some(format!("Description for range task {}", i)),
             is_complete: false,
-            created_at: None,
-            user_id: user_id.clone(),
+            user_id: &user_id,
         };
-
-        let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-        client.insert(json!(task)).await?;
+        let _inserted_task: Task = supabase_client
+            .from("tasks")
+            .with_auth(&access_token)?
+            .insert_typed(&new_task)?
+            .execute()
+            .await?;
     }
 
-    // Query for a range of IDs
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let range_tasks_json = client
+    let range_tasks_json = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .select("*")
+        .eq("user_id", &user_id)
         .gte("id", "100")
         .lte("id", "102")
         .execute::<serde_json::Value>()
         .await?;
 
-    // 手動で型変換する
     let range_tasks: Vec<Task> = range_tasks_json
         .iter()
         .map(|task_json| serde_json::from_value(task_json.clone()).unwrap())
@@ -191,39 +196,30 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 6: Using COUNT
     println!("\nExample 6: Using COUNT");
 
-    // Count the total number of tasks
-    // count関数を使用して直接カウント結果を取得
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let count_result = client
+    let count_result = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .select("count")
+        .eq("user_id", &user_id)
         .count(true)
         .execute::<serde_json::Value>()
         .await?;
 
-    let count = count_result[0]
-        .as_object()
-        .unwrap()
-        .get("count")
-        .unwrap()
-        .as_i64()
-        .unwrap();
-    println!("Total number of tasks: {}", count);
+    let count = count_result[0]["count"].as_i64().unwrap_or(0);
+    println!("Total number of tasks for user {}: {}", user_id, count);
 
     // Example 7: DELETE with filters
     println!("\nExample 7: DELETE with filters");
 
-    // Delete tasks that match specific criteria
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let delete_result = client
+    let delete_result = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .eq("user_id", &user_id)
         .gte("id", "100")
         .lte("id", "102")
         .delete()
         .await?;
 
-    // jsonの配列としてカウント
     println!(
         "Deleted {} tasks",
         delete_result.as_array().unwrap_or(&vec![]).len()
@@ -232,85 +228,67 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Example 8: Transaction with savepoints (begin_transaction方式)
     println!("\nExample 8: Transaction with savepoints");
 
-    // Start a transaction with explicit options
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let transaction = client
+    let transaction = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .begin_transaction(
             Some(IsolationLevel::ReadCommitted),
             Some(TransactionMode::ReadWrite),
-            Some(30), // timeout in seconds
+            Some(30),
         )
         .await?;
 
     println!("Transaction started with isolation level: ReadCommitted, mode: ReadWrite");
 
-    // Create a task in the transaction
-    let transaction_task = Task {
-        id: None,
+    let transaction_new_task = NewTask {
         title: "Transaction Task".to_string(),
         description: Some("Created in a transaction".to_string()),
         is_complete: false,
-        created_at: None,
-        user_id: user_id.clone(),
+        user_id: &user_id,
     };
 
-    // For each transaction operation, get a new client for that operation
-    let tasks_in_transaction = transaction.from("tasks");
-
-    // Insert the task
-    let tx_insert_result = tasks_in_transaction.insert(json!(transaction_task)).await?;
-
-    let tx_task_id = tx_insert_result[0]["id"].as_i64().unwrap();
+    let tx_insert_result: Task = transaction
+        .from("tasks")
+        .insert_typed(&transaction_new_task)?
+        .execute()
+        .await?;
+    let tx_task_id = tx_insert_result.id.unwrap();
     println!("Created task in transaction with ID: {}", tx_task_id);
-
-    // Create a savepoint after inserting
     transaction.savepoint("after_insert").await?;
     println!("Created savepoint 'after_insert'");
-
-    // Update the task - get a fresh client
     let tasks_in_transaction_update1 = transaction.from("tasks");
-    let tx_update_result = tasks_in_transaction_update1
+    let _tx_update_result = tasks_in_transaction_update1
         .eq("id", &tx_task_id.to_string())
         .update(json!({ "description": "Updated in transaction" }))
         .await?;
-
     println!(
         "Updated task in transaction: {}",
-        tx_update_result[0]["description"]
+        _tx_update_result[0]["description"]
     );
-
-    // Create another savepoint after updating
     transaction.savepoint("after_update").await?;
     println!("Created savepoint 'after_update'");
-
-    // Update the task again - get a fresh client
     let tasks_in_transaction_update2 = transaction.from("tasks");
     let tx_update_result2 = tasks_in_transaction_update2
         .eq("id", &tx_task_id.to_string())
         .update(json!({ "description": "This update will be rolled back" }))
         .await?;
-
     println!(
         "Updated task again in transaction: {}",
         tx_update_result2[0]["description"]
     );
-
-    // Now roll back to the previous savepoint
     transaction.rollback_to_savepoint("after_update").await?;
     println!("Rolled back to savepoint 'after_update'");
-
-    // Commit the transaction
     transaction.commit().await?;
     println!("Transaction committed");
 
     // Example 9: Select the task created in transaction
     println!("\nExample 9: Verify task created in transaction");
 
-    let client = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-
-    let tx_tasks_json = client
+    let tx_tasks_json = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .select("*")
+        .eq("user_id", &user_id)
         .eq("title", "Transaction Task")
         .execute::<serde_json::Value>()
         .await?;
@@ -327,15 +305,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             task.title,
             task.description.as_ref().unwrap()
         );
-        // Description should be "Updated in transaction" not "This update will be rolled back"
         assert_eq!(task.description.as_ref().unwrap(), "Updated in transaction");
     }
 
     // Example 10: Transaction with rollback
     println!("\nExample 10: Transaction with rollback");
 
-    // Start another transaction
-    let transaction2 = client
+    let transaction2 = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .begin_transaction(
             Some(IsolationLevel::ReadCommitted),
             Some(TransactionMode::ReadWrite),
@@ -343,35 +321,34 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-    // Create a task that will be rolled back
-    let rollback_task = Task {
-        id: None,
+    let rollback_new_task = NewTask {
         title: "Rollback Task".to_string(),
         description: Some("This task should be rolled back".to_string()),
         is_complete: false,
-        created_at: None,
-        user_id: user_id.clone(),
+        user_id: &user_id,
     };
 
-    // Insert the task
-    let tasks_in_transaction2 = transaction2.from("tasks");
-    let roll_insert_result = tasks_in_transaction2.insert(json!(rollback_task)).await?;
-
-    let roll_task_id = roll_insert_result[0]["id"].as_i64().unwrap();
+    let roll_insert_result: Task = transaction2
+        .from("tasks")
+        .insert_typed(&rollback_new_task)?
+        .execute()
+        .await?;
+    let roll_task_id = roll_insert_result.id.unwrap();
     println!(
         "Created task in transaction2 (will be rolled back) with ID: {}",
         roll_task_id
     );
-
-    // Rollback the transaction
     transaction2.rollback().await?;
     println!("Transaction2 rolled back");
 
     // Example 11: Verify task was not created after rollback
     println!("\nExample 11: Verify task was not created after rollback");
 
-    let rollback_tasks_json = client
+    let rollback_tasks_json = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
         .select("*")
+        .eq("user_id", &user_id)
         .eq("title", "Rollback Task")
         .execute::<serde_json::Value>()
         .await?;
@@ -386,13 +363,16 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         "Rollback wasn't successful, found tasks that should have been rolled back"
     );
 
-    // Example 10: final cleanup
-    println!("\nExample 10: final cleanup");
+    // Final cleanup: Use authenticated client to delete tasks for the specific user
+    println!("\nFinal cleanup");
+    let _ = supabase_client
+        .from("tasks")
+        .with_auth(&access_token)?
+        .eq("user_id", &user_id)
+        .delete()
+        .await?;
 
-    let final_postgrest = PostgrestClient::new(base_url, api_key, "tasks", http_client.clone());
-    let _ = final_postgrest.eq("user_id", &user_id).delete().await?;
-
-    println!("Cleaned up all test data");
+    println!("Cleaned up all test data for user {}", user_id);
 
     println!("PostgREST example completed");
 
