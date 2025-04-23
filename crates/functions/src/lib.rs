@@ -742,7 +742,8 @@ impl FunctionsClient {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use bytes::Bytes;
+    use mockito::Server;
 
     #[tokio::test]
     async fn test_invoke() {

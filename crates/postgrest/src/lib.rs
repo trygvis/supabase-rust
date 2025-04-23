@@ -1099,10 +1099,7 @@ mod tests {
         );
         println!("Client created for select test");
 
-        let result = client
-            .select("*")
-            .execute::<serde_json::Value>()
-            .await;
+        let result = client.select("*").execute::<serde_json::Value>().await;
 
         if let Err(e) = &result {
             println!("Select query failed: {:?}", e);
@@ -1111,8 +1108,18 @@ mod tests {
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.len(), 2);
-        assert_eq!(data.get(0).and_then(|v: &Value| v.get("name")).and_then(Value::as_str), Some("Test Item 1"));
-        assert_eq!(data.get(1).and_then(|v: &Value| v.get("id")).and_then(Value::as_i64), Some(2));
+        assert_eq!(
+            data.first()
+                .and_then(|v: &Value| v.get("name"))
+                .and_then(Value::as_str),
+            Some("Test Item 1")
+        );
+        assert_eq!(
+            data.first()
+                .and_then(|v: &Value| v.get("id"))
+                .and_then(Value::as_i64),
+            Some(2)
+        );
     }
 
     #[tokio::test]
@@ -1213,8 +1220,19 @@ mod tests {
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        assert_eq!(data.get(0).and_then(|v: &Value| v.get("title")).and_then(Value::as_str), Some("First Post"));
-        assert_eq!(data.get(0).and_then(|v: &Value| v.get("comments")).and_then(Value::as_array).map(|a| a.len()), Some(2));
+        assert_eq!(
+            data.first()
+                .and_then(|v: &Value| v.get("title"))
+                .and_then(Value::as_str),
+            Some("First Post")
+        );
+        assert_eq!(
+            data.first()
+                .and_then(|v: &Value| v.get("comments"))
+                .and_then(Value::as_array)
+                .map(|a| a.len()),
+            Some(2)
+        );
     }
 
     #[tokio::test]
@@ -1246,7 +1264,12 @@ mod tests {
         assert!(result.is_ok());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        assert_eq!(data.get(0).and_then(|v: &Value| v.get("title")).and_then(Value::as_str), Some("Search Result"));
+        assert_eq!(
+            data.first()
+                .and_then(|v: &Value| v.get("title"))
+                .and_then(Value::as_str),
+            Some("Search Result")
+        );
     }
 
     #[tokio::test]
@@ -1378,7 +1401,12 @@ mod tests {
 
         assert!(query_result.is_ok());
         let users = query_result.unwrap();
-        assert_eq!(users.get(0).and_then(|v: &Value| v.get("name")).and_then(Value::as_str), Some("テストユーザー"));
+        assert_eq!(
+            users.first()
+                .and_then(|v: &Value| v.get("name"))
+                .and_then(Value::as_str),
+            Some("テストユーザー")
+        );
 
         // トランザクションをコミット
         let commit_result = transaction.commit().await;
@@ -1609,10 +1637,15 @@ mod tests {
         assert!(result.is_ok(), "Request failed: {:?}", result.err());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        let post = data.get(0).expect("Post should exist in related table test");
-        assert_eq!(post.get("title").and_then(Value::as_str), Some("Post by Specific Author"));
+        let post = data.first().expect("Post should exist in related table test");
+        assert_eq!(
+            post.get("title").and_then(Value::as_str),
+            Some("Post by Specific Author")
+        );
         let author_obj: Option<&Value> = post.get("author");
-        let name_val = author_obj.and_then(|a: &Value| a.get("name")).and_then(Value::as_str);
+        let name_val = author_obj
+            .and_then(|a: &Value| a.get("name"))
+            .and_then(Value::as_str);
         assert_eq!(name_val, Some("Specific Author"));
     }
 }

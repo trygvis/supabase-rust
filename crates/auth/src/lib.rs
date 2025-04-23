@@ -1502,7 +1502,6 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
     // http::Responseを明示的にインポート
-    
 
     #[test]
     fn test_sign_up() {

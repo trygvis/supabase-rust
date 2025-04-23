@@ -71,9 +71,7 @@ async fn test_crud_operations() {
 
     // --- 1. Insert ---
     let insert_payload = json!({ "name": item_name, "data": initial_data });
-    let insert_result = client
-        .insert(insert_payload)
-        .await;
+    let insert_result = client.insert(insert_payload).await;
 
     assert!(
         insert_result.is_ok(),
@@ -85,11 +83,18 @@ async fn test_crud_operations() {
         inserted_value.get(0)
     } else {
         Some(&inserted_value)
-    }.expect("Insert should return an object or a single-element array");
+    }
+    .expect("Insert should return an object or a single-element array");
 
-    assert_eq!(inserted_item.get("name").and_then(Value::as_str), Some(item_name.as_str()));
+    assert_eq!(
+        inserted_item.get("name").and_then(Value::as_str),
+        Some(item_name.as_str())
+    );
     let inserted_id = inserted_item.get("id");
-    assert!(inserted_id.map(|v| v.is_number()).unwrap_or(false), "Inserted item should have a numeric ID");
+    assert!(
+        inserted_id.map(|v| v.is_number()).unwrap_or(false),
+        "Inserted item should have a numeric ID"
+    );
     let item_id = inserted_id.and_then(Value::as_i64).unwrap(); // Get ID for later use
     println!("Successfully inserted item with ID: {}", item_id);
 
@@ -106,11 +111,24 @@ async fn test_crud_operations() {
         select_result.err()
     );
     let selected_items = select_result.unwrap();
-    assert_eq!(selected_items.len(), 1, "Should select exactly one item by ID");
+    assert_eq!(
+        selected_items.len(),
+        1,
+        "Should select exactly one item by ID"
+    );
     let selected_item = selected_items.get(0).expect("Selected item should exist");
-    let selected_name = selected_item.as_object().expect("Selected item should be object").get("name");
-    assert_eq!(selected_name.and_then(Value::as_str), Some(item_name.as_str()));
-    let selected_data = selected_item.as_object().expect("Selected item should be object").get("data");
+    let selected_name = selected_item
+        .as_object()
+        .expect("Selected item should be object")
+        .get("name");
+    assert_eq!(
+        selected_name.and_then(Value::as_str),
+        Some(item_name.as_str())
+    );
+    let selected_data = selected_item
+        .as_object()
+        .expect("Selected item should be object")
+        .get("data");
     assert_eq!(selected_data.cloned(), Some(initial_data.clone()));
     println!("Successfully selected item with ID: {}", item_id);
 
@@ -132,17 +150,15 @@ async fn test_crud_operations() {
         updated_value.get(0)
     } else {
         Some(&updated_value)
-    }.expect("Update should return an object or a single-element array");
+    }
+    .expect("Update should return an object or a single-element array");
 
     assert_eq!(updated_item.get("data"), Some(&updated_data));
     println!("Successfully updated item with ID: {}", item_id);
 
     // --- 4. Delete ---
     let client = create_test_client(table_name); // Re-create client
-    let delete_result = client
-        .eq("id", &item_id.to_string())
-        .delete()
-        .await;
+    let delete_result = client.eq("id", &item_id.to_string()).delete().await;
 
     assert!(
         delete_result.is_ok(),

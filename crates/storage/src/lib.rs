@@ -1379,9 +1379,7 @@ pub mod s3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
-    use wiremock::matchers::{method, path, query_param};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use tokio::test;
 
     #[tokio::test]
     async fn test_list_buckets() {

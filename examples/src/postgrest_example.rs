@@ -2,12 +2,7 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
-use supabase_rust_gftd::postgrest::{
-    IsolationLevel,
-    SortOrder,
-    TransactionMode,
-    PostgrestError,
-};
+use supabase_rust_gftd::postgrest::{IsolationLevel, PostgrestError, SortOrder, TransactionMode};
 use supabase_rust_gftd::Supabase;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -241,7 +236,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .and_then(|arr| arr.get(0))
         .and_then(|obj| obj.get("id"))
         .and_then(|id_val| id_val.as_i64())
-        .ok_or_else(|| PostgrestError::DeserializationError("Failed to get ID from insert response".to_string()))?;
+        .ok_or_else(|| {
+            PostgrestError::DeserializationError(
+                "Failed to get ID from insert response".to_string(),
+            )
+        })?;
     println!("Created task in transaction with ID: {}", tx_task_id);
     transaction.savepoint("after_insert").await?;
     println!("Created savepoint 'after_insert'");
@@ -330,8 +329,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .and_then(|arr| arr.get(0))
         .and_then(|obj| obj.get("id"))
         .and_then(|id_val| id_val.as_i64())
-        .ok_or_else(|| PostgrestError::DeserializationError("Failed to get ID from rollback insert response".to_string()))?;
-    println!("Created task in transaction2 (will be rolled back) with ID: {}", roll_task_id);
+        .ok_or_else(|| {
+            PostgrestError::DeserializationError(
+                "Failed to get ID from rollback insert response".to_string(),
+            )
+        })?;
+    println!(
+        "Created task in transaction2 (will be rolled back) with ID: {}",
+        roll_task_id
+    );
     transaction2.rollback().await?;
     println!("Transaction2 rolled back");
 

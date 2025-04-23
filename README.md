@@ -17,7 +17,7 @@ This section explains the current implementation status and compatibility with t
 |Auth|✅|38/40 (95%)|Authentication features: Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented|
 |PostgresT|90%|27/30|Transaction support, advanced filtering implemented|
 |Storage|95%|19/20|Image transformation and extensions beyond JS version|
-|Realtime|75%|11/14|Basic PubSub, Postgres changes monitoring implemented|
+|Realtime|80%|11/14|Core PubSub, DB changes, Presence implemented with filters & auto-reconnect. Needs more tests & docs.|
 |Functions|85%|5/6|Basic and streaming functionality implemented, enhancing binary support|
 
 ### Detailed Compatibility Report
@@ -184,40 +184,55 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 - ✅ Image transformation (resize, format conversion, quality control)
 - ⚠️ Folder operations - Basic implementation complete, recursive operations in development
 - ⚠️ Access control - Basic implementation complete, detailed policy support in development
+- ⚠️ Low test coverage - Requires significant improvement using mocking frameworks.
 
 #### Realtime (`@supabase/realtime-js`)
 
-**API Compatibility**: 11/14 (75%)
+**API Compatibility**: 11/14 (~80%) | **Tests:** ⚠️ (Low Coverage) | **Docs:** ⚠️ (Needs Examples) | **Code Structure:** ⚠️ (Large `lib.rs`)
 
 - ✅ Channel creation and management
 - ✅ Broadcast messaging
-- ✅ Postgres changes monitoring (INSERT/UPDATE/DELETE)
-- ✅ Event filtering
-- ✅ Automatic reconnection
-- ⚠️ Presence feature - Basic implementation complete, state synchronization being improved
+- ✅ Postgres changes monitoring (INSERT/UPDATE/DELETE/ALL)
+- ✅ Event filtering (including various operators)
+- ✅ Automatic reconnection (configurable options)
+- ✅ Explicit error handling (`RealtimeError`)
+- ✅ Async primitives (`Arc`, `RwLock`, `mpsc`) used for concurrency.
+- ⚠️ Presence feature - Basic implementation complete, state synchronization likely needs more testing/refinement.
+- ⚠️ Test Coverage - Requires significant expansion (unit/integration tests for various scenarios).
+- ⚠️ Documentation - Needs more practical usage examples.
+- ⚠️ Code Structure - `lib.rs` (1000+ lines) could be split into smaller modules.
 - ❌ Channel Status Notifications - In development
 - ❌ Complex JOIN table monitoring - Planned
 
 #### Functions (`@supabase/functions-js`)
 
-**API Compatibility**: 5/6 (85%)
+**API Compatibility**: ~5/6 (~85%) | **Tests:** ❌ (Missing)
 
 - ✅ Edge function invocation
-- ✅ Function execution with parameters
-- ✅ Authentication integration
-- ✅ Error handling
-- ✅ Streaming responses - Text/JSON streaming supported, binary streaming implemented (v0.1.2)
-- ❌ Binary data support - Basic implementation complete, advanced features in development
+- ✅ Function execution with parameters (JSON/serializable body)
+- ✅ Authentication integration (via headers)
+- ✅ Error handling (Network, Timeout, Non-Success Status, Error Details Parsing)
+- ✅ Streaming responses (Raw Bytes, Line-based JSON/SSE)
+- ✅ Binary data responses (`invoke_binary` returns `Bytes`)
+- ⚠️ Lack of automated tests.
+- ⚠️ Potential for code simplification (reduce duplication in request setup).
 
 ### Project Status Summary
 
-Overall project completion: ~88%
+Overall project completion: ~89%  // Adjusted slightly based on Realtime review
 
 Current development focus:
 - **Resolving `postgrest_example.rs` compilation errors (import issues for type-safe methods).**
-- Realtime module enhancements (75% → 85%)
-- Functions binary data handling improvements (85% → 95%)
-- Advanced RLS policy support completion (90% → 100%)
+- Realtime Enhancements
+  - ✅ Filter capabilities implemented
+  - ⚠️ Expand Test Coverage (Unit & Integration)
+  - ⚠️ Add Usage Examples to Documentation
+  - ⚠️ Refactor `lib.rs` into smaller modules
+  - ⚠️ Improve Presence state sync robustness
+  - ❌ Channel status notifications
+  - ❌ Complex JOIN table monitoring
+- Async Processing Optimization
+  - ✅ Throughput improvements
 
 ### Future Development
 
