@@ -13,6 +13,20 @@ A Rust client library for Supabase PostgreSQL REST API access.
 - TypeScript to Rust type conversion (with `schema-convert` feature)
 - Type-safe database operations
 
+## Project Status & Roadmap
+
+**Current Status:** Alpha (v0.1.3)
+
+This crate provides core PostgREST functionality and type generation. It is under active development.
+
+**Roadmap:**
+
+*   [ ] Enhanced filtering options (e.g., full-text search, JSONB operations)
+*   [ ] Support for more complex `select` queries (e.g., nested resources)
+*   [ ] Improved error reporting and handling
+*   [ ] Comprehensive integration tests against a live Supabase instance
+*   [ ] Explore potential state machine usage for request building/transaction management
+
 ## Installation
 
 Add the dependency to your Cargo.toml:
@@ -220,6 +234,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+## Testing
+
+To run the tests for this crate, including feature-specific tests:
+
+```bash
+cargo test --all-features
+```
+
+We aim for high test coverage, particularly for core CRUD and filtering operations. Integration tests using `wiremock` simulate responses from the PostgREST API.
+
+## Security Considerations
+
+*   **API Keys:** Ensure your Supabase URL and `anon` key (or `service_role` key if used) are stored and handled securely. Avoid hardcoding them directly in your source code. Consider using environment variables or a secrets management solution.
+*   **Input Validation:** While this library promotes type safety, always validate user-provided input before constructing database queries, especially for filter values, to prevent potential injection issues or unintended data access.
+
+## Contributing
+
+Contributions are welcome! Please feel free to open an issue or submit a pull request. For major changes, please open an issue first to discuss what you would like to change.
+
+Ensure that your contributions pass all tests (`cargo test --all-features`) and adhere to the project's coding style (run `cargo fmt`).
 
 ## License
 

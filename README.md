@@ -42,6 +42,7 @@ This section explains the current implementation status and compatibility with t
 #### PostgresT (`@supabase/postgrest-js`)
 
 **API Compatibility**: 27/30 (90%)
+**Status:** Core library tests passing. Example usage (`postgrest_example.rs`) is **blocked** due to compilation errors (unresolved imports for `Table` / `PostgrestClientTypeExtension` when using type-safe methods).
 
 - ✅ Basic CRUD operations for tables/views
 - ✅ Complex filtering (conditional operators, JSON operations, full-text search)
@@ -52,6 +53,7 @@ This section explains the current implementation status and compatibility with t
 - ✅ Response format control (CSV output support)
 - ✅ Single/multiple row processing optimization
 - ⚠️ Relationship auto-expansion - Basic implementation complete, nested relationships in development
+- ⚠️ Type-safe operations (`insert_typed`, etc.) - API exists but example usage is blocked by import issues.
 - ❌ Advanced Row Level Security (RLS) policy support - In development
 
 ### PostgresT RLS (Row Level Security)
@@ -212,6 +214,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 Overall project completion: ~88%
 
 Current development focus:
+- **Resolving `postgrest_example.rs` compilation errors (import issues for type-safe methods).**
 - Realtime module enhancements (75% → 85%)
 - Functions binary data handling improvements (85% → 95%)
 - Advanced RLS policy support completion (90% → 100%)

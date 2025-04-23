@@ -6,8 +6,7 @@ use supabase_rust_gftd::postgrest::{
     IsolationLevel,
     SortOrder,
     TransactionMode,
-    PostgrestClientTypeExtension,
-    Table,
+    PostgrestError,
 };
 use supabase_rust_gftd::Supabase;
 
@@ -19,26 +18,6 @@ struct Task {
     is_complete: bool,
     created_at: Option<String>,
     user_id: String,
-}
-
-impl Table for Task {
-    fn table_name() -> &'static str {
-        "tasks"
-    }
-}
-
-#[derive(Serialize)]
-struct NewTask<'a> {
-    title: String,
-    description: Option<String>,
-    is_complete: bool,
-    user_id: &'a str,
-}
-
-impl<'a> Table for NewTask<'a> {
-    fn table_name() -> &'static str {
-        "tasks"
-    }
 }
 
 #[tokio::main]
@@ -74,25 +53,27 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Example 1: Basic operations");
     println!("Using user_id: {}", user_id);
 
-    // Example 2: INSERT and SELECT - タスクを作成して取得
+    // Example 2: INSERT and SELECT
     println!("\nExample 2: INSERT and SELECT");
 
-    // タスクを作成
+    // Create tasks using basic insert with json!
     for i in 1..6 {
-        let new_task = NewTask {
-            title: format!("Task {}", i),
-            description: Some(format!("Description for task {}", i)),
-            is_complete: i % 2 == 0,
-            user_id: &user_id,
-        };
-        let _inserted_task: Task = supabase_client
+        // Create JSON directly, omitting id
+        let task_json = json!({
+            "title": format!("Task {}", i),
+            "description": Some(format!("Description for task {}", i)),
+            "is_complete": i % 2 == 0,
+            "user_id": user_id, // Use the correct user_id
+        });
+        // Use basic insert
+        // We still need to figure out how to handle the expected response or add Prefer header
+        let _insert_result = supabase_client
             .from("tasks")
             .with_auth(&access_token)?
-            .insert_typed(&new_task)?
-            .execute()
+            .with_header("Prefer", "return=representation")?
+            .insert(task_json) // Use basic insert
             .await?;
     }
-
     println!("Created 5 tasks");
 
     // 未完了のタスクを取得
@@ -145,6 +126,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let update_result = supabase_client
         .from("tasks")
         .with_auth(&access_token)?
+        .with_header("Prefer", "return=representation")?
         .eq("user_id", &user_id)
         .eq("is_complete", "false")
         .update(json!({ "is_complete": true }))
@@ -157,19 +139,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Example 5: Using range queries
     println!("\nExample 5: Using range queries");
-
     for i in 100..105 {
-        let new_task = NewTask {
-            title: format!("Range Task {}", i),
-            description: Some(format!("Description for range task {}", i)),
-            is_complete: false,
-            user_id: &user_id,
-        };
-        let _inserted_task: Task = supabase_client
+        let task_json = json!({
+            "title": format!("Range Task {}", i),
+            "description": Some(format!("Description for range task {}", i)),
+            "is_complete": false,
+            "user_id": user_id,
+        });
+        // Use basic insert
+        let _insert_result = supabase_client
             .from("tasks")
             .with_auth(&access_token)?
-            .insert_typed(&new_task)?
-            .execute()
+            .with_header("Prefer", "return=representation")?
+            .insert(task_json)
             .await?;
     }
 
@@ -214,6 +196,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let delete_result = supabase_client
         .from("tasks")
         .with_auth(&access_token)?
+        .with_header("Prefer", "return=representation")?
         .eq("user_id", &user_id)
         .gte("id", "100")
         .lte("id", "102")
@@ -225,7 +208,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         delete_result.as_array().unwrap_or(&vec![]).len()
     );
 
-    // Example 8: Transaction with savepoints (begin_transaction方式)
+    // Example 8: Transaction with savepoints
     println!("\nExample 8: Transaction with savepoints");
 
     let transaction = supabase_client
@@ -237,27 +220,34 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             Some(30),
         )
         .await?;
+    println!("Transaction started...");
 
-    println!("Transaction started with isolation level: ReadCommitted, mode: ReadWrite");
-
-    let transaction_new_task = NewTask {
-        title: "Transaction Task".to_string(),
-        description: Some("Created in a transaction".to_string()),
-        is_complete: false,
-        user_id: &user_id,
-    };
-
-    let tx_insert_result: Task = transaction
-        .from("tasks")
-        .insert_typed(&transaction_new_task)?
-        .execute()
+    // Create a task in the transaction using basic insert
+    let transaction_task_json = json!({
+        "title": "Transaction Task".to_string(),
+        "description": Some("Created in a transaction".to_string()),
+        "is_complete": false,
+        "user_id": user_id,
+    });
+    let tasks_in_transaction = transaction.from("tasks");
+    // Use basic insert within transaction
+    let tx_insert_result = tasks_in_transaction
+        .with_header("Prefer", "return=representation")?
+        .insert(transaction_task_json)
         .await?;
-    let tx_task_id = tx_insert_result.id.unwrap();
+    // Need to parse ID differently now if insert returns minimal response
+    let tx_task_id: i64 = tx_insert_result // Assuming insert now returns something minimal or we handle it
+        .as_array()
+        .and_then(|arr| arr.get(0))
+        .and_then(|obj| obj.get("id"))
+        .and_then(|id_val| id_val.as_i64())
+        .ok_or_else(|| PostgrestError::DeserializationError("Failed to get ID from insert response".to_string()))?;
     println!("Created task in transaction with ID: {}", tx_task_id);
     transaction.savepoint("after_insert").await?;
     println!("Created savepoint 'after_insert'");
     let tasks_in_transaction_update1 = transaction.from("tasks");
     let _tx_update_result = tasks_in_transaction_update1
+        .with_header("Prefer", "return=representation")?
         .eq("id", &tx_task_id.to_string())
         .update(json!({ "description": "Updated in transaction" }))
         .await?;
@@ -269,6 +259,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Created savepoint 'after_update'");
     let tasks_in_transaction_update2 = transaction.from("tasks");
     let tx_update_result2 = tasks_in_transaction_update2
+        .with_header("Prefer", "return=representation")?
         .eq("id", &tx_task_id.to_string())
         .update(json!({ "description": "This update will be rolled back" }))
         .await?;
@@ -321,23 +312,26 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         )
         .await?;
 
-    let rollback_new_task = NewTask {
-        title: "Rollback Task".to_string(),
-        description: Some("This task should be rolled back".to_string()),
-        is_complete: false,
-        user_id: &user_id,
-    };
-
-    let roll_insert_result: Task = transaction2
-        .from("tasks")
-        .insert_typed(&rollback_new_task)?
-        .execute()
+    // Create a task that will be rolled back using basic insert
+    let rollback_task_json = json!({
+        "title": "Rollback Task".to_string(),
+        "description": Some("This task should be rolled back".to_string()),
+        "is_complete": false,
+        "user_id": user_id,
+    });
+    let tasks_in_transaction2 = transaction2.from("tasks");
+    let roll_insert_result = tasks_in_transaction2
+        .with_header("Prefer", "return=representation")?
+        .insert(rollback_task_json)
         .await?;
-    let roll_task_id = roll_insert_result.id.unwrap();
-    println!(
-        "Created task in transaction2 (will be rolled back) with ID: {}",
-        roll_task_id
-    );
+    // Parse ID from response (assuming minimal response for now)
+    let roll_task_id: i64 = roll_insert_result
+        .as_array()
+        .and_then(|arr| arr.get(0))
+        .and_then(|obj| obj.get("id"))
+        .and_then(|id_val| id_val.as_i64())
+        .ok_or_else(|| PostgrestError::DeserializationError("Failed to get ID from rollback insert response".to_string()))?;
+    println!("Created task in transaction2 (will be rolled back) with ID: {}", roll_task_id);
     transaction2.rollback().await?;
     println!("Transaction2 rolled back");
 
@@ -368,6 +362,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let _ = supabase_client
         .from("tasks")
         .with_auth(&access_token)?
+        .with_header("Prefer", "return=representation")?
         .eq("user_id", &user_id)
         .delete()
         .await?;

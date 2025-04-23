@@ -367,7 +367,7 @@ impl PostgrestClient {
             SortOrder::Descending => "desc",
         };
         self.query_params
-            .insert("order".to_string(), format!("{}:{}", column, order_str));
+            .insert("order".to_string(), format!("{}.{}", column, order_str));
         self
     }
 
