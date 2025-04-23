@@ -243,24 +243,111 @@ pub struct SchemaConvertOptions {
     pub module_name: String,
     /// Rustのデリバティブ（e.g. Debug, Clone, Serialize, Deserialize）
     pub derives: Vec<String>,
-    /// カスタム型マッピング
-    pub type_mapping: Option<std::collections::HashMap<String, String>>,
+    /// カスタム型マッピング (TypeScript type name -> Rust type path)
+    pub type_mapping: HashMap<String, String>,
+    /// スキーマ名 (e.g., "public")
+    pub schema_name: String,
 }
 
 #[cfg(feature = "schema-convert")]
 impl Default for SchemaConvertOptions {
     fn default() -> Self {
         Self {
-            output_dir: PathBuf::from("./src/models"),
-            module_name: "models".to_string(),
+            output_dir: PathBuf::from("./src/generated"),
+            module_name: "schema".to_string(),
             derives: vec![
                 "Debug".to_string(),
                 "Clone".to_string(),
-                "Serialize".to_string(),
-                "Deserialize".to_string(),
+                "PartialEq".to_string(),
+                "serde::Serialize".to_string(),
+                "serde::Deserialize".to_string(),
             ],
-            type_mapping: None,
+            type_mapping: Default::default(),
+            schema_name: "public".to_string(),
         }
+    }
+}
+
+// Helper to create syn::Ident from string
+#[cfg(feature = "schema-convert")]
+fn ident(s: &str) -> Ident {
+    Ident::new(s, Span::call_site())
+}
+
+// Helper to create syn::Path from string
+#[cfg(feature = "schema-convert")]
+fn path(s: &str) -> syn::Path {
+    syn::parse_str(s).expect("Failed to parse path string")
+}
+
+// Helper function to map TypeScript type expressions to Rust TokenStream
+#[cfg(feature = "schema-convert")]
+fn map_ts_type_to_rust(
+    ts_type: &TypeExpr,
+    options: &SchemaConvertOptions,
+    is_optional: bool,
+) -> Result<TokenStream, PostgrestError> {
+    let base_type = match ts_type {
+        TypeExpr::Ident(TsIdent { name, .. }) => {
+            // Check custom mapping first
+            if let Some(rust_type_str) = options.type_mapping.get(name.as_str()) {
+                path(rust_type_str).into_token_stream()
+            } else {
+                // Default mapping
+                match name.as_str() {
+                    "string" => quote! { String },
+                    "number" => quote! { f64 }, // Or i64? Needs context or config. Defaulting to f64.
+                    "boolean" => quote! { bool },
+                    "Date" => quote! { chrono::DateTime<chrono::Utc> }, // Assuming chrono
+                    "Json" => quote! { serde_json::Value },
+                    "any" | "unknown" => quote! { serde_json::Value }, // Map any/unknown to Value
+                    // Add other basic types or known Supabase types (like Uuid, Timestamptz etc. if needed)
+                    _ => {
+                         // Assume it's a generated enum or struct (PascalCase)
+                        let type_ident = ident(name);
+                         quote! { #type_ident }
+                    }
+                }
+            }
+        }
+        TypeExpr::Array(inner_type) => {
+            let inner_rust_type = map_ts_type_to_rust(inner_type, options, false)?; // Inner type of vec is never optional itself
+            quote! { Vec<#inner_rust_type> }
+        }
+        TypeExpr::TypeOperator(TypeOperator { operator, type_expr }) => {
+            // Handle cases like `string | null`
+            if let (ts_type::Operator::Union, TypeExpr::Tuple(elements)) = (operator, &**type_expr) {
+                 let non_null_types: Vec<_> = elements.iter().filter(|t| !matches!(t, TypeExpr::Literal(TsLiteral::Null))).collect();
+                 if non_null_types.len() == 1 && elements.len() > non_null_types.len() {
+                     // Exactly one non-null type + null -> Option<T>
+                     let inner_rust_type = map_ts_type_to_rust(non_null_types[0], options, false)?;
+                     quote! { Option<#inner_rust_type> }
+                 } else {
+                     // More complex union, map to Value for now
+                     eprintln!("Warning: Complex union type {:?} mapped to serde_json::Value", ts_type);
+                     quote! { serde_json::Value }
+                 }
+            } else {
+                 eprintln!("Warning: Unsupported TypeOperator {:?} mapped to serde_json::Value", ts_type);
+                 quote! { serde_json::Value }
+            }
+        }
+        TypeExpr::Literal(TsLiteral::Null) => {
+             // This case should ideally be handled by the Union logic above for Option<T>
+             eprintln!("Warning: Standalone 'null' type encountered, mapping to Option<()> (likely incorrect context)");
+             quote! { Option<()> }
+        }
+        _ => {
+            eprintln!("Warning: Unsupported TypeScript type {:?} mapped to serde_json::Value", ts_type);
+            quote! { serde_json::Value } // Fallback for unsupported types
+        }
+    };
+
+    // Wrap in Option if the field itself was optional OR if the type includes null (handled above)
+    if is_optional && !base_type.to_string().starts_with("Option <") {
+        Ok(quote! { Option<#base_type> })
+    } else {
+        Ok(base_type)
     }
 }
 
@@ -270,37 +357,209 @@ pub fn convert_typescript_to_rust(
     typescript_file: &Path,
     options: SchemaConvertOptions,
 ) -> Result<PathBuf, crate::PostgrestError> {
-    let typescript_content = std::fs::read_to_string(typescript_file).map_err(|e| {
-        crate::PostgrestError::ApiError(format!("Failed to read TypeScript file: {}", e))
-    })?;
+    let mut file = File::open(typescript_file)
+        .map_err(|e| PostgrestError::ApiError(format!("Failed to open TypeScript file: {}", e)))?;
+    let mut typescript_content = String::new();
+    file.read_to_string(&mut typescript_content)
+        .map_err(|e| PostgrestError::ApiError(format!("Failed to read TypeScript file: {}", e)))?;
 
-    // TypeScript→Rust変換ロジックはここに実装（プロジェクトの仕様に応じて）
-    let rust_content = format!(
-        "// Generated from {} by supabase-rust\n\n",
-        typescript_file.display()
-    );
+    let definitions = typescript_type_def::parse_str(&typescript_content)
+        .map_err(|e| PostgrestError::ApiError(format!("Failed to parse TypeScript: {:?}", e)))?;
 
-    // 出力ディレクトリの作成
+    // Find the main 'Database' interface
+    let database_interface = definitions.interfaces.iter().find(|i| i.name == "Database")
+        .ok_or_else(|| PostgrestError::ApiError("Could not find 'Database' interface in TypeScript definitions".to_string()))?;
+
+    // Find the target schema (e.g., 'public') within 'Database'
+    let schema_interface_type = database_interface.members.iter().find_map(|m| {
+        if let Member::Property(prop) = m {
+            if prop.key == options.schema_name {
+                 if let Some(type_ann) = &prop.type_ann {
+                     if let TypeExpr::Ident(id) = &*type_ann.type_expr {
+                         // Find the interface definition referenced by this identifier
+                         definitions.interfaces.iter().find(|i| i.name == id.name)
+                     } else { None }
+                 } else { None }
+            } else { None }
+        } else { None }
+    }).ok_or_else(|| PostgrestError::ApiError(format!("Could not find schema '{}' in Database interface", options.schema_name)))?;
+
+
+    let mut generated_items: Vec<TokenStream> = Vec::new();
+
+    // Process Tables, Views, Enums within the schema
+    for member in &schema_interface_type.members {
+         if let Member::Property(prop) = member {
+             let category_name = &prop.key; // Should be "Tables", "Views", or "Enums"
+             if let Some(type_ann) = &prop.type_ann {
+                 if let TypeExpr::Ident(id) = &*type_ann.type_expr {
+                      // Find the definition for this category (e.g., the interface containing table definitions)
+                     let category_def = definitions.interfaces.iter().find(|i| i.name == id.name)
+                          .ok_or_else(|| PostgrestError::ApiError(format!("Could not find definition for category '{}'", category_name)))?;
+
+                     match category_name.as_str() {
+                         "Tables" | "Views" => {
+                             // Process each table/view within the category
+                             for table_member in &category_def.members {
+                                 if let Member::Property(table_prop) = table_member {
+                                     let table_ts_name = &table_prop.key; // Original TS table/view name (usually snake_case)
+                                     let struct_name_str = pascal_case(table_ts_name); // Convert to PascalCase for Rust struct
+                                     let struct_ident = ident(&struct_name_str);
+
+                                     if let Some(table_type_ann) = &table_prop.type_ann {
+                                         if let TypeExpr::Ident(table_id) = &*table_type_ann.type_expr {
+                                             // Find the actual interface definition for this table/view
+                                             let table_interface = definitions.interfaces.iter().find(|i| i.name == table_id.name)
+                                                 .ok_or_else(|| PostgrestError::ApiError(format!("Could not find interface definition for table/view '{}'", table_ts_name)))?;
+
+                                             let mut struct_fields = Vec::new();
+                                             for field_member in &table_interface.members {
+                                                 if let Member::Property(field_prop) = field_member {
+                                                     let field_ts_name = &field_prop.key;
+                                                     let field_rust_name_str = snake_case(field_ts_name);
+                                                     let field_ident = ident(&field_rust_name_str);
+                                                     let is_optional = field_prop.optional;
+
+                                                     if let Some(field_type_ann) = &field_prop.type_ann {
+                                                          let field_rust_type = map_ts_type_to_rust(&field_type_ann.type_expr, &options, is_optional)?;
+                                                          let serde_rename = if field_ts_name != &field_rust_name_str {
+                                                               quote! { #[serde(rename = #field_ts_name)] }
+                                                          } else { quote! {} };
+
+                                                         struct_fields.push(quote! {
+                                                             #serde_rename
+                                                             pub #field_ident: #field_rust_type,
+                                                         });
+                                                     } else {
+                                                          eprintln!("Warning: Field '{}' in table '{}' has no type annotation, skipping.", field_ts_name, table_ts_name);
+                                                     }
+                                                 }
+                                             }
+
+                                             let derives: Vec<syn::Path> = options.derives.iter().map(|s| path(s)).collect();
+                                             let table_name_literal = table_ts_name.as_str(); // Use original name for table_name()
+
+                                             generated_items.push(quote! {
+                                                 #[derive(#(#derives),*)]
+                                                 pub struct #struct_ident {
+                                                     #(#struct_fields)*
+                                                 }
+
+                                                 impl crate::schema::Table for #struct_ident {
+                                                     fn table_name() -> &'static str {
+                                                         #table_name_literal
+                                                     }
+                                                 }
+                                             });
+                                         }
+                                     }
+                                 }
+                             }
+                         }
+                         "Enums" => {
+                             // Process each enum within the category
+                             for enum_member in &category_def.members {
+                                 if let Member::Property(enum_prop) = enum_member {
+                                     let enum_ts_name = &enum_prop.key; // Original TS enum name
+                                     let enum_name_str = pascal_case(enum_ts_name);
+                                     let enum_ident = ident(&enum_name_str);
+
+                                     if let Some(enum_type_ann) = &enum_prop.type_ann {
+                                         if let TypeExpr::Ident(enum_id) = &*enum_type_ann.type_expr {
+                                              // Find the actual type alias definition for this enum
+                                             let enum_alias = definitions.type_aliases.iter().find(|a| a.name == enum_id.name)
+                                                 .ok_or_else(|| PostgrestError::ApiError(format!("Could not find type alias definition for enum '{}'", enum_ts_name)))?;
+
+                                             if let TypeExpr::TypeOperator(TypeOperator { operator: ts_type::Operator::Union, type_expr }) = &enum_alias.type_expr {
+                                                  if let TypeExpr::Tuple(variants) = &**type_expr {
+                                                     let mut enum_variants = Vec::new();
+                                                     for variant in variants {
+                                                         if let TypeExpr::Literal(TsLiteral::String(variant_name)) = variant {
+                                                             let variant_ident = ident(&pascal_case(variant_name)); // PascalCase for Rust enum variant
+                                                             let serde_rename = if variant_name != &pascal_case(variant_name) {
+                                                                 quote! { #[serde(rename = #variant_name)] }
+                                                             } else { quote! {} };
+                                                             enum_variants.push(quote! {
+                                                                 #serde_rename
+                                                                 #variant_ident,
+                                                             });
+                                                         } else {
+                                                              eprintln!("Warning: Non-string literal found in enum '{}', skipping variant: {:?}", enum_ts_name, variant);
+                                                         }
+                                                     }
+
+                                                     // Add common derives for enums
+                                                     let mut enum_derives = options.derives.clone();
+                                                     for d in ["Eq", "serde::Serialize", "serde::Deserialize"] { // Ensure basic derives
+                                                          if !enum_derives.contains(&d.to_string()) {
+                                                              enum_derives.push(d.to_string());
+                                                          }
+                                                     }
+                                                     let enum_derives_path: Vec<syn::Path> = enum_derives.iter().map(|s| path(s)).collect();
+
+
+                                                     generated_items.push(quote! {
+                                                         #[derive(#(#enum_derives_path),*)]
+                                                         // Add rename_all if needed based on TS enum value casing
+                                                         // #[serde(rename_all = "camelCase")]
+                                                         pub enum #enum_ident {
+                                                             #(#enum_variants)*
+                                                         }
+                                                     });
+
+                                                 } else {
+                                                      eprintln!("Warning: Enum type alias '{}' is not a simple union of string literals.", enum_ts_name);
+                                                 }
+                                             } else {
+                                                 eprintln!("Warning: Enum type alias '{}' is not a TypeOperator::Union.", enum_ts_name);
+                                             }
+                                         }
+                                     }
+                                 }
+                             }
+                         }
+                         _ => {
+                              eprintln!("Warning: Unknown category '{}' found in schema definition.", category_name);
+                         }
+                     }
+                 }
+             }
+         }
+    }
+
+
+    // Combine generated items into a single TokenStream
+    let final_code = quote! {
+        #![allow(unused_imports, non_camel_case_types, non_snake_case)] // Suppress warnings for generated code
+        use super::{Table}; // Assuming Table trait is in the parent module (schema.rs)
+        use serde::{Serialize, Deserialize}; // Ensure serde is in scope
+        // Add chrono if Date was mapped
+        // use chrono::{DateTime, Utc};
+
+        #(#generated_items)*
+    };
+
+    // Format the generated code using syn::prettyplease or rustfmt crate if added as dependency
+    // let formatted_code = prettyplease::unparse(&syn::parse2(final_code).unwrap());
+    let code_string = final_code.to_string(); // Using basic to_string for now
+
+
+    // Ensure output directory exists
     fs::create_dir_all(&options.output_dir).map_err(|e| {
-        crate::PostgrestError::ApiError(format!("Failed to create output directory: {}", e))
+        PostgrestError::ApiError(format!("Failed to create output directory: {}", e))
     })?;
 
-    // 出力ファイルパスの決定
-    let filename = typescript_file
-        .file_name()
-        .ok_or_else(|| {
-            crate::PostgrestError::ApiError("Invalid TypeScript file path".to_string())
-        })?
-        .to_string_lossy()
-        .replace(".ts", ".rs");
+    // Construct output file path (e.g., ./src/generated/schema.rs)
+    let output_file_name = format!("{}.rs", options.module_name);
+    let output_path = options.output_dir.join(output_file_name);
 
-    let output_path = options.output_dir.join(filename);
+    // Write the generated code to the file
+    let mut output_file = File::create(&output_path)
+        .map_err(|e| PostgrestError::ApiError(format!("Failed to create output file: {}", e)))?;
+    output_file.write_all(code_string.as_bytes())
+        .map_err(|e| PostgrestError::ApiError(format!("Failed to write Rust code: {}", e)))?;
 
-    // ファイルに書き込み
-    fs::write(&output_path, rust_content).map_err(|e| {
-        crate::PostgrestError::ApiError(format!("Failed to write Rust file: {}", e))
-    })?;
-
+    println!("Successfully generated Rust types at: {:?}", output_path);
     Ok(output_path)
 }
 

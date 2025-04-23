@@ -21,6 +21,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use thiserror::Error;
 use url::Url;
+use std::fmt;
 
 use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -44,11 +45,49 @@ use std::sync::Arc;
 //     convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions,
 // };
 
+/// PostgREST APIエラーの詳細情報
+#[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct PostgrestApiErrorDetails {
+    pub code: Option<String>,
+    pub message: Option<String>,
+    pub details: Option<String>,
+    pub hint: Option<String>,
+}
+
+// エラー詳細を整形して表示するための Display 実装
+impl fmt::Display for PostgrestApiErrorDetails {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut parts = Vec::new();
+        if let Some(code) = &self.code {
+            parts.push(format!("Code: {}", code));
+        }
+        if let Some(message) = &self.message {
+            parts.push(format!("Message: {}", message));
+        }
+        if let Some(details) = &self.details {
+            parts.push(format!("Details: {}", details));
+        }
+        if let Some(hint) = &self.hint {
+            parts.push(format!("Hint: {}", hint));
+        }
+        write!(f, "{}", parts.join(", "))
+    }
+}
+
 /// エラー型
 #[derive(Error, Debug)]
 pub enum PostgrestError {
-    #[error("API error: {0}")]
-    ApiError(String),
+    #[error("API error: {details} (Status: {status})")]
+    ApiError {
+        details: PostgrestApiErrorDetails,
+        status: reqwest::StatusCode,
+    },
+
+    #[error("API error (unparsed): {message} (Status: {status})")]
+    UnparsedApiError {
+        message: String,
+        status: reqwest::StatusCode,
+    },
 
     #[error("Network error: {0}")]
     NetworkError(#[from] reqwest::Error),
@@ -360,6 +399,24 @@ impl PostgrestClient {
         self
     }
 
+    /// JSON/JSONB カラムが指定した値を含むか (`cs`, `@>`) フィルター
+    /// value は serde_json::Value で指定します
+    pub fn contains(mut self, column: &str, value: &Value) -> Result<Self, PostgrestError> {
+        let value_str = serde_json::to_string(value)?;
+        self.query_params
+            .insert(column.to_string(), format!("cs.{}", value_str));
+        Ok(self)
+    }
+
+    /// JSON/JSONB カラムが指定した値に含まれるか (`cd`, `<@`) フィルター
+    /// value は serde_json::Value で指定します
+    pub fn contained_by(mut self, column: &str, value: &Value) -> Result<Self, PostgrestError> {
+        let value_str = serde_json::to_string(value)?;
+        self.query_params
+            .insert(column.to_string(), format!("cd.{}", value_str));
+        Ok(self)
+    }
+
     /// ソート順を指定
     pub fn order(mut self, column: &str, order: SortOrder) -> Self {
         let order_str = match order {
@@ -465,7 +522,12 @@ impl PostgrestClient {
 
         if !response.status().is_success() {
             let error_text = response.text().await?;
-            return Err(PostgrestError::ApiError(error_text));
+            return Err(PostgrestError::ApiError(PostgrestApiErrorDetails {
+                code: None,
+                message: Some(error_text),
+                details: None,
+                hint: None,
+            }));
         }
 
         let csv_data = response.text().await?;
@@ -485,64 +547,23 @@ impl PostgrestClient {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-            return Err(PostgrestError::ApiError(format!(
-                "API error: {} (Status: {})",
-                error_text, status
-            )));
+            
+            // Try parsing the error as JSON details
+            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+            return match details_result {
+                Ok(details) => Err(PostgrestError::ApiError { details, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+            };
         }
 
         response
             .json::<Vec<T>>()
-            .await
-            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
-    }
-
-    /// RPCを実行する内部メソッド
-    #[allow(dead_code)]
-    async fn execute_rpc(&self) -> Result<Value, PostgrestError> {
-        if !self.is_rpc || self.rpc_params.is_none() {
-            return Err(PostgrestError::InvalidParameters(
-                "Not an RPC request".to_string(),
-            ));
-        }
-
-        let url = format!("{}/rest/v1/rpc/{}", self.base_url, self.table);
-
-        let response = self
-            .http_client
-            .post(&url)
-            .headers(self.headers.clone())
-            .json(&self.rpc_params.as_ref().unwrap())
-            .send()
-            .await
-            .map_err(PostgrestError::NetworkError)?;
-
-        // ステータスコードを事前に取得
-        let status = response.status();
-
-        if !status.is_success() {
-            let error_text = response
-                .text()
-                .await
-                .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-            return Err(PostgrestError::ApiError(format!(
-                "API error: {} (Status: {})",
-                error_text, status
-            )));
-        }
-
-        response
-            .json::<Value>()
             .await
             .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
@@ -560,19 +581,18 @@ impl PostgrestClient {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-            return Err(PostgrestError::ApiError(format!(
-                "API error: {} (Status: {})",
-                error_text, status
-            )));
+            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+            return match details_result {
+                Ok(details) => Err(PostgrestError::ApiError { details, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+            };
         }
 
         response
@@ -594,19 +614,18 @@ impl PostgrestClient {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
-            return Err(PostgrestError::ApiError(format!(
-                "API error: {} (Status: {})",
-                error_text, status
-            )));
+                
+            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+            return match details_result {
+                Ok(details) => Err(PostgrestError::ApiError { details, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+            };
         }
 
         response
@@ -627,25 +646,66 @@ impl PostgrestClient {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
-            return Err(PostgrestError::ApiError(format!(
-                "API error: {} (Status: {})",
-                error_text, status
-            )));
+            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+            return match details_result {
+                Ok(details) => Err(PostgrestError::ApiError { details, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+            };
         }
 
         response
             .json::<Value>()
             .await
             .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
+    }
+
+    /// RPC関数を呼び出す (POSTリクエスト)
+    pub async fn call_rpc<T: for<'de> Deserialize<'de>>(&self) -> Result<T, PostgrestError> {
+        if !self.is_rpc {
+            return Err(PostgrestError::InvalidParameters(
+                "Client was not created for RPC. Use PostgrestClient::rpc().".to_string(),
+            ));
+        }
+        // RPCの場合はテーブル名が関数名として扱われる
+        let url = format!("{}/rest/v1/rpc/{}", self.base_url, self.table);
+        let params = self.rpc_params.as_ref().ok_or_else(|| {
+            PostgrestError::InvalidParameters("RPC parameters are missing.".to_string())
+        })?;
+
+        let response = self
+            .http_client
+            .post(&url)
+            .headers(self.headers.clone())
+            .json(params)
+            .send()
+            .await
+            .map_err(PostgrestError::NetworkError)?;
+
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+
+            let details_result: Result<PostgrestApiErrorDetails, _> = serde_json::from_str(&error_text);
+             return match details_result {
+                Ok(details) => Err(PostgrestError::ApiError { details, status }),
+                Err(_) => Err(PostgrestError::UnparsedApiError { message: error_text, status }),
+            };
+        }
+
+        response
+            .json::<T>()
+            .await
+            .map_err(|e| PostgrestError::DeserializationError(format!("Failed to deserialize RPC response: {}", e)))
     }
 
     // URLを構築
@@ -692,15 +752,14 @@ impl PostgrestClient {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
 
+            // Transaction begin might not return standard PostgREST JSON error, treat as TransactionError
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to begin transaction: {} (Status: {})",
                 error_text, status
@@ -817,15 +876,14 @@ impl PostgrestTransaction {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
+            
+            // Treat transaction commit/rollback errors specifically
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to commit transaction: {} (Status: {})",
                 error_text, status
@@ -863,15 +921,12 @@ impl PostgrestTransaction {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
             return Err(PostgrestError::TransactionError(format!(
                 "Failed to rollback transaction: {} (Status: {})",
                 error_text, status
@@ -910,21 +965,17 @@ impl PostgrestTransaction {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
             return Err(PostgrestError::TransactionError(format!(
-                "Failed to create savepoint: {} (Status: {})",
-                error_text, status
+                "Failed to create savepoint '{}': {} (Status: {})",
+                 name, error_text, status
             )));
         }
-
         Ok(())
     }
 
@@ -954,21 +1005,17 @@ impl PostgrestTransaction {
             .await
             .map_err(PostgrestError::NetworkError)?;
 
-        // ステータスコードを事前に取得
         let status = response.status();
-
         if !status.is_success() {
             let error_text = response
                 .text()
                 .await
                 .unwrap_or_else(|_| "Failed to read error response".to_string());
-
             return Err(PostgrestError::TransactionError(format!(
-                "Failed to rollback to savepoint: {} (Status: {})",
-                error_text, status
+                "Failed to rollback to savepoint '{}': {} (Status: {})",
+                 name, error_text, status
             )));
         }
-
         Ok(())
     }
 }
@@ -998,17 +1045,95 @@ impl Drop for PostgrestTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use wiremock::matchers::{body_json, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
     async fn test_select() {
-        // TODO: モック実装を用いたテスト
+        let mock_server = MockServer::start().await;
+        println!("Mock server started at: {}", mock_server.uri());
+
+        // Selectクエリのモック
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/items"))
+            .and(query_param("select", "*")) // select=* を想定
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                { "id": 1, "name": "Test Item 1" },
+                { "id": 2, "name": "Test Item 2" }
+            ])))
+            .mount(&mock_server)
+            .await;
+        println!("Select mock set up");
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items", // テーブル名
+            reqwest::Client::new(),
+        );
+        println!("Client created for select test");
+
+        let result = client
+            .select("*")
+            .execute::<Vec<serde_json::Value>>() // Vec<T> を期待するように修正
+            .await;
+
+        if let Err(e) = &result {
+            println!("Select query failed: {:?}", e);
+        }
+
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data.len(), 2);
+        assert_eq!(data[0]["name"], "Test Item 1");
+        assert_eq!(data[1]["id"], 2);
     }
 
     #[tokio::test]
     async fn test_rpc() {
-        // TODO: モック実装を用いたテスト
+        let mock_server = MockServer::start().await;
+        println!("Mock server started at: {}", mock_server.uri());
+
+        // RPC呼び出しのモック (POST)
+        let rpc_params = json!({ "arg1": "value1", "arg2": 123 });
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/rpc/my_rpc_function"))
+            .and(body_json(&rpc_params)) // リクエストボディを検証
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "result": "success",
+                "data": 456
+            })))
+            .mount(&mock_server)
+            .await;
+        println!("RPC mock set up");
+
+        // RPC 用クライアント作成
+        let client = PostgrestClient::rpc(
+            &mock_server.uri(),
+            "fake-key",
+            "my_rpc_function", // RPC関数名
+            rpc_params.clone(),
+            reqwest::Client::new(),
+        );
+        println!("Client created for RPC test");
+
+        // RPC呼び出し
+        #[derive(Deserialize, Debug, PartialEq)]
+        struct RpcResponse {
+            result: String,
+            data: i32,
+        }
+
+        let result = client.call_rpc::<RpcResponse>().await; // 新しいメソッドを使用
+
+        if let Err(e) = &result {
+            println!("RPC call failed: {:?}", e);
+        }
+
+        assert!(result.is_ok());
+        let response_data = result.unwrap();
+        assert_eq!(response_data, RpcResponse { result: "success".to_string(), data: 456 });
     }
 
     #[tokio::test]
@@ -1348,5 +1473,90 @@ mod tests {
         // トランザクションをコミット
         let commit_result = transaction.commit().await;
         assert!(commit_result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_jsonb_filters() {
+        let mock_server = MockServer::start().await;
+
+        let contains_value = json!({ "key": "value" });
+        let contained_by_value = json!(["a", "b"]);
+        
+        // contains のモック
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/data"))
+            .and(query_param("metadata", format!("cs.{}", contains_value.to_string())))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id": 1}])))
+            .mount(&mock_server)
+            .await;
+            
+        // contained_by のモック
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/data"))
+            .and(query_param("tags", format!("cd.{}", contained_by_value.to_string())))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id": 2}])))
+            .mount(&mock_server)
+            .await;
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "data",
+            reqwest::Client::new(),
+        );
+        
+        // contains テスト
+        let result_contains = client
+            .clone() // clientを再利用するためclone
+            .contains("metadata", &contains_value)
+            .unwrap() // Resultをunwrap
+            .execute::<Vec<serde_json::Value>>()
+            .await;
+        assert!(result_contains.is_ok());
+        assert_eq!(result_contains.unwrap().len(), 1);
+        
+        // contained_by テスト
+        let result_contained_by = client
+            .contained_by("tags", &contained_by_value)
+            .unwrap()
+            .execute::<Vec<serde_json::Value>>()
+            .await;
+        assert!(result_contained_by.is_ok());
+        assert_eq!(result_contained_by.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_filter_on_related_table() {
+        let mock_server = MockServer::start().await;
+
+        // Related table filter のモック
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/posts"))
+            .and(query_param("author.name", "eq.Specific Author")) // authorテーブルのnameでフィルタ
+            .and(query_param("select", "title,author!inner(name)")) // select句も設定
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                { "title": "Post by Specific Author", "author": { "name": "Specific Author" } }
+            ])))
+            .mount(&mock_server)
+            .await;
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "posts",
+            reqwest::Client::new(),
+        );
+
+        let result = client
+            .select("title,author!inner(name)") // joinを含めておく
+            .eq("author.name", "Specific Author") // 関連テーブルのカラムを指定してフィルタ
+            .execute::<Vec<serde_json::Value>>()
+            .await;
+
+        assert!(result.is_ok(), "Request failed: {:?}", result.err());
+        let data = result.unwrap();
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0]["title"], "Post by Specific Author");
+        assert_eq!(data[0]["author"]["name"], "Specific Author");
     }
 }

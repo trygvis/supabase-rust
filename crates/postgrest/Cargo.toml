@@ -31,7 +31,10 @@ convert_case = { version = "0.6", optional = true }
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.5"
+dotenvy = "0.15"
+once_cell = "1.19"
 
 [features]
 default = []
 schema-convert = ["typescript-type-def", "syn", "quote", "proc-macro2", "convert_case"]
+integration-tests = []
