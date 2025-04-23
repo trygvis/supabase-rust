@@ -1948,6 +1948,7 @@ dependencies = [
  "futures-util",
  "http 0.2.12",
  "log",
+ "mockito",
  "reqwest",
  "serde",
  "serde_json",

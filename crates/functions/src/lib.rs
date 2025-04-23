@@ -742,11 +742,58 @@ impl FunctionsClient {
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
-    use mockito::Server;
+    use super::*; // Import necessary items from parent module
+    use serde_json::json;
+    use wiremock::matchers::{body_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    // Helper struct for testing
+    #[derive(Debug, Serialize, Deserialize, PartialEq)]
+    struct TestPayload {
+        message: String,
+    }
 
     #[tokio::test]
     async fn test_invoke() {
         // TODO: モック実装を用いたテスト
+    }
+
+    // Test successful JSON invocation
+    #[tokio::test]
+    async fn test_invoke_json_success() {
+        // Arrange: Start mock server
+        let server = MockServer::start().await;
+        let mock_uri = server.uri();
+        let api_key = "test-key";
+        let function_name = "hello-world";
+
+        // Arrange: Prepare request and expected response
+        let request_body = json!({ "name": "Rust" });
+        let expected_response = TestPayload {
+            message: "Hello Rust".to_string(),
+        };
+
+        // Arrange: Mock the API endpoint
+        Mock::given(method("POST"))
+            .and(path(format!("/functions/v1/{}", function_name)))
+            .and(header("apikey", api_key))
+            .and(header("Authorization", format!("Bearer {}", api_key).as_str()))
+            .and(header("Content-Type", "application/json"))
+            .and(body_json(&request_body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+            .mount(&server)
+            .await;
+
+        // Act: Create client and invoke function
+        let client = FunctionsClient::new(&mock_uri, api_key, reqwest::Client::new());
+        let result = client
+            .invoke_json::<TestPayload, Value>(function_name, Some(request_body))
+            .await;
+
+        // Assert: Check the result
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data, expected_response);
+        server.verify().await;
     }
 }

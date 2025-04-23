@@ -1402,7 +1402,8 @@ mod tests {
         assert!(query_result.is_ok());
         let users = query_result.unwrap();
         assert_eq!(
-            users.first()
+            users
+                .first()
                 .and_then(|v: &Value| v.get("name"))
                 .and_then(Value::as_str),
             Some("テストユーザー")
@@ -1637,7 +1638,9 @@ mod tests {
         assert!(result.is_ok(), "Request failed: {:?}", result.err());
         let data = result.unwrap();
         assert_eq!(data.len(), 1);
-        let post = data.first().expect("Post should exist in related table test");
+        let post = data
+            .first()
+            .expect("Post should exist in related table test");
         assert_eq!(
             post.get("title").and_then(Value::as_str),
             Some("Post by Specific Author")

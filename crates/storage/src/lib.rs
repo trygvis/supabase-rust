@@ -1379,7 +1379,6 @@ pub mod s3 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::test;
 
     #[tokio::test]
     async fn test_list_buckets() {

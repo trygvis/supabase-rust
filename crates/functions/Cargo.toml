@@ -29,3 +29,4 @@ async-stream = "0.3"
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.5"
+mockito = "1.7.0"
