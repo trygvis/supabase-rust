@@ -1,6 +1,6 @@
 [package]
 name = "supabase-rust-realtime"
-version = "0.1.3"
+version = "0.1.5"
 edition = "2021"
 authors = ["Jun Kawasaki"]
 description = "Realtime client for Supabase"
