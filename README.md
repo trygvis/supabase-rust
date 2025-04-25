@@ -15,7 +15,7 @@ This section explains the current implementation status and compatibility with t
 | Module      | Status | API Compatibility   | Notes                                                                                                                                                                                             |
 | :---------- | :----- | :------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Auth**    | ✅     | 38/40 (95%)         | Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented.                                                                                                               |
-| **PostgresT** | ⚠️     | ~88% (27/30 - Type Safety Removed) | Core functions (CRUD, filtering, RPC, transactions) implemented. **NOTE:** Type-safe ops removed. **Requires local patch** for INSERT/UPDATE/DELETE with certain PostgREST versions. |
+| **PostgresT** | ⚠️     | ~88% (27/30 - Type Safety Removed) | Core functions (CRUD, filtering, RPC, transactions) implemented. Test coverage improved for basic CRUD, filters, and modifiers. `Prefer: return=representation` header correctly added for mutations. **NOTE:** Type-safe ops removed. **Requires local patch** for empty INSERT/UPDATE/DELETE responses with certain PostgREST versions. |
 | **Storage** | ✅     | **20/20 (100%)**    | **File moving (`move_object`) added.** Image transformation and extensions beyond JS version. Low test coverage noted.                                                                              |
 | **Realtime**  | ❌     | 11/14 (~80%)        | Core PubSub, DB changes, Presence implemented. **Tests have critical timeout issues and very low coverage.** Needs significant tests, docs & refactoring (large `lib.rs`).                   |
 | **Functions** | ⚠️     | 5/6 (85%)           | Basic and streaming functionality implemented, enhancing binary support. Missing automated tests. Examples require Edge Function setup.                                                           |
@@ -45,7 +45,7 @@ _Status Icons: ✅ Implemented & Tested (Basic), ⚠️ Implemented (Low Test/Do
 #### PostgresT (`@supabase/postgrest-js`)
 
 **API Compatibility**: ~88% (27/30 - Type Safety Feature Removed)
-**Status:** Core library tests passing for standard operations. **NOTE:** Local PostgREST instances (like v12.2.11) might return empty responses for successful INSERT/UPDATE/DELETE, requiring a local patch to `crates/postgrest/src/lib.rs` to handle these cases.
+**Status:** Core library tests improved, covering basic CRUD, filters, modifiers, and error handling. `Prefer: return=representation` header is now correctly added for `insert`/`update`/`delete`. **NOTE:** Local PostgREST instances (like v12.2.11) might return empty responses for successful INSERT/UPDATE/DELETE, requiring a local patch to `crates/postgrest/src/lib.rs` to handle these cases. Type-safe operations removed.
 
 - ✅ Basic CRUD operations for tables/views
 - ✅ Complex filtering (conditional operators, JSON operations, full-text search)

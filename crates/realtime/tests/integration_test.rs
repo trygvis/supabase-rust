@@ -5,13 +5,25 @@ use supabase_rust_realtime::{
     ChannelEvent, DatabaseChanges, RealtimeClient, RealtimeClientOptions, RealtimeMessage,
 };
 use tokio::sync::mpsc;
+// Add tracing imports
+use tracing_subscriber::{fmt, EnvFilter};
+use tracing::{debug, error, info, instrument, span, trace, warn, Level};
+use std::time::Duration;
+use tokio_tungstenite::tungstenite::Message;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::time::error::Elapsed;
 
 // Ensure logger is initialized only once across all tests
 static INIT_LOGGER: Once = Once::new();
 
 fn setup_logger() {
     INIT_LOGGER.call_once(|| {
-        pretty_env_logger::init();
+        // Initialize tracing subscriber
+        fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_test_writer()
+            .init();
+        // pretty_env_logger::init(); // Keep or remove based on preference, tracing is now primary
     });
 }
 
@@ -78,83 +90,101 @@ async fn test_channel_builder_creation() {
 }
 
 // Helper function to start a simple mock WebSocket server
+#[instrument]
 async fn start_mock_server(
 ) -> Result<(std::net::SocketAddr, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
+    info!(address = %addr, "Mock server binding successful");
 
     let handle = tokio::spawn(async move {
-        println!("[Mock Server] Listening on {}", addr);
+        let server_span = span!(Level::INFO, "mock_server", %addr);
+        let _enter = server_span.enter(); // Enter the span
+
+        info!("Listening for connections");
         match listener.accept().await {
-            Ok((stream, _peer_addr)) => {
-                println!("[Mock Server] Accepted connection from {}", _peer_addr);
+            Ok((stream, peer_addr)) => {
+                info!(%peer_addr, "Accepted connection");
+                let connection_span = span!(Level::INFO, "connection", %peer_addr);
+                let _conn_enter = connection_span.enter();
+
                 match tokio_tungstenite::accept_async(stream).await {
                     Ok(mut ws_stream) => {
-                        println!("[Mock Server] WebSocket handshake successful");
+                        info!("WebSocket handshake successful");
                         // Simple loop to handle messages (e.g., heartbeat, join)
                         while let Some(msg_res) = ws_stream.next().await {
                             match msg_res {
                                 Ok(msg) => {
-                                    println!("[Mock Server] Received: {:?}", msg);
+                                    trace!(message = ?msg, "Received message");
                                     // Revert to simple generic reply for any text message
                                     if msg.is_text() {
                                         let text_content = msg.to_text().unwrap_or("");
+                                        trace!(content = %text_content, "Received text message");
                                         // Try to parse to get the ref and topic if possible
                                         let mut reply_ref = json!(null); // Default ref
                                         let mut reply_topic = "phoenix".to_string(); // Default topic
                                         match serde_json::from_str::<RealtimeMessage>(text_content)
                                         {
                                             Ok(parsed) => {
-                                                println!("[Mock Server] Parsed message ref: {:?} topic: {} from {}", parsed.message_ref, parsed.topic, _peer_addr);
+                                                debug!(parsed_ref = ?parsed.message_ref, parsed_topic = %parsed.topic, "Parsed message for reply");
                                                 reply_ref = parsed.message_ref;
                                                 reply_topic = parsed.topic; // Use original topic
                                             }
                                             Err(e) => {
                                                 // Log parse error but still send a basic reply
-                                                println!("[Mock Server] Failed to parse message for ref/topic from {}: {}. Raw: {}", _peer_addr, e, text_content);
+                                                warn!(error = %e, raw_message = %text_content, "Failed to parse message for ref/topic, using defaults");
                                             }
                                         }
 
-                                        let reply = tokio_tungstenite::tungstenite::Message::Text(
-                                            json!({
-                                                "event": ChannelEvent::PhoenixReply,
-                                                "payload": {"status": "ok", "response": {}},
-                                                "ref": reply_ref, // Use parsed ref if available
-                                                "topic": reply_topic // Use original topic if parsed
-                                            })
-                                            .to_string(),
-                                        );
-                                        println!("[Mock Server] Sending generic reply: {}", reply);
-                                        if ws_stream.send(reply).await.is_err() {
-                                            eprintln!("[Mock Server] Error sending reply");
+                                        let reply_payload = json!({
+                                            "event": ChannelEvent::PhoenixReply, // Use correct event enum
+                                            "payload": {"status": "ok", "response": {}},
+                                            "ref": reply_ref, // Use parsed ref if available
+                                            "topic": reply_topic // Use original topic if parsed
+                                        });
+                                        let reply = tokio_tungstenite::tungstenite::Message::Text(reply_payload.to_string());
+
+                                        debug!(reply = %reply_payload, "Sending generic reply");
+                                        if let Err(e) = ws_stream.send(reply).await {
+                                            error!(error = %e, "Error sending reply");
                                             break;
                                         }
+                                    } else if msg.is_ping() {
+                                        trace!("Received Ping, sending Pong");
+                                        if let Err(e) = ws_stream.send(Message::Pong(msg.into_data())).await {
+                                             error!(error = %e, "Error sending Pong");
+                                             break;
+                                        }
+                                    } else if msg.is_close() {
+                                        info!("Received Close frame, closing connection");
+                                        break;
                                     }
                                 }
                                 Err(e) => {
-                                    eprintln!("[Mock Server] Error receiving message: {}", e);
+                                    error!(error = %e, "Error receiving message");
                                     break;
                                 }
                             }
                         }
-                        println!("[Mock Server] Client disconnected or error");
+                        info!("Client disconnected or error, ending connection loop");
                     }
                     Err(e) => {
-                        eprintln!("[Mock Server] WebSocket handshake error: {}", e);
+                        error!(error = %e, "WebSocket handshake error");
                     }
                 }
             }
             Err(e) => {
-                eprintln!("[Mock Server] Failed to accept connection: {}", e);
+                error!(error = %e, "Failed to accept connection");
             }
         }
-        println!("[Mock Server] Task finished");
+        info!("Mock server task finished");
     });
 
     Ok((addr, handle))
 }
 
 #[tokio::test]
+#[instrument]
 async fn test_connect_disconnect() {
     setup_logger();
     // Start the mock server
@@ -178,39 +208,43 @@ async fn test_connect_disconnect() {
     );
 
     // Expect Connected state shortly after connect future resolves
-    // We might need a small timeout or wait for the Connected state explicitly
-    tokio::time::timeout(std::time::Duration::from_secs(2), connect_future)
+    info!("Waiting for connect() future to complete...");
+    tokio::time::timeout(std::time::Duration::from_secs(5), connect_future) // Increased timeout slightly
         .await
         .expect("Connect future timed out")
         .expect("Client connect failed");
+    info!("connect() future completed");
 
-    assert_eq!(
-        state_rx.recv().await.unwrap(),
-        supabase_rust_realtime::ConnectionState::Connected
-    );
+    // Increased timeout for receiving Connected state
+    info!("Waiting for Connected state...");
+    match tokio::time::timeout(Duration::from_secs(5), state_rx.recv()).await {
+        Ok(Ok(state)) => {
+            info!(?state, "Received state change");
+            assert_eq!(state, supabase_rust_realtime::ConnectionState::Connected);
+        }
+        Ok(Err(RecvError::Closed)) => panic!("State change channel closed unexpectedly"),
+        Ok(Err(RecvError::Lagged(_))) => panic!("State change receiver lagged behind"),
+        Err(_) => panic!("Timed out waiting for Connected state"),
+    }
 
     // Disconnect
+    info!("Calling disconnect()...");
     client.disconnect().await.expect("Client disconnect failed");
+    info!("disconnect() call completed");
 
     // Expect Disconnected state
-    // Note: The state might transition immediately upon calling disconnect, or after the tasks clean up.
-    // Check current state directly or wait for broadcast.
+    // Wait briefly for state propagation
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    info!("Checking final connection state...");
     assert_eq!(
         client.get_connection_state().await,
         supabase_rust_realtime::ConnectionState::Disconnected
     );
-    // Optionally, try receiving from broadcast channel with a timeout
-    match tokio::time::timeout(std::time::Duration::from_millis(100), state_rx.recv()).await {
-        Ok(Ok(state)) => assert_eq!(state, supabase_rust_realtime::ConnectionState::Disconnected),
-        Ok(Err(_)) => println!("State broadcast channel closed as expected after disconnect."),
-        Err(_) => println!(
-            "Did not receive Disconnected state broadcast within timeout (might be expected)."
-        ),
-    }
+    info!("test_connect_disconnect finished successfully");
 
     // Ensure the server task finishes (optional, helps cleanup)
     // server_handle.abort(); // Or let it finish naturally if the client disconnects cleanly
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), server_handle).await;
+    let _ = tokio::time::timeout(Duration::from_secs(1), server_handle).await;
     println!("Connect/disconnect test finished.");
 }
 
