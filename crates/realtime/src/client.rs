@@ -216,7 +216,7 @@ impl RealtimeClient {
             };
 
             // Use the correct path /realtime/v1/websocket
-            let host = match base_url.host_str() {
+            let _host = match base_url.host_str() {
                 Some(h) => h, // Directly use the host string if Some
                 None => {
                     // Handle the None case
@@ -236,7 +236,7 @@ impl RealtimeClient {
                     joined_url
                         .query_pairs_mut()
                         .append_pair("apikey", &key)
-                        .append_pair("token", &token_param.trim_start_matches("&token=")); // Add token if present
+                        .append_pair("token", token_param.trim_start_matches("&token=")); // Add token if present
                     info!(url = %joined_url, "Constructed WebSocket URL");
                     joined_url.to_string()
                 }
@@ -301,7 +301,7 @@ impl RealtimeClient {
             let writer_socket_arc = socket_arc.clone();
             let writer_state_arc = state_arc.clone();
             let writer_state_change_tx = state_change_tx.clone();
-            let writer_handle = tokio::spawn(async move {
+            let _writer_handle = tokio::spawn(async move {
                 // Add instrument to writer task
                 #[instrument(skip_all, name = "ws_writer")]
                 async fn writer_task(
@@ -389,9 +389,11 @@ impl RealtimeClient {
             let reader_reconnect_attempts = Arc::new(AtomicU32::new(0)); // Use new Arc for reader's attempts
             let reader_options = options.clone();
             let reader_is_manually_closed = is_manually_closed_arc.clone();
-            let reader_handle = tokio::spawn(async move {
+            let _reader_handle = tokio::spawn(async move {
                 // Add instrument to reader task
-                #[instrument(skip_all, name = "ws_reader")]
+                // Remove the instrument macro to avoid too_many_arguments error for now
+                // #[instrument(skip_all, name = "ws_reader")] 
+                #[allow(clippy::too_many_arguments)] // Allow > 7 arguments for this task
                 async fn reader_task(
                     mut read: impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
                         + Unpin,
@@ -399,7 +401,7 @@ impl RealtimeClient {
                     reader_socket_arc: Arc<RwLock<Option<mpsc::Sender<Message>>>>, // Need socket to potentially rejoin
                     reader_state_arc: Arc<RwLock<ConnectionState>>,
                     reader_state_change_tx: broadcast::Sender<ConnectionState>,
-                    reader_reconnect_attempts: Arc<AtomicU32>, // Pass attempts
+                    _reader_reconnect_attempts: Arc<AtomicU32>, // Prefix unused parameter
                     reader_options: RealtimeClientOptions,     // Pass options
                     reader_is_manually_closed: Arc<AtomicBool>,
                 ) {

@@ -433,6 +433,8 @@ async fn run_large_file_upload(
     Ok(())
 }
 
+// Utility function to handle results consistently
+#[allow(dead_code)] // Allow dead code for example utility
 fn handle_result<T: std::fmt::Debug>(
     operation: &str,
     result: Result<T, Box<dyn std::error::Error>>,
@@ -443,6 +445,8 @@ fn handle_result<T: std::fmt::Debug>(
     }
 }
 
+// Function to test public bucket operations
+#[allow(dead_code)] // Allow dead code for example test function
 async fn test_public_operations(
     storage: &supabase_rust_gftd::storage::StorageClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -525,6 +529,8 @@ async fn test_public_operations(
     Ok(())
 }
 
+// Function to test image transformations
+#[allow(dead_code)] // Allow dead code for example test function
 async fn test_image_transformations(
     storage: &supabase_rust_gftd::storage::StorageClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
