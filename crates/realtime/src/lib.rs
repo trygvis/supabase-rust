@@ -17,7 +17,7 @@ pub use channel::{
 pub use client::{ConnectionState, RealtimeClient, RealtimeClientOptions};
 pub use error::RealtimeError;
 pub use filters::{DatabaseFilter, FilterOperator};
-pub use message::{ChannelEvent, Payload, PresenceChange, PresenceState};
+pub use message::{ChannelEvent, Payload, PresenceChange, PresenceState, RealtimeMessage};
 
 // TODO: Move tests from the original lib.rs into integration tests (`tests/`) or inline here.
 // mod tests {

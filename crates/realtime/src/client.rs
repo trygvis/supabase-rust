@@ -156,7 +156,7 @@ impl RealtimeClient {
 
             // Construct the WebSocket URL carefully
             let base_url = Url::parse(&url)?;
-            let ws_scheme = match base_url.scheme() {
+            let _ws_scheme = match base_url.scheme() {
                  "http" => "ws",
                  "https" => "wss",
                  // Use ConnectionError for unsupported schemes
@@ -164,11 +164,12 @@ impl RealtimeClient {
             };
 
             // Use the correct path /realtime/v1/websocket
-            let host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
+            let _host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
             // Use vsn=2.0.0 and remove token parameter from URL
             let ws_url = format!(
                 "{}?apikey={}",
-                base_url.join("/realtime/v1/websocket?vsn=2.0.0").ok_or(RealtimeError::InvalidEndpoint)?,
+                base_url.join("/realtime/v1/websocket?vsn=2.0.0")
+                    .map_err(RealtimeError::UrlParseError)?,
                 key
             );
 
