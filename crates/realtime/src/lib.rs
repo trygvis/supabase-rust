@@ -18,33 +18,9 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use url::Url;
 
-/// エラー型
-#[derive(Error, Debug)]
-pub enum RealtimeError {
-    #[error("WebSocket error: {0}")]
-    WebSocketError(#[from] tokio_tungstenite::tungstenite::Error),
-
-    #[error("URL parse error: {0}")]
-    UrlParseError(#[from] url::ParseError),
-
-    #[error("JSON serialization error: {0}")]
-    SerializationError(#[from] serde_json::Error),
-
-    #[error("Subscription error: {0}")]
-    SubscriptionError(String),
-
-    #[error("Channel error: {0}")]
-    ChannelError(String),
-
-    #[error("Connection error: {0}")]
-    ConnectionError(String),
-}
-
-impl RealtimeError {
-    pub fn new(message: String) -> Self {
-        Self::ChannelError(message)
-    }
-}
+// Declare and re-export error module
+mod error;
+pub use error::RealtimeError;
 
 /// チャンネルイベント
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

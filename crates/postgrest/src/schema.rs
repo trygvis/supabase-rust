@@ -8,7 +8,8 @@
 // 基本機能: 型安全なデータベース操作
 use serde::{de::DeserializeOwned, Serialize};
 use std::marker::PhantomData;
-use std::path::PathBuf;
+use serde_json::Value;
+use crate::PostgrestError;
 
 // TypeScript変換関連の機能
 #[cfg(feature = "schema-convert")]
@@ -26,9 +27,6 @@ use {
     },
 };
 
-#[cfg(feature = "schema-convert")]
-use crate::PostgrestError;
-
 /// データベースのテーブルを表すトレイト
 pub trait Table {
     /// このテーブルの名前
@@ -41,13 +39,13 @@ pub trait PostgrestClientTypeExtension {
     fn query_typed<T: Table + DeserializeOwned>(&self) -> TypedPostgrestClient<T>;
 
     /// 挿入操作のための型安全なメソッド
-    fn insert_typed<T: Table + Serialize + DeserializeOwned>(
+    fn insert_typed<T: Table + Serialize + DeserializeOwned + Clone>(
         &self,
         values: &T,
     ) -> Result<TypedInsertBuilder<T>, crate::PostgrestError>;
 
     /// 更新操作のための型安全なメソッド
-    fn update_typed<T: Table + Serialize + DeserializeOwned>(
+    fn update_typed<T: Table + Serialize + DeserializeOwned + Clone>(
         &self,
         values: &T,
     ) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError>;
@@ -106,15 +104,29 @@ where
         let mut results: Vec<T> = self.client.execute().await?;
 
         if results.is_empty() {
-            return Err(crate::PostgrestError::ApiError(
-                "No records found".to_string(),
-            ));
+            return Err(crate::PostgrestError::ApiError {
+                details: crate::PostgrestApiErrorDetails {
+                    code: None,
+                    message: Some("No records found".to_string()),
+                    details: None,
+                    hint: None,
+                },
+                // Placeholder: Determine appropriate status code
+                status: reqwest::StatusCode::NOT_FOUND, // Example
+            });
         }
 
         if results.len() > 1 {
-            return Err(crate::PostgrestError::ApiError(
-                "More than one record found".to_string(),
-            ));
+            return Err(crate::PostgrestError::ApiError {
+                details: crate::PostgrestApiErrorDetails {
+                    code: None,
+                    message: Some("More than one record found".to_string()),
+                    details: None,
+                    hint: None,
+                },
+                // Placeholder: Determine appropriate status code
+                status: reqwest::StatusCode::INTERNAL_SERVER_ERROR, // Example
+            });
         }
 
         Ok(results.remove(0))
@@ -144,13 +156,23 @@ where
     /// 型安全な挿入実行
     pub async fn execute(&self) -> Result<T, crate::PostgrestError>
     where
-        T: DeserializeOwned,
+        T: DeserializeOwned + Clone,
     {
-        let response: Vec<T> = self.client.insert(&self.values).await?;
+        let response_value: Value = self.client.insert(&self.values).await?;
+        let response: Vec<T> = serde_json::from_value(response_value)
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))?;
+
         if response.is_empty() {
-            return Err(crate::PostgrestError::ApiError(
-                "No record was inserted".to_string(),
-            ));
+            return Err(crate::PostgrestError::ApiError {
+                details: crate::PostgrestApiErrorDetails {
+                    code: None,
+                    message: Some("No record was inserted".to_string()),
+                    details: None,
+                    hint: None,
+                },
+                // Placeholder: Determine appropriate status code
+                status: reqwest::StatusCode::INTERNAL_SERVER_ERROR, // Example
+            });
         }
         Ok(response[0].clone())
     }
@@ -163,13 +185,23 @@ where
     /// 型安全な更新実行
     pub async fn execute(&self) -> Result<T, crate::PostgrestError>
     where
-        T: DeserializeOwned,
+        T: DeserializeOwned + Clone,
     {
-        let response: Vec<T> = self.client.update(&self.values).await?;
+        let response_value: Value = self.client.update(&self.values).await?;
+        let response: Vec<T> = serde_json::from_value(response_value)
+            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))?;
+
         if response.is_empty() {
-            return Err(crate::PostgrestError::ApiError(
-                "No record was updated".to_string(),
-            ));
+            return Err(crate::PostgrestError::ApiError {
+                details: crate::PostgrestApiErrorDetails {
+                    code: None,
+                    message: Some("No record was updated".to_string()),
+                    details: None,
+                    hint: None,
+                },
+                // Placeholder: Determine appropriate status code
+                status: reqwest::StatusCode::INTERNAL_SERVER_ERROR, // Example
+            });
         }
         Ok(response[0].clone())
     }
@@ -201,34 +233,54 @@ where
 impl PostgrestClientTypeExtension for crate::PostgrestClient {
     fn query_typed<T: Table + DeserializeOwned>(&self) -> TypedPostgrestClient<T> {
         TypedPostgrestClient {
-            client: self.from(&T::table_name()),
+            client: crate::PostgrestClient::new(
+                &self.base_url,
+                &self.api_key,
+                T::table_name(),
+                self.http_client.clone(),
+            ),
             _phantom: PhantomData,
         }
     }
 
-    fn insert_typed<T: Table + Serialize + DeserializeOwned>(
+    fn insert_typed<T: Table + Serialize + DeserializeOwned + Clone>(
         &self,
         values: &T,
     ) -> Result<TypedInsertBuilder<T>, crate::PostgrestError> {
         Ok(TypedInsertBuilder {
-            client: self.from(&T::table_name()),
+            client: crate::PostgrestClient::new(
+                &self.base_url,
+                &self.api_key,
+                T::table_name(),
+                self.http_client.clone(),
+            ),
             values: values.clone(),
         })
     }
 
-    fn update_typed<T: Table + Serialize + DeserializeOwned>(
+    fn update_typed<T: Table + Serialize + DeserializeOwned + Clone>(
         &self,
         values: &T,
     ) -> Result<TypedUpdateBuilder<T>, crate::PostgrestError> {
         Ok(TypedUpdateBuilder {
-            client: self.from(&T::table_name()),
+            client: crate::PostgrestClient::new(
+                &self.base_url,
+                &self.api_key,
+                T::table_name(),
+                self.http_client.clone(),
+            ),
             values: values.clone(),
         })
     }
 
     fn delete_typed<T: Table>(&self) -> TypedDeleteBuilder<T> {
         TypedDeleteBuilder {
-            client: self.from(&T::table_name()),
+            client: crate::PostgrestClient::new(
+                &self.base_url,
+                &self.api_key,
+                T::table_name(),
+                self.http_client.clone(),
+            ),
             _phantom: PhantomData,
         }
     }
@@ -588,9 +640,19 @@ pub fn generate_rust_from_typescript_cli(
     _input_file: &str,
     _output_file: &str,
 ) -> Result<(), crate::PostgrestError> {
-    Err(crate::PostgrestError::ApiError(
-        "Schema conversion feature is not enabled. Enable with the 'schema-convert' feature.".to_string(),
-    ))
+    Err(crate::PostgrestError::ApiError {
+        details: crate::PostgrestApiErrorDetails {
+            code: None,
+            message: Some(
+                "Schema conversion feature is not enabled. Enable with the 'schema-convert' feature."
+                    .to_string(),
+            ),
+            details: None,
+            hint: None,
+        },
+        // Placeholder: Determine appropriate status code
+        status: reqwest::StatusCode::NOT_IMPLEMENTED, // Example
+    })
 }
 
 // 補助関数: Pascal Case変換

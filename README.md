@@ -43,7 +43,7 @@ This section explains the current implementation status and compatibility with t
 #### PostgresT (`@supabase/postgrest-js`)
 
 **API Compatibility**: 27/30 (90%)
-**Status:** Core library tests passing. Example usage (`postgrest_example.rs`) is **blocked** due to compilation errors (unresolved imports for `Table` / `PostgrestClientTypeExtension` when using type-safe methods).
+**Status:** Core library tests passing. The type-safe operations feature (`schema-convert`) is **experimental and currently disabled** in `crates/postgrest/src/lib.rs` (commented out) due to potential issues or incompleteness. Example usage in `examples/src/postgrest_example.rs` uses standard methods and is **not** blocked by type-safe method issues.
 
 - ✅ Basic CRUD operations for tables/views
 - ✅ Complex filtering (conditional operators, JSON operations, full-text search)
@@ -54,7 +54,7 @@ This section explains the current implementation status and compatibility with t
 - ✅ Response format control (CSV output support)
 - ✅ Single/multiple row processing optimization
 - ⚠️ Relationship auto-expansion - Basic implementation complete, nested relationships in development
-- ⚠️ Type-safe operations (`insert_typed`, etc.) - API exists but example usage is blocked by import issues.
+- ⚠️ Type-safe operations (`insert_typed`, etc.) - API exists in `crates/postgrest/src/schema.rs` but is **experimental and disabled** via feature gate/comments in `lib.rs`. Requires generated types from `schema-convert` feature.
 - ❌ Advanced Row Level Security (RLS) policy support - In development
 
 ### PostgresT RLS (Row Level Security)
@@ -224,7 +224,7 @@ Overall project completion: ~89% // Adjusted slightly based on Realtime review
 **Root Client Notes:** The main `Supabase` client includes convenience filter methods (`.eq()`, `.gt()`, etc.). Ensure these align with Postgrest capabilities and are fully tested.
 
 Current development focus:
-- **Resolving `postgrest_example.rs` compilation errors (import issues for type-safe methods).**
+- **Investigating and enabling the experimental type-safe PostgREST operations (`schema-convert` feature).**
 - Realtime Enhancements
   - ✅ Filter capabilities implemented
   - ⚠️ Expand Test Coverage (Unit & Integration)
@@ -239,7 +239,7 @@ Current development focus:
 ### Future Development
 
 1.  **Priority Implementation Items** (Targeting Q3/Q4 2024):
-    *   **PostgresT:** Resolve type-safe method compilation issues (`postgrest_example.rs`).
+    *   **PostgresT:** Investigate, fix, and enable the experimental type-safe methods (`schema-convert` feature, commented out code in `lib.rs`).
     *   **Realtime:** Improve Test Coverage & Documentation, Refactor large `lib.rs`.
     *   **Functions:** Implement Automated Tests, Simplify request setup code.
     *   **Storage:** Improve Test Coverage.
