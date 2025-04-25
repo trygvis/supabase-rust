@@ -1898,7 +1898,7 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "supabase-rust-auth"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-functions"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-postgrest"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-realtime"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2034,7 +2034,7 @@ dependencies = [
 
 [[package]]
 name = "supabase-rust-storage"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
