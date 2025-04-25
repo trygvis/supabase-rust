@@ -1804,4 +1804,87 @@ mod tests {
         let data = result.unwrap();
         assert_eq!(data, expected_response);
     }
+
+    #[tokio::test]
+    async fn test_filters() {
+        let mock_server = MockServer::start().await;
+
+        // Mock for gt filter
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/items"))
+            .and(query_param("id", "gt.10"))
+            .and(header("apikey", "fake-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 11, "name": "Item 11" }]))) // Example response
+            .mount(&mock_server)
+            .await;
+
+        // Mock for like filter
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/items"))
+            .and(query_param("name", "like.*test*"))
+            .and(header("apikey", "fake-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "name": "test item" }]))) // Example response
+            .mount(&mock_server)
+            .await;
+
+        // Mock for in_list filter
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/items"))
+            .and(query_param("status", "in.(active,pending)"))
+            .and(header("apikey", "fake-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 5, "status": "active" }]))) // Example response
+            .mount(&mock_server)
+            .await;
+
+        let base_uri = mock_server.uri();
+        let api_key = "fake-key";
+        let table_name = "items";
+
+        // Test gt
+        let client_gt = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let result_gt = client_gt.gt("id", "10").execute::<Value>().await;
+        assert!(result_gt.is_ok(), "GT filter failed: {:?}", result_gt.err());
+        assert_eq!(result_gt.unwrap().len(), 1);
+
+        // Test like
+        let client_like = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let result_like = client_like.like("name", "*test*").execute::<Value>().await;
+        assert!(result_like.is_ok(), "LIKE filter failed: {:?}", result_like.err());
+        assert_eq!(result_like.unwrap().len(), 1);
+
+        // Test in_list
+        let client_in = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let result_in = client_in.in_list("status", &["active", "pending"]).execute::<Value>().await;
+        assert!(result_in.is_ok(), "IN filter failed: {:?}", result_in.err());
+        assert_eq!(result_in.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_modifiers() {
+        let mock_server = MockServer::start().await;
+
+        // Mock for ignore_rls
+        Mock::given(method("GET"))
+            .and(path("/rest/v1/protected_items"))
+            .and(header("apikey", "fake-key"))
+            .and(header("x-supabase-admin-role", "service_role")) // Expect admin role header
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "data": "secret" }]))) // Example response
+            .mount(&mock_server)
+            .await;
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "protected_items", // Different table for clarity
+            reqwest::Client::new(),
+        );
+
+        // Test ignore_rls
+        let result_rls = client.ignore_rls().execute::<Value>().await;
+        assert!(result_rls.is_ok());
+        assert_eq!(result_rls.unwrap().len(), 1);
+
+        // TODO: Add test for count() when execute() can return count information
+    }
+
 }
