@@ -3,7 +3,6 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
 use pretty_env_logger;
-use std::time::Duration;
 use std::sync::Once;
 
 // Ensure logger is initialized only once across all tests
@@ -94,11 +93,19 @@ async fn start_mock_server() -> Result<(std::net::SocketAddr, tokio::task::JoinH
                                     // Revert to simple generic reply for any text message
                                     if msg.is_text() {
                                         let text_content = msg.to_text().unwrap_or("");
+                                        // Try to parse to get the ref and topic if possible
                                         let mut reply_ref = json!(null); // Default ref
-
-                                        // Try to parse to get the ref if possible
-                                        if let Ok(parsed) = serde_json::from_str::<RealtimeMessage>(text_content) {
-                                            reply_ref = parsed.message_ref;
+                                        let mut reply_topic = "phoenix".to_string(); // Default topic
+                                        match serde_json::from_str::<RealtimeMessage>(text_content) {
+                                            Ok(parsed) => {
+                                                println!("[Mock Server] Parsed message ref: {:?} topic: {} from {}", parsed.message_ref, parsed.topic, _peer_addr);
+                                                reply_ref = parsed.message_ref;
+                                                reply_topic = parsed.topic; // Use original topic
+                                            }
+                                            Err(e) => {
+                                                // Log parse error but still send a basic reply
+                                                println!("[Mock Server] Failed to parse message for ref/topic from {}: {}. Raw: {}", _peer_addr, e, text_content);
+                                            }
                                         }
 
                                         let reply = tokio_tungstenite::tungstenite::Message::Text(
@@ -106,7 +113,7 @@ async fn start_mock_server() -> Result<(std::net::SocketAddr, tokio::task::JoinH
                                                 "event": ChannelEvent::PhoenixReply,
                                                 "payload": {"status": "ok", "response": {}},
                                                 "ref": reply_ref, // Use parsed ref if available
-                                                "topic": "phoenix" // Generic topic for basic reply
+                                                "topic": reply_topic // Use original topic if parsed
                                             }).to_string()
                                         );
                                         println!("[Mock Server] Sending generic reply: {}", reply);

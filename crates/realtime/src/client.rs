@@ -165,10 +165,11 @@ impl RealtimeClient {
 
             let base_url = Url::parse(&url)?;
             debug!("Parsed base URL: {}", base_url);
-            let _ws_scheme = match base_url.scheme() {
-                 "http" => "ws",
-                 "https" => "wss",
-                 // Use ConnectionError for unsupported schemes
+            // Allow ws/wss schemes directly, map http/https
+            match base_url.scheme() {
+                 "http" | "ws" => { /* Ok, will use ws */ }
+                 "https" | "wss" => { /* Ok, will use wss */ }
+                 // Reject other schemes
                  s => return Err(RealtimeError::ConnectionError(format!("Unsupported URL scheme: {}", s))),
             };
 
@@ -176,7 +177,7 @@ impl RealtimeClient {
             let _host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
             let ws_url = format!(
                 "{}?apikey={}{}",
-                base_url.join("/realtime/v1/websocket?vsn=2.0.0")
+                base_url.join("/realtime/v1/websocket?vsn=2.0.0") // Use join which preserves scheme/host/port
                     .map_err(RealtimeError::UrlParseError)?,
                 key,
                 token_param
