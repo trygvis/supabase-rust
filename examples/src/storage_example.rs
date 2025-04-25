@@ -265,7 +265,11 @@ async fn run_basic_storage_operations(
     let upload_options = FileOptions::new().with_content_type("text/plain");
     let upload_result = storage
         .from(bucket_name)
-        .upload(upload_path, std::path::Path::new(local_file_path), Some(upload_options))
+        .upload(
+            upload_path,
+            std::path::Path::new(local_file_path),
+            Some(upload_options),
+        )
         .await?;
     println!("ファイルをアップロードしました: {}", upload_result.name);
 
@@ -278,7 +282,9 @@ async fn run_basic_storage_operations(
         .await?;
     println!("ファイル一覧:");
     for file in &files {
-        let size = file.metadata.as_ref()
+        let size = file
+            .metadata
+            .as_ref()
             .and_then(|m| m.get("size"))
             .and_then(|s| s.as_u64())
             .unwrap_or(0);

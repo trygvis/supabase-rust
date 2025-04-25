@@ -6,15 +6,19 @@ use supabase_rust_realtime::{
 };
 use tokio::sync::mpsc;
 // Add tracing imports
-use tracing_subscriber::{fmt, EnvFilter};
-use tracing::{debug, error, info, instrument, span, trace, warn, Level};
-use std::time::Duration;
-use tokio_tungstenite::tungstenite::Message;
-use tokio::sync::broadcast::error::RecvError;
-use tokio::time::error::Elapsed;
 use std::collections::VecDeque; // For storing received messages
-use tokio::sync::Mutex; // For thread-safe access to received messages
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::Mutex; // For thread-safe access to received messages
+use tokio::time::error::Elapsed;
+use tokio_tungstenite::tungstenite::Message;
+use tracing::{debug, error, info, instrument, span, trace, warn, Level};
+use tracing_subscriber::{fmt, EnvFilter};
+use supabase_rust_realtime::{ChannelBuilder, ConnectionState};
+use tokio::net::TcpListener;
+use tokio::time::{sleep, Duration};
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 // Ensure logger is initialized only once across all tests
 static INIT_LOGGER: Once = Once::new();
@@ -94,8 +98,14 @@ async fn test_channel_builder_creation() {
 
 // Helper function to start a simple mock WebSocket server
 #[instrument]
-async fn start_mock_server(
-) -> Result<(std::net::SocketAddr, tokio::task::JoinHandle<()>, Arc<Mutex<VecDeque<RealtimeMessage>>>), Box<dyn std::error::Error>> {
+async fn start_mock_server() -> Result<
+    (
+        std::net::SocketAddr,
+        tokio::task::JoinHandle<()>,
+        Arc<Mutex<VecDeque<RealtimeMessage>>>,
+    ),
+    Box<dyn std::error::Error>,
+> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     info!(address = %addr, "Mock server binding successful");
@@ -116,10 +126,12 @@ async fn start_mock_server(
                 let _conn_enter = connection_span.enter();
 
                 // Extract token from URL for auth test
-                let token = { 
-                    let mut token_val = None;
-                    if let Ok(req) = tokio_tungstenite::connect_async(format!("ws://{}", addr)).await {
-                        // This is a bit hacky, ideally the request URI is accessible 
+                let _token = {
+                    let token_val: Option<String> = None;
+                    if let Ok(_req) =
+                        tokio_tungstenite::connect_async(format!("ws://{}", addr)).await
+                    {
+                        // This is a bit hacky, ideally the request URI is accessible
                         // during accept_async, but it's not directly available.
                         // We simulate getting the request URI here.
                         // In a real scenario, use a proper HTTP server framework (e.g., warp, axum)
@@ -128,7 +140,7 @@ async fn start_mock_server(
                         // We can't easily verify the *exact* token here without more complex setup.
                         // Let's focus on verifying JOIN messages for now.
                     }
-                     token_val
+                    token_val
                 };
                 // if let Some(t) = token { info!(token = %t, "Client connected with token"); }
 
@@ -151,25 +163,32 @@ async fn start_mock_server(
                                                 debug!(?parsed, "Parsed message from client");
 
                                                 // Store received message for test assertions
-                                                received_messages_clone.lock().await.push_back(parsed.clone());
+                                                received_messages_clone
+                                                    .lock()
+                                                    .await
+                                                    .push_back(parsed.clone());
 
-                                                let mut reply_ref = parsed.message_ref.clone(); // Clone ref
-                                                let reply_topic = parsed.topic.clone(); // Clone topic
+                                                let reply_ref = parsed.message_ref.clone();
+                                                let reply_topic = parsed.topic.clone();
                                                 let reply_event = ChannelEvent::PhoenixReply;
-                                                let reply_payload = json!({ "status": "ok", "response": {} });
+                                                let reply_payload =
+                                                    json!({ "status": "ok", "response": {} });
 
                                                 // Specific handling for join
                                                 if parsed.event == ChannelEvent::PhoenixJoin {
-                                                     info!(topic = %parsed.topic, "Received Join request");
+                                                    info!(topic = %parsed.topic, "Received Join request");
                                                     // reply_payload = json!({ "status": "ok", "response": {"some_join_info":"value"} });
                                                 }
 
-                                                let reply = Message::Text(json!({
-                                                    "event": reply_event,
-                                                    "payload": reply_payload,
-                                                    "ref": reply_ref,
-                                                    "topic": reply_topic
-                                                }).to_string());
+                                                let reply = Message::Text(
+                                                    json!({
+                                                        "event": reply_event,
+                                                        "payload": reply_payload,
+                                                        "ref": reply_ref,
+                                                        "topic": reply_topic
+                                                    })
+                                                    .to_string(),
+                                                );
 
                                                 debug!(reply = %reply.to_text().unwrap_or("[non-text]"), "Sending reply");
                                                 if let Err(e) = ws_stream.send(reply).await {
@@ -183,9 +202,11 @@ async fn start_mock_server(
                                         }
                                     } else if msg.is_ping() {
                                         trace!("Received Ping, sending Pong");
-                                        if let Err(e) = ws_stream.send(Message::Pong(msg.into_data())).await {
-                                             error!(error = %e, "Error sending Pong");
-                                             break;
+                                        if let Err(e) =
+                                            ws_stream.send(Message::Pong(msg.into_data())).await
+                                        {
+                                            error!(error = %e, "Error sending Pong");
+                                            break;
                                         }
                                     } else if msg.is_close() {
                                         info!("Received Close frame, closing connection");
@@ -294,12 +315,15 @@ async fn test_set_auth_connect() {
 
     // Set auth *before* connecting
     client.set_auth(Some(test_token.clone())).await;
-    info!(token = ?client.access_token.read().await, "Auth token set");
+    // info!(token = ?client.access_token.read().await, "Auth token set"); // Remove access to private field
 
     // Connect and verify state
     let mut state_rx = client.on_state_change();
     let connect_future = client.connect();
-    assert_eq!(state_rx.recv().await.unwrap(), supabase_rust_realtime::ConnectionState::Connecting);
+    assert_eq!(
+        state_rx.recv().await.unwrap(),
+        supabase_rust_realtime::ConnectionState::Connecting
+    );
     tokio::time::timeout(Duration::from_secs(5), connect_future)
         .await
         .expect("Connect future timed out")
@@ -334,13 +358,20 @@ async fn test_join_channel_success() {
     // Connect the client
     client.connect().await.expect("Client connect failed");
     tokio::time::sleep(Duration::from_millis(100)).await; // Allow connection
-    assert_eq!(client.get_connection_state().await, supabase_rust_realtime::ConnectionState::Connected);
+    assert_eq!(
+        client.get_connection_state().await,
+        supabase_rust_realtime::ConnectionState::Connected
+    );
 
     // Subscribe to the channel
     let channel_builder = client.channel(&topic);
     let subscribe_result = channel_builder.subscribe().await;
 
-    assert!(subscribe_result.is_ok(), "Channel subscription failed: {:?}", subscribe_result.err());
+    assert!(
+        subscribe_result.is_ok(),
+        "Channel subscription failed: {:?}",
+        subscribe_result.err()
+    );
     let _subscriptions = subscribe_result.unwrap(); // Keep subscriptions in scope
 
     // Allow time for join message to be sent and reply received
@@ -348,10 +379,14 @@ async fn test_join_channel_success() {
 
     // Assert that the mock server received the join message
     let received = received_messages.lock().await;
-    let join_msg = received.iter().find(|msg| 
-        msg.topic == topic && msg.event == ChannelEvent::PhoenixJoin
+    let join_msg = received
+        .iter()
+        .find(|msg| msg.topic == topic && msg.event == ChannelEvent::PhoenixJoin);
+    assert!(
+        join_msg.is_some(),
+        "Mock server did not receive join message for topic {}",
+        topic
     );
-    assert!(join_msg.is_some(), "Mock server did not receive join message for topic {}", topic);
     info!(message = ?join_msg.unwrap(), "Mock server received join message");
     drop(received); // Release lock
 
@@ -359,8 +394,12 @@ async fn test_join_channel_success() {
     // This part is tricky as channel state is internal.
     // We rely on subscribe() returning Ok for now.
     // Ideally, Channel would expose state or a way to wait for Joined.
+    /* Remove access to private field
     let channels = client.channels.read().await;
-    let channel_arc = channels.get(&topic).expect("Channel not found in client map");
+    let channel_arc = channels
+        .get(&topic)
+        .expect("Channel not found in client map");
+    */
     // Direct state access removed, rely on subscribe success and received msg assertion
     // assert_eq!(*channel_arc.state.read().await, ChannelState::Joined);
     info!("Channel join test successful (join message sent and received by mock)");

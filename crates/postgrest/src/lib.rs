@@ -1688,7 +1688,10 @@ mod tests {
     #[tokio::test]
     async fn test_insert() {
         let mock_server = MockServer::start().await;
-        println!("Mock server started for insert test at: {}", mock_server.uri());
+        println!(
+            "Mock server started for insert test at: {}",
+            mock_server.uri()
+        );
 
         let insert_data = json!({ "name": "New Item", "value": 10 });
         let expected_response = json!([{ "id": 3, "name": "New Item", "value": 10 }]);
@@ -1726,7 +1729,10 @@ mod tests {
     #[tokio::test]
     async fn test_update() {
         let mock_server = MockServer::start().await;
-        println!("Mock server started for update test at: {}", mock_server.uri());
+        println!(
+            "Mock server started for update test at: {}",
+            mock_server.uri()
+        );
 
         let update_data = json!({ "value": 20 });
         let expected_response = json!([{ "id": 1, "name": "Updated Item", "value": 20 }]);
@@ -1751,10 +1757,7 @@ mod tests {
         );
         println!("Client created for update test");
 
-        let result = client
-            .eq("id", "1")
-            .update(&update_data)
-            .await;
+        let result = client.eq("id", "1").update(&update_data).await;
 
         if let Err(e) = &result {
             println!("Update query failed: {:?}", e);
@@ -1768,7 +1771,10 @@ mod tests {
     #[tokio::test]
     async fn test_delete() {
         let mock_server = MockServer::start().await;
-        println!("Mock server started for delete test at: {}", mock_server.uri());
+        println!(
+            "Mock server started for delete test at: {}",
+            mock_server.uri()
+        );
 
         let expected_response = json!([{ "id": 1, "name": "Deleted Item", "value": 10 }]);
 
@@ -1791,10 +1797,7 @@ mod tests {
         );
         println!("Client created for delete test");
 
-        let result = client
-            .eq("id", "1")
-            .delete()
-            .await;
+        let result = client.eq("id", "1").delete().await;
 
         if let Err(e) = &result {
             println!("Delete query failed: {:?}", e);
@@ -1814,7 +1817,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("id", "gt.10"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 11, "name": "Item 11" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 11, "name": "Item 11" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1823,7 +1828,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("name", "like.*test*"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "name": "test item" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "name": "test item" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1832,7 +1839,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("status", "in.(active,pending)"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 5, "status": "active" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 5, "status": "active" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1841,7 +1850,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("value", "gte.50"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 3, "value": 50 }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 3, "value": 50 }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1850,7 +1861,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("id", "lt.5"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 4, "name": "Item 4" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 4, "name": "Item 4" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1859,7 +1872,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("value", "lte.100"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 7, "value": 100 }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 7, "value": 100 }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1868,7 +1883,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("name", "ilike.*CASE*"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 8, "name": "Case Test" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 8, "name": "Case Test" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1877,7 +1894,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("status", "not.eq.archived"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 9, "status": "active" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 9, "status": "active" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1886,51 +1905,88 @@ mod tests {
         let table_name = "items";
 
         // Test gt
-        let client_gt = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let client_gt =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
         let result_gt = client_gt.gt("id", "10").execute::<Value>().await;
         assert!(result_gt.is_ok(), "GT filter failed: {:?}", result_gt.err());
         assert_eq!(result_gt.unwrap().len(), 1);
 
         // Test like
-        let client_like = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let client_like =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
         let result_like = client_like.like("name", "*test*").execute::<Value>().await;
-        assert!(result_like.is_ok(), "LIKE filter failed: {:?}", result_like.err());
+        assert!(
+            result_like.is_ok(),
+            "LIKE filter failed: {:?}",
+            result_like.err()
+        );
         assert_eq!(result_like.unwrap().len(), 1);
 
         // Test in_list
-        let client_in = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
-        let result_in = client_in.in_list("status", &["active", "pending"]).execute::<Value>().await;
+        let client_in =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let result_in = client_in
+            .in_list("status", &["active", "pending"])
+            .execute::<Value>()
+            .await;
         assert!(result_in.is_ok(), "IN filter failed: {:?}", result_in.err());
         assert_eq!(result_in.unwrap().len(), 1);
 
         // Test gte
-        let client_gte = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let client_gte =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
         let result_gte = client_gte.gte("value", "50").execute::<Value>().await;
-        assert!(result_gte.is_ok(), "GTE filter failed: {:?}", result_gte.err());
+        assert!(
+            result_gte.is_ok(),
+            "GTE filter failed: {:?}",
+            result_gte.err()
+        );
         assert_eq!(result_gte.unwrap().len(), 1);
 
         // Test lt
-        let client_lt = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let client_lt =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
         let result_lt = client_lt.lt("id", "5").execute::<Value>().await;
         assert!(result_lt.is_ok(), "LT filter failed: {:?}", result_lt.err());
         assert_eq!(result_lt.unwrap().len(), 1);
 
         // Test lte
-        let client_lte = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let client_lte =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
         let result_lte = client_lte.lte("value", "100").execute::<Value>().await;
-        assert!(result_lte.is_ok(), "LTE filter failed: {:?}", result_lte.err());
+        assert!(
+            result_lte.is_ok(),
+            "LTE filter failed: {:?}",
+            result_lte.err()
+        );
         assert_eq!(result_lte.unwrap().len(), 1);
 
         // Test ilike
-        let client_ilike = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
-        let result_ilike = client_ilike.ilike("name", "*CASE*").execute::<Value>().await;
-        assert!(result_ilike.is_ok(), "ILIKE filter failed: {:?}", result_ilike.err());
+        let client_ilike =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let result_ilike = client_ilike
+            .ilike("name", "*CASE*")
+            .execute::<Value>()
+            .await;
+        assert!(
+            result_ilike.is_ok(),
+            "ILIKE filter failed: {:?}",
+            result_ilike.err()
+        );
         assert_eq!(result_ilike.unwrap().len(), 1);
 
         // Test not
-        let client_not = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
-        let result_not = client_not.not("status", "eq.archived").execute::<Value>().await;
-        assert!(result_not.is_ok(), "NOT filter failed: {:?}", result_not.err());
+        let client_not =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let result_not = client_not
+            .not("status", "eq.archived")
+            .execute::<Value>()
+            .await;
+        assert!(
+            result_not.is_ok(),
+            "NOT filter failed: {:?}",
+            result_not.err()
+        );
         assert_eq!(result_not.unwrap().len(), 1);
     }
 
@@ -1943,7 +1999,9 @@ mod tests {
             .and(path("/rest/v1/protected_items"))
             .and(header("apikey", "fake-key"))
             .and(header("x-supabase-admin-role", "service_role")) // Expect admin role header
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "data": "secret" }]))) // Example response
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "data": "secret" }])),
+            ) // Example response
             .mount(&mock_server)
             .await;
 
@@ -1952,7 +2010,9 @@ mod tests {
             .and(path("/rest/v1/items"))
             .and(query_param("order", "name.desc"))
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "name": "Zebra" }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 1, "name": "Zebra" }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1980,7 +2040,9 @@ mod tests {
             .and(query_param("limit", "2"))
             .and(query_param("offset", "3")) // Added matcher for offset
             .and(header("apikey", "fake-key"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!([{ "id": 4 }, { "id": 5 }])))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!([{ "id": 4 }, { "id": 5 }])),
+            )
             .mount(&mock_server)
             .await;
 
@@ -1997,27 +2059,70 @@ mod tests {
         assert_eq!(result_rls.unwrap().len(), 1);
 
         // Test order
-        let client_order = PostgrestClient::new(&mock_server.uri(), "fake-key", "items", reqwest::Client::new());
-        let result_order = client_order.order("name", SortOrder::Descending).execute::<Value>().await;
-        assert!(result_order.is_ok(), "Order modifier failed: {:?}", result_order.err());
+        let client_order = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
+        let result_order = client_order
+            .order("name", SortOrder::Descending)
+            .execute::<Value>()
+            .await;
+        assert!(
+            result_order.is_ok(),
+            "Order modifier failed: {:?}",
+            result_order.err()
+        );
         assert_eq!(result_order.unwrap().len(), 1);
 
         // Test limit
-        let client_limit = PostgrestClient::new(&mock_server.uri(), "fake-key", "items", reqwest::Client::new());
+        let client_limit = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
         let result_limit = client_limit.limit(5).execute::<Value>().await;
-        assert!(result_limit.is_ok(), "Limit modifier failed: {:?}", result_limit.err());
+        assert!(
+            result_limit.is_ok(),
+            "Limit modifier failed: {:?}",
+            result_limit.err()
+        );
         assert_eq!(result_limit.unwrap().len(), 5);
 
         // Test offset
-        let client_offset = PostgrestClient::new(&mock_server.uri(), "fake-key", "items", reqwest::Client::new());
+        let client_offset = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
         let result_offset = client_offset.offset(10).execute::<Value>().await;
-        assert!(result_offset.is_ok(), "Offset modifier failed: {:?}", result_offset.err());
+        assert!(
+            result_offset.is_ok(),
+            "Offset modifier failed: {:?}",
+            result_offset.err()
+        );
         assert_eq!(result_offset.unwrap().len(), 1); // Based on mock
 
         // Test limit and offset
-        let client_limit_offset = PostgrestClient::new(&mock_server.uri(), "fake-key", "items", reqwest::Client::new());
-        let result_limit_offset = client_limit_offset.limit(2).offset(3).execute::<Value>().await;
-        assert!(result_limit_offset.is_ok(), "Limit/Offset modifier failed: {:?}", result_limit_offset.err());
+        let client_limit_offset = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
+        let result_limit_offset = client_limit_offset
+            .limit(2)
+            .offset(3)
+            .execute::<Value>()
+            .await;
+        assert!(
+            result_limit_offset.is_ok(),
+            "Limit/Offset modifier failed: {:?}",
+            result_limit_offset.err()
+        );
         assert_eq!(result_limit_offset.unwrap().len(), 2);
 
         // TODO: Add test for count() when execute() can return count information
@@ -2044,12 +2149,12 @@ mod tests {
         let insert_bad_data = json!({ "value": 10 }); // Missing 'name'
         Mock::given(method("POST"))
             .and(path("/rest/v1/items"))
-            .and(header("apikey", api_key)) 
+            .and(header("apikey", api_key))
             .and(header("content-type", "application/json"))
             .and(header("prefer", "return=representation"))
             .and(body_json(&insert_bad_data))
             .respond_with(ResponseTemplate::new(400).set_body_json(json!({
-                "code": "23502", 
+                "code": "23502",
                 "message": "null value in column \"name\" violates not-null constraint",
                 "details": null,
                 "hint": null
@@ -2059,14 +2164,15 @@ mod tests {
 
         // Mock for 500 Internal Server Error (select returning plain text)
         Mock::given(method("GET"))
-            .and(path("/rest/v1/server_error")) 
+            .and(path("/rest/v1/server_error"))
             .and(header("apikey", api_key))
             .respond_with(ResponseTemplate::new(500).set_body_string("Internal Server Error"))
             .mount(&mock_server)
             .await;
 
         // Test 401 Unauthorized on select
-        let client_401 = PostgrestClient::new(&base_uri, "invalid-key", table_name, reqwest::Client::new()); 
+        let client_401 =
+            PostgrestClient::new(&base_uri, "invalid-key", table_name, reqwest::Client::new());
         let result_401 = client_401.select("*").execute::<Value>().await;
         assert!(result_401.is_err());
         match result_401.err().unwrap() {
@@ -2074,28 +2180,34 @@ mod tests {
                 assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
                 assert_eq!(details.message, Some("Invalid API key".to_string()));
             }
-            PostgrestError::UnparsedApiError { message, status } => { // Handle case where details parsing might fail
-                 assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
-                 assert!(message.contains("Invalid API key")); 
+            PostgrestError::UnparsedApiError { message, status } => {
+                // Handle case where details parsing might fail
+                assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+                assert!(message.contains("Invalid API key"));
             }
             e => panic!("Expected ApiError or UnparsedApiError for 401, got {:?}", e),
         }
 
         // Test 400 Bad Request on insert
-        let client_400 = PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
+        let client_400 =
+            PostgrestClient::new(&base_uri, api_key, table_name, reqwest::Client::new());
         let result_400 = client_400.insert(&insert_bad_data).await;
         assert!(result_400.is_err());
         match result_400.err().unwrap() {
             PostgrestError::ApiError { details, status } => {
                 assert_eq!(status, reqwest::StatusCode::BAD_REQUEST);
                 assert_eq!(details.code, Some("23502".to_string()));
-                assert!(details.message.unwrap().contains("violates not-null constraint"));
+                assert!(details
+                    .message
+                    .unwrap()
+                    .contains("violates not-null constraint"));
             }
             e => panic!("Expected ApiError for 400, got {:?}", e),
         }
 
         // Test 500 Internal Server Error on select
-        let client_500 = PostgrestClient::new(&base_uri, api_key, "server_error", reqwest::Client::new());
+        let client_500 =
+            PostgrestClient::new(&base_uri, api_key, "server_error", reqwest::Client::new());
         let result_500 = client_500.select("*").execute::<Value>().await;
         assert!(result_500.is_err());
         match result_500.err().unwrap() {

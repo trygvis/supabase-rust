@@ -2,6 +2,7 @@ use crate::channel::{Channel, ChannelBuilder}; // Added ChannelBuilder import
 use crate::error::RealtimeError;
 use crate::message::RealtimeMessage; // Added ChannelEvent import here
 use futures_util::{SinkExt, StreamExt};
+use rand::Rng;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -12,9 +13,8 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::sleep;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
-use url::Url;
 use tracing::{debug, error, info, instrument, trace, warn};
-use rand::Rng; // Import Rng trait for random number generation
+use url::Url; // Import Rng trait for random number generation
 
 /// 接続状態
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,7 +190,8 @@ impl RealtimeClient {
                         state_arc.clone(),
                         state_change_tx.clone(),
                         ConnectionState::Disconnected,
-                    ).await;
+                    )
+                    .await;
                     return Err(RealtimeError::UrlParseError(e));
                 }
             };
@@ -205,30 +206,35 @@ impl RealtimeClient {
                         state_arc.clone(),
                         state_change_tx.clone(),
                         ConnectionState::Disconnected,
-                    ).await;
+                    )
+                    .await;
                     return Err(RealtimeError::ConnectionError(format!(
                         "Unsupported URL scheme: {}",
                         s
-                    )))
+                    )));
                 }
             };
 
             // Use the correct path /realtime/v1/websocket
             let host = match base_url.host_str() {
-                 Some(h) => h, // Directly use the host string if Some
-                 None => { // Handle the None case
+                Some(h) => h, // Directly use the host string if Some
+                None => {
+                    // Handle the None case
                     error!(url = %base_url, "Failed to get host from URL (no host)");
                     Self::set_connection_state_internal(
                         state_arc.clone(),
                         state_change_tx.clone(),
                         ConnectionState::Disconnected,
-                    ).await;
-                    return Err(RealtimeError::UrlParseError(url::ParseError::EmptyHost)); // Or a more specific error
-                 }
+                    )
+                    .await;
+                    return Err(RealtimeError::UrlParseError(url::ParseError::EmptyHost));
+                    // Or a more specific error
+                }
             };
             let ws_url = match base_url.join("/realtime/v1/websocket?vsn=2.0.0") {
                 Ok(mut joined_url) => {
-                    joined_url.query_pairs_mut()
+                    joined_url
+                        .query_pairs_mut()
                         .append_pair("apikey", &key)
                         .append_pair("token", &token_param.trim_start_matches("&token=")); // Add token if present
                     info!(url = %joined_url, "Constructed WebSocket URL");
@@ -240,7 +246,8 @@ impl RealtimeClient {
                         state_arc.clone(),
                         state_change_tx.clone(),
                         ConnectionState::Disconnected,
-                    ).await;
+                    )
+                    .await;
                     return Err(RealtimeError::UrlParseError(e));
                 }
             };
@@ -298,12 +305,13 @@ impl RealtimeClient {
                 // Add instrument to writer task
                 #[instrument(skip_all, name = "ws_writer")]
                 async fn writer_task(
-                    mut write: impl SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin,
+                    mut write: impl SinkExt<Message, Error = tokio_tungstenite::tungstenite::Error>
+                        + Unpin,
                     mut socket_rx: mpsc::Receiver<Message>,
                     writer_socket_arc: Arc<RwLock<Option<mpsc::Sender<Message>>>>,
                     writer_state_arc: Arc<RwLock<ConnectionState>>,
                     writer_state_change_tx: broadcast::Sender<ConnectionState>,
-                    heartbeat_interval_ms: u64
+                    heartbeat_interval_ms: u64,
                 ) {
                     info!("Writer task started");
                     let heartbeat_interval = Duration::from_millis(heartbeat_interval_ms);
@@ -362,7 +370,15 @@ impl RealtimeClient {
                     // Clear socket sender when task finishes
                     *writer_socket_arc.write().await = None;
                 }
-                writer_task(write, socket_rx, writer_socket_arc, writer_state_arc, writer_state_change_tx, options.heartbeat_interval).await;
+                writer_task(
+                    write,
+                    socket_rx,
+                    writer_socket_arc,
+                    writer_state_arc,
+                    writer_state_change_tx,
+                    options.heartbeat_interval,
+                )
+                .await;
             });
 
             // --- WebSocket Reader Task ---
@@ -374,16 +390,17 @@ impl RealtimeClient {
             let reader_options = options.clone();
             let reader_is_manually_closed = is_manually_closed_arc.clone();
             let reader_handle = tokio::spawn(async move {
-                 // Add instrument to reader task
+                // Add instrument to reader task
                 #[instrument(skip_all, name = "ws_reader")]
                 async fn reader_task(
-                    mut read: impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+                    mut read: impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
+                        + Unpin,
                     reader_channels_arc: Arc<RwLock<HashMap<String, Arc<Channel>>>>,
                     reader_socket_arc: Arc<RwLock<Option<mpsc::Sender<Message>>>>, // Need socket to potentially rejoin
                     reader_state_arc: Arc<RwLock<ConnectionState>>,
                     reader_state_change_tx: broadcast::Sender<ConnectionState>,
                     reader_reconnect_attempts: Arc<AtomicU32>, // Pass attempts
-                    reader_options: RealtimeClientOptions, // Pass options
+                    reader_options: RealtimeClientOptions,     // Pass options
                     reader_is_manually_closed: Arc<AtomicBool>,
                 ) {
                     info!("Reader task started");
@@ -398,7 +415,9 @@ impl RealtimeClient {
                                                 trace!(message = ?parsed_msg, "Parsed RealtimeMessage");
                                                 // Route message to appropriate channel
                                                 let channels = reader_channels_arc.read().await;
-                                                if let Some(channel) = channels.get(&parsed_msg.topic) {
+                                                if let Some(channel) =
+                                                    channels.get(&parsed_msg.topic)
+                                                {
                                                     channel.handle_message(parsed_msg).await;
                                                 }
                                                 // TODO: Handle phoenix-level messages (e.g., replies)
@@ -416,7 +435,8 @@ impl RealtimeClient {
                                         trace!(data = ?ping_data, "Received Ping, sending Pong");
                                         // Try sending Pong via the writer task's MPSC channel
                                         if let Some(tx) = reader_socket_arc.read().await.as_ref() {
-                                            if let Err(e) = tx.send(Message::Pong(ping_data)).await {
+                                            if let Err(e) = tx.send(Message::Pong(ping_data)).await
+                                            {
                                                 error!(error = %e, "Failed to queue Pong message");
                                             }
                                         } else {
@@ -445,13 +465,15 @@ impl RealtimeClient {
                     info!("Reader loop finished");
 
                     // Connection closed, check if it was manual or needs reconnect
-                    if !reader_is_manually_closed.load(Ordering::SeqCst) && reader_options.auto_reconnect {
+                    if !reader_is_manually_closed.load(Ordering::SeqCst)
+                        && reader_options.auto_reconnect
+                    {
                         warn!("WebSocket connection lost unexpectedly, attempting reconnect...");
                         // Update state directly using captured Arcs
                         {
                             let mut current_state = reader_state_arc.write().await;
                             if *current_state != ConnectionState::Reconnecting {
-                                 info!(from = ?*current_state, to = ?ConnectionState::Reconnecting, "Reader: Setting state Reconnecting");
+                                info!(from = ?*current_state, to = ?ConnectionState::Reconnecting, "Reader: Setting state Reconnecting");
                                 *current_state = ConnectionState::Reconnecting;
                                 let _ = reader_state_change_tx.send(ConnectionState::Reconnecting);
                             }
@@ -459,7 +481,9 @@ impl RealtimeClient {
                         // Spawn reconnect task (consider moving reconnect logic outside reader)
                         // TODO: Implement proper reconnect logic here using reader_options and reader_reconnect_attempts
                         // For now, just set state to disconnected
-                        warn!("Reconnect logic not fully implemented, setting state to Disconnected");
+                        warn!(
+                            "Reconnect logic not fully implemented, setting state to Disconnected"
+                        );
                         // Update state directly using captured Arcs
                         {
                             let mut current_state = reader_state_arc.write().await;
@@ -469,7 +493,6 @@ impl RealtimeClient {
                                 let _ = reader_state_change_tx.send(ConnectionState::Disconnected);
                             }
                         }
-
                     } else {
                         info!("WebSocket connection closed (manual or auto_reconnect=false)");
                         // Update state directly using captured Arcs
@@ -482,7 +505,7 @@ impl RealtimeClient {
                             }
                         }
                     }
-                     // Clear socket sender after reader finishes too
+                    // Clear socket sender after reader finishes too
                     *reader_socket_arc.write().await = None;
                     info!("Reader task finished");
                 }
@@ -494,8 +517,9 @@ impl RealtimeClient {
                     reader_state_change_tx,
                     reader_reconnect_attempts,
                     reader_options,
-                    reader_is_manually_closed
-                ).await;
+                    reader_is_manually_closed,
+                )
+                .await;
             });
 
             info!("Connect task completed successfully (connection established, reader/writer tasks spawned)");
@@ -564,9 +588,7 @@ impl RealtimeClient {
         info!("reconnect() called");
         let self_clone = self.clone(); // Clone self for the async task
         async move {
-            let mut attempts = self_clone
-                .reconnect_attempts
-                .fetch_add(1, Ordering::SeqCst);
+            let mut attempts = self_clone.reconnect_attempts.fetch_add(1, Ordering::SeqCst);
             info!(attempts, "Reconnect attempt initiated");
 
             if let Some(max_attempts) = self_clone.options.max_reconnect_attempts {
@@ -582,8 +604,10 @@ impl RealtimeClient {
             let interval_ms = std::cmp::min(
                 self_clone.options.max_reconnect_interval,
                 (self_clone.options.reconnect_interval as f64
-                    * self_clone.options.reconnect_backoff_factor.powi(attempts as i32))
-                    as u64,
+                    * self_clone
+                        .options
+                        .reconnect_backoff_factor
+                        .powi(attempts as i32)) as u64,
             );
             let interval = Duration::from_millis(interval_ms);
             info!(interval = ?interval, "Waiting before next reconnect attempt");
@@ -595,7 +619,7 @@ impl RealtimeClient {
                 Ok(_) => {
                     info!("Reconnect successful!");
                     self_clone.reconnect_attempts.store(0, Ordering::SeqCst); // Reset attempts on success
-                                                                          // State should be set to Connected by the connect task
+                                                                              // State should be set to Connected by the connect task
                 }
                 Err(e) => {
                     error!(error = %e, attempts, "Reconnect attempt failed");
@@ -634,11 +658,16 @@ impl RealtimeClient {
             debug!("Sending message via MPSC channel to writer task");
             socket_tx.send(ws_message).await.map_err(|e| {
                 error!(error = %e, "Failed to send message via MPSC channel");
-                RealtimeError::ConnectionError(format!("Failed to send message via MPSC channel: {}", e))
+                RealtimeError::ConnectionError(format!(
+                    "Failed to send message via MPSC channel: {}",
+                    e
+                ))
             })
         } else {
             error!("Cannot send message: WebSocket sender not available (not connected?)");
-            Err(RealtimeError::ConnectionError("WebSocket sender not available (not connected?)".to_string()))
+            Err(RealtimeError::ConnectionError(
+                "WebSocket sender not available (not connected?)".to_string(),
+            ))
         }
     }
 }

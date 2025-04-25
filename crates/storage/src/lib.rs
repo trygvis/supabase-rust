@@ -977,7 +977,9 @@ impl<'a> StorageBucketClient<'a> {
             "destinationKey": destination_path
         });
 
-        let response = self.parent.http_client
+        let response = self
+            .parent
+            .http_client
             .post(url)
             .header("apikey", &self.parent.api_key)
             .header("Authorization", format!("Bearer {}", self.parent.api_key))
@@ -991,13 +993,21 @@ impl<'a> StorageBucketClient<'a> {
             Ok(())
         } else {
             let status = response.status();
-            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error body".to_string());
             // Try parsing Supabase error format
-            let error_message = if let Ok(json_err) = serde_json::from_str::<serde_json::Value>(&error_text) {
-                 json_err.get("message").and_then(|v| v.as_str()).unwrap_or(&error_text).to_string()
-            } else {
-                error_text
-            };
+            let error_message =
+                if let Ok(json_err) = serde_json::from_str::<serde_json::Value>(&error_text) {
+                    json_err
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&error_text)
+                        .to_string()
+                } else {
+                    error_text
+                };
             Err(StorageError::ApiError(format!(
                 "Failed to move object: {} (Status: {})",
                 error_message, status
