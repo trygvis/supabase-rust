@@ -1379,10 +1379,541 @@ pub mod s3 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use serde_json::json;
 
     #[tokio::test]
     async fn test_list_buckets() {
-        // TODO: モック実装を用いたテスト
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+
+        // --- 成功ケースのモック --- 
+        let buckets_response = json!([
+            {
+                "id": "bucket1",
+                "name": "bucket1",
+                "owner": "owner-uuid",
+                "public": false,
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z"
+            },
+            {
+                "id": "bucket2",
+                "name": "bucket2",
+                "owner": "owner-uuid",
+                "public": true,
+                "created_at": "2024-01-02T00:00:00Z",
+                "updated_at": "2024-01-02T00:00:00Z"
+            }
+        ]);
+        Mock::given(method("GET"))
+            .and(path("/storage/v1/bucket"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(buckets_response.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+
+        // list_buckets を呼び出し、成功することを確認
+        let result = storage_client.list_buckets().await;
+        assert!(result.is_ok());
+        let buckets = result.unwrap();
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].id, "bucket1");
+        assert_eq!(buckets[1].public, true);
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 401 Unauthorized) ---
+        let error_response = json!({ "message": "Unauthorized" });
+        Mock::given(method("GET"))
+            .and(path("/storage/v1/bucket"))
+            .respond_with(ResponseTemplate::new(401).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // list_buckets を呼び出し、エラーになることを確認
+        let result = storage_client.list_buckets().await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Unauthorized"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_bucket() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+
+        // --- 成功ケースのモック --- 
+        let bucket_id = "new-bucket";
+        let request_body = json!({ "id": bucket_id, "name": bucket_id, "public": true });
+        let response_body = json!({
+            "id": bucket_id,
+            "name": bucket_id,
+            "owner": "owner-uuid",
+            "public": true,
+            "created_at": "2024-01-03T00:00:00Z",
+            "updated_at": "2024-01-03T00:00:00Z"
+        });
+
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/bucket"))
+            .and(wiremock::matchers::body_json(request_body.clone())) // リクエストボディを検証
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+
+        // create_bucket を呼び出し、成功することを確認
+        let result = storage_client.create_bucket(bucket_id, true).await;
+        assert!(result.is_ok(), "create_bucket failed: {:?}", result.err());
+        let bucket = result.unwrap();
+        assert_eq!(bucket.id, bucket_id);
+        assert_eq!(bucket.name, bucket_id);
+        assert_eq!(bucket.public, true);
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 409 Conflict) ---
+        let error_response = json!({ "message": "Bucket already exists" });
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/bucket"))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(409).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // create_bucket を呼び出し、エラーになることを確認
+        let result = storage_client.create_bucket(bucket_id, true).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Bucket already exists"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_delete_bucket() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "bucket-to-delete";
+
+        // --- 成功ケースのモック --- 
+        Mock::given(method("DELETE"))
+            .and(path(format!("/storage/v1/bucket/{}", bucket_id)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "message": "Successfully deleted" })))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+
+        // delete_bucket を呼び出し、成功することを確認
+        let result = storage_client.delete_bucket(bucket_id).await;
+        assert!(result.is_ok(), "delete_bucket failed: {:?}", result.err());
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 404 Not Found) ---
+        let error_response = json!({ "message": "Bucket not found" });
+        Mock::given(method("DELETE"))
+            .and(path(format!("/storage/v1/bucket/{}", bucket_id)))
+            .respond_with(ResponseTemplate::new(404).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // delete_bucket を呼び出し、エラーになることを確認
+        let result = storage_client.delete_bucket(bucket_id).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Bucket not found"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_bucket() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "bucket-to-update";
+        let updated_public_status = false;
+
+        // --- 成功ケースのモック --- 
+        let request_body = json!({ "public": updated_public_status });
+        let response_body = json!({
+            "id": bucket_id,
+            "name": bucket_id,
+            "owner": "owner-uuid",
+            "public": updated_public_status, // 更新後のステータス
+            "created_at": "2024-01-04T00:00:00Z",
+            "updated_at": "2024-01-04T01:00:00Z"
+        });
+
+        Mock::given(method("PUT"))
+            .and(path(format!("/storage/v1/bucket/{}", bucket_id)))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+
+        // update_bucket を呼び出し、成功することを確認
+        let result = storage_client.update_bucket(bucket_id, updated_public_status).await;
+        assert!(result.is_ok(), "update_bucket failed: {:?}", result.err());
+        let bucket = result.unwrap();
+        assert_eq!(bucket.id, bucket_id);
+        assert_eq!(bucket.public, updated_public_status);
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 404 Not Found) ---
+        let error_response = json!({ "message": "Bucket not found for update" });
+        Mock::given(method("PUT"))
+            .and(path(format!("/storage/v1/bucket/{}", bucket_id)))
+            .and(wiremock::matchers::body_json(request_body.clone())) // ボディも検証
+            .respond_with(ResponseTemplate::new(404).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // update_bucket を呼び出し、エラーになることを確認
+        let result = storage_client.update_bucket(bucket_id, updated_public_status).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Bucket not found for update"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_upload_file() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "upload-bucket";
+        let object_path = "test_file.txt";
+        let file_content = "Hello, Supabase Storage!";
+
+        // 一時ファイルを作成して書き込む
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join(object_path);
+        tokio::fs::write(&file_path, file_content).await.unwrap();
+
+        // --- 成功ケースのモック --- 
+        let response_body = json!({
+            "Key": format!("{}/{}", bucket_id, object_path)
+        });
+        // multipart/form-data のリクエストボディを厳密に検証するのは wiremock では難しい場合があるため、
+        // path と method のみでマッチング（必要ならヘッダーも）
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/{}/{}", bucket_id, object_path)))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+        let bucket_client = storage_client.from(bucket_id);
+
+        // upload を呼び出し、成功することを確認
+        let result = bucket_client.upload(object_path, &file_path, None).await;
+        assert!(result.is_ok(), "upload failed: {:?}", result.err());
+        // Storage APIのupload成功レスポンスはFileObjectではない可能性があるため、
+        // 実際のAPI仕様に合わせてアサーションを調整する必要がある。
+        // ここでは is_ok() のチェックのみ行う。
+        // let file_object = result.unwrap();
+        // assert!(file_object.name.contains(object_path)); // レスポンス形式次第
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 400 Bad Request) ---
+        let error_response = json!({ "message": "Invalid upload parameters" });
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/{}/{}", bucket_id, object_path)))
+            .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // upload を呼び出し、エラーになることを確認
+        let result = bucket_client.upload(object_path, &file_path, None).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Invalid upload parameters"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+
+        // 一時ファイルをクリーンアップ (temp_dir がスコープを抜けるときに自動で行われる)
+    }
+
+    #[tokio::test]
+    async fn test_download_file() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "download-bucket";
+        let object_path = "download_me.txt";
+        let file_content = Bytes::from_static(b"File content to download");
+
+        // --- 成功ケースのモック --- 
+        Mock::given(method("GET"))
+            .and(path(format!("/storage/v1/object/{}/{}", bucket_id, object_path)))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(file_content.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+        let bucket_client = storage_client.from(bucket_id);
+
+        // download を呼び出し、成功することを確認
+        let result = bucket_client.download(object_path).await;
+        assert!(result.is_ok(), "download failed: {:?}", result.err());
+        let downloaded_content = result.unwrap();
+        assert_eq!(downloaded_content, file_content);
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 404 Not Found) ---
+        let error_response = json!({ "message": "File not found" });
+        Mock::given(method("GET"))
+            .and(path(format!("/storage/v1/object/{}/{}", bucket_id, object_path)))
+            .respond_with(ResponseTemplate::new(404).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // download を呼び出し、エラーになることを確認
+        let result = bucket_client.download(object_path).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("File not found"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_files() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "list-bucket";
+        let prefix = "folder/";
+
+        // --- 成功ケースのモック --- 
+        let list_options = ListOptions::new().limit(10).offset(0).sort_by("name", SortOrder::Asc);
+        let request_body = json!({
+            "prefix": prefix,
+            "limit": list_options.limit,
+            "offset": list_options.offset,
+            "sortBy": {
+                "column": list_options.sort_by.as_ref().unwrap().column,
+                "order": list_options.sort_by.as_ref().unwrap().order,
+            }
+        });
+        let response_body = json!([
+            {
+                "name": "folder/file1.txt",
+                "id": "uuid1",
+                "updated_at": "2024-01-05T00:00:00Z",
+                "created_at": "2024-01-05T00:00:00Z",
+                "last_accessed_at": "2024-01-05T00:00:00Z",
+                "metadata": { "size": 100, "mimetype": "text/plain" },
+                "bucket_id": bucket_id,
+                "owner": "owner-uuid",
+                "size": 100,
+                "mime_type": "text/plain",
+            },
+            {
+                "name": "folder/file2.png",
+                "id": "uuid2",
+                "updated_at": "2024-01-05T01:00:00Z",
+                "created_at": "2024-01-05T01:00:00Z",
+                "last_accessed_at": "2024-01-05T01:00:00Z",
+                "metadata": { "size": 2048, "mimetype": "image/png" },
+                "bucket_id": bucket_id,
+                "owner": "owner-uuid",
+                "size": 2048,
+                "mime_type": "image/png",
+            }
+        ]);
+
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/list/{}", bucket_id)))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+        let bucket_client = storage_client.from(bucket_id);
+
+        // list を呼び出し、成功することを確認
+        let result = bucket_client.list(prefix, Some(list_options)).await;
+        assert!(result.is_ok(), "list failed: {:?}", result.err());
+        let files = result.unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(files[0].name, "folder/file1.txt");
+        assert_eq!(files[1].mime_type, Some("image/png".to_string()));
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 400 Bad Request) ---
+        let error_response = json!({ "message": "Invalid list parameters" });
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/list/{}", bucket_id)))
+            // ボディ検証は省略 (オプションが変わると複雑なため)
+            .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // list を呼び出し、エラーになることを確認
+        let result = bucket_client.list(prefix, Some(ListOptions::new())).await; // エラーケース用のオプション
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Invalid list parameters"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_remove_files() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "remove-bucket";
+        let paths_to_remove = vec!["file_a.txt", "folder/file_b.log"];
+
+        // --- 成功ケースのモック --- 
+        let request_body = json!({ "prefixes": paths_to_remove });
+        let response_body = json!([]); // 成功時は空の配列か特定のメッセージを返す場合がある
+
+        Mock::given(method("DELETE"))
+            .and(path(format!("/storage/v1/object/{}", bucket_id)))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+        let bucket_client = storage_client.from(bucket_id);
+
+        // remove を呼び出し、成功することを確認
+        let result = bucket_client.remove(paths_to_remove).await;
+        assert!(result.is_ok(), "remove failed: {:?}", result.err());
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 400 Bad Request) ---
+        let error_response = json!({ "message": "Invalid paths provided" });
+        Mock::given(method("DELETE"))
+            .and(path(format!("/storage/v1/object/{}", bucket_id)))
+            .and(wiremock::matchers::body_json(request_body.clone())) // 同じボディを期待
+            .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // remove を呼び出し、エラーになることを確認
+        let paths_for_error = vec!["file_a.txt", "folder/file_b.log"]; // エラーケース用
+        let result = bucket_client.remove(paths_for_error).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Invalid paths provided"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_create_signed_url() {
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "signed-url-bucket";
+        let object_path = "private/doc.pdf";
+        let expires_in = 3600;
+        let expected_signed_url = format!("{}/storage/v1/object/sign/{}/{}?token=test-token", mock_server.uri(), bucket_id, object_path);
+
+        // --- 成功ケースのモック --- 
+        let request_body = json!({ "expiresIn": expires_in });
+        let response_body = json!({ "signedURL": expected_signed_url }); // APIはsignedURLを返す
+
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/sign/{}/{}", bucket_id, object_path)))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+        let bucket_client = storage_client.from(bucket_id);
+
+        // create_signed_url を呼び出し、成功することを確認
+        let result = bucket_client.create_signed_url(object_path, expires_in).await;
+        assert!(result.is_ok(), "create_signed_url failed: {:?}", result.err());
+        let signed_url = result.unwrap();
+        // モックのレスポンスに含まれる URL と一致するか検証 (実際の token は異なる)
+        assert!(signed_url.contains(&format!("/storage/v1/object/sign/{}/{}", bucket_id, object_path))); 
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 404 Not Found) ---
+        let error_response = json!({ "message": "Object not found" });
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/sign/{}/{}", bucket_id, object_path)))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(404).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // create_signed_url を呼び出し、エラーになることを確認
+        let result = bucket_client.create_signed_url(object_path, expires_in).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            assert!(msg.contains("Object not found"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_public_url() {
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new("https://test.supabase.co", "anon-key", http_client);
+        let bucket_client = storage_client.from("public-images");
+        let object_path = "logos/supabase.png";
+
+        let public_url = bucket_client.get_public_url(object_path);
+
+        assert_eq!(public_url, "https://test.supabase.co/storage/v1/object/public/public-images/logos/supabase.png");
     }
 
     #[tokio::test]
