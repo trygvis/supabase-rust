@@ -15,10 +15,11 @@ This section explains the current implementation status and compatibility with t
 |Module|Status|API Compatibility|Notes|
 |------|------|----------------|-----|
 |Auth|✅|38/40 (95%)|Authentication features: Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented|
-|PostgresT|90%|27/30|Transaction support, advanced filtering implemented|
-|Storage|95%|19/20|Image transformation and extensions beyond JS version|
-|Realtime|80%|11/14|Core PubSub, DB changes, Presence implemented with filters & auto-reconnect. Needs more tests & docs.|
-|Functions|85%|5/6|Basic and streaming functionality implemented, enhancing binary support|
+|PostgresT|90%|27/30|Transaction support, advanced filtering implemented. **NOTE:** Example usage blocked by type-safe method import issues.|
+|Storage|95%|19/20|Image transformation and extensions beyond JS version. Low test coverage noted.|
+|Realtime|80%|11/14|Core PubSub, DB changes, Presence implemented with filters & auto-reconnect. Needs more tests, docs & refactoring.|
+|Functions|85%|5/6|Basic and streaming functionality implemented, enhancing binary support. Missing automated tests.|
+|Migration|❓|N/A|Utility crate present (`crates/migration`), purpose/status needs documentation.|
 
 ### Detailed Compatibility Report
 
@@ -219,7 +220,8 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 ### Project Status Summary
 
-Overall project completion: ~89%  // Adjusted slightly based on Realtime review
+Overall project completion: ~89% // Adjusted slightly based on Realtime review
+**Root Client Notes:** The main `Supabase` client includes convenience filter methods (`.eq()`, `.gt()`, etc.). Ensure these align with Postgrest capabilities and are fully tested.
 
 Current development focus:
 - **Resolving `postgrest_example.rs` compilation errors (import issues for type-safe methods).**
@@ -236,67 +238,77 @@ Current development focus:
 
 ### Future Development
 
-1. **Priority Implementation Items** (Through Q3 2024):
-   - Admin API Extensions
-     - ⚠️ Organization/team management
-     - ⚠️ Detailed permission settings
-   - Advanced Row Level Security (RLS) Features
-     - ⚠️ Support for complex policy conditions
-     - ⚠️ Policy application verification
-   - Realtime Enhancements
-     - ⚠️ Channel status notifications
-     - ⚠️ Complex JOIN table monitoring
-   - Async Processing Optimization
-     - ✅ Throughput improvements
-     - ⚠️ Error handling enhancements
+1.  **Priority Implementation Items** (Targeting Q3/Q4 2024):
+    *   **PostgresT:** Resolve type-safe method compilation issues (`postgrest_example.rs`).
+    *   **Realtime:** Improve Test Coverage & Documentation, Refactor large `lib.rs`.
+    *   **Functions:** Implement Automated Tests, Simplify request setup code.
+    *   **Storage:** Improve Test Coverage.
+    *   **Core:** Validate/Refactor Root Client Filter Methods.
+    *   **Migration:** Define scope, implement, and document `crates/migration`.
+    *   **API Enhancements:** Continue work on Admin API extensions, Advanced RLS, Realtime features (Channel status, JOIN monitoring), Async optimization.
 
-2. **Module-Specific Roadmap**:
+2.  **Module-Specific Roadmap**:
 
-   **Auth** (95% → 100%, by Q3 2024):
-   - Advanced multi-factor authentication (MFA) features
-     - WebAuthn/passkey support improvements
-     - Backup code management
-   - Advanced JWT verification
-     - Custom claim validation
-     - JWKS support enhancements
-   - Admin API extensions
-     - Organization management
-     - Risk management and auditing
+    **Auth** (95% → 100%, by Q3 2024):
+    *   Advanced multi-factor authentication (MFA) features
+        *   WebAuthn/passkey support improvements
+        *   Backup code management
+    *   Advanced JWT verification
+        *   Custom claim validation
+        *   JWKS support enhancements
+    *   Admin API extensions
+        *   Organization management
+        *   Risk management and auditing
 
-   **PostgresT** (90% → 100%, by Q3 2024):
-   - Relationship auto-expansion with nested relationships
-     - Efficient retrieval of multi-level relationships
-     - Circular reference handling
-   - Advanced RLS support
-     - Complex policy condition application
-     - RLS verification tools
+    **PostgresT** (90% → 100%, by Q3 2024):
+    *   **Critical:** Resolve type-safe method import/compilation issues blocking examples.
+    *   Relationship auto-expansion with nested relationships
+        *   Efficient retrieval of multi-level relationships
+        *   Circular reference handling
+    *   Advanced RLS support
+        *   Complex policy condition application
+        *   RLS verification tools
 
-   **Storage** (95% → 100%, by Q3 2024):
-   - Recursive folder operations
-     - Efficient handling of deep directory structures
-     - Batch operation optimization
-   - Detailed access control
-     - Custom policy definitions
-     - Time-limited access
-     
-   **Realtime** (75% → 100%, by Q4 2024):
-   - Complete Presence feature implementation
-     - State synchronization
-     - Presence conflict resolution
-   - Channel Status Notifications
-     - Connection state monitoring
-     - Reconnection strategies
-   - Complex JOIN table monitoring
-     - Related table change tracking
-     - Efficient notification filtering
-     
-   **Functions** (85% → 100%, by Q3 2024):
-   - Complete binary data support
-     - Efficient binary streams
-     - File upload/download via functions
-   - Advanced error handling
-     - Detailed error information
-     - Retry strategies
+    **Storage** (95% → 100%, by Q3 2024):
+    *   **Testing:** Improve test coverage significantly using mocking frameworks.
+    *   Recursive folder operations
+        *   Efficient handling of deep directory structures
+        *   Batch operation optimization
+    *   Detailed access control
+        *   Custom policy definitions
+        *   Time-limited access
+
+    **Realtime** (80% → 100%, by Q4 2024): // Aligned with overview table
+    *   **Testing & Docs:** Expand Unit/Integration tests and add practical usage examples.
+    *   **Refactoring:** Split large `lib.rs` into smaller, more manageable modules.
+    *   **Presence:** Improve state synchronization robustness and testing.
+    *   Complete Presence feature implementation
+        *   State synchronization
+        *   Presence conflict resolution
+    *   Channel Status Notifications
+        *   Connection state monitoring
+        *   Reconnection strategies
+    *   Complex JOIN table monitoring
+        *   Related table change tracking
+        *   Efficient notification filtering
+
+    **Functions** (85% → 100%, by Q3 2024):
+    *   **Testing:** Implement comprehensive automated tests.
+    *   **Refactoring:** Simplify request setup code to reduce duplication.
+    *   Complete binary data support
+        *   Efficient binary streams
+        *   File upload/download via functions
+    *   Advanced error handling
+        *   Detailed error information
+        *   Retry strategies
+
+    **Migration** (New Target: Basic implementation by Q4 2024):
+    *   Define scope and implement core migration utilities (apply, revert, status).
+    *   Document usage and best practices within the Supabase context.
+
+    **Client Core** (Ongoing):
+    *   Validate and potentially refactor root client filter methods (`.eq()`, etc.).
+    *   Ensure consistency and avoid redundancy with `PostgrestClient` filtering.
 
 ### Recent Updates
 
