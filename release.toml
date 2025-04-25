@@ -3,26 +3,29 @@
 # リリース前に実行するコマンド (例: テストを実行)
 pre-release-hook = ["cargo", "test"]
 
+# --- ワークスペース設定 ---
+# バージョン更新を1つのコミットにまとめる
+consolidate-commits = true
+# ワークスペース内の全クレートでバージョンを共有する
+shared-version = true
+
+# --- Git 設定 ---
 # Git コミットの署名を有効にするか (GPG キー設定が必要)
 # sign-commit = true
-
 # Git タグの署名を有効にするか (GPG キー設定が必要)
 # sign-tag = true
-
-# リリース後の Git push を有効にするか
-# push = true (デフォルト)
-
-# crates.io への公開を有効にするか
-# publish = true (デフォルト)
-
-# タグ名のプレフィックス (ワークスペースの場合に便利)
-# tag-prefix = "{{crate_name}}-"
-
+# リリース後の Git push を有効にするか (デフォルト: true)
+# push = true
+# タグ名のプレフィックス (例: v0.1.0)
+tag-prefix = "v"
 # タグに付けるメッセージのテンプレート
-tag-message = "chore(release): {{crate_name}} v{{version}} をリリース"
-
+tag-message = "chore(release): v{{version}} をリリース"
 # バージョン更新コミットのメッセージテンプレート
-pre-release-commit-message = "chore(version): {{crate_name}} のバージョンを {{version}} に更新"
+pre-release-commit-message = "chore(version): バージョンを {{version}} に更新"
+
+# --- crates.io 設定 ---
+# crates.io への公開を有効にするか (デフォルト: true)
+# publish = true
 
 # 開発バージョンのコミットメッセージテンプレート (enable-dev-version が true の場合)
-# post-release-commit-message = "chore(version): {{crate_name}} の開発バージョンを開始" 
+# post-release-commit-message = "chore(version): v{{version}}-dev を開始" 
