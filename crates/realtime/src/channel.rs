@@ -231,6 +231,141 @@ impl Channel {
         );
         Ok(())
     }
+
+    // New method to handle incoming messages for this channel
+    pub(crate) async fn handle_message(&self, message: serde_json::Value) {
+        // Parse as generic Value first to access top-level fields like 'event'
+        match serde_json::from_value::<serde_json::Value>(message.clone()) {
+            Ok(json_msg) => {
+                let event_field = json_msg.get("event").and_then(|v| v.as_str());
+                let topic = json_msg.get("topic").and_then(|v| v.as_str()); // May not always be present
+                let payload_data = json_msg.get("payload"); // This is the nested payload
+                // 'type' field is within the nested payload for db changes, but top-level for others?
+                // Let's extract it from payload_data if possible, or top level otherwise.
+                let event_type = payload_data.and_then(|p| p.get("type")).and_then(|v| v.as_str())
+                                 .or_else(|| json_msg.get("type").and_then(|v| v.as_str()));
+                let timestamp = json_msg.get("timestamp").and_then(|v| v.as_str());
+
+                println!(
+                    "Handling message for topic '{}', event '{:?}'",
+                    topic.unwrap_or(&self.topic),
+                    event_field
+                );
+
+                // Route based on the 'event' field
+                match event_field {
+                    // --- Database Changes --- uses event "postgres_changes"
+                    Some("postgres_changes") => {
+                        // Construct the Payload struct expected by the callback
+                        let payload_for_callback = Payload {
+                            data: payload_data.cloned().unwrap_or(serde_json::Value::Null),
+                            event_type: event_type.map(String::from),
+                            timestamp: timestamp.map(String::from),
+                        };
+                        let callbacks = self.callbacks.read().await;
+                        println!(
+                            "Calling {} DB change callbacks for topic '{}'",
+                            callbacks.len(),
+                            self.topic
+                        );
+                        for (id, callback) in callbacks.iter() {
+                            // TODO: Filter callback based on original subscription criteria
+                            println!("  -> Calling DB callback ID: {}", id);
+                            (callback)(payload_for_callback.clone());
+                        }
+                    }
+
+                    // --- Broadcast --- uses event "broadcast"
+                    Some("broadcast") => {
+                        let payload_for_callback = Payload {
+                            data: payload_data.cloned().unwrap_or(serde_json::Value::Null),
+                            event_type: event_type.map(String::from),
+                            timestamp: timestamp.map(String::from),
+                        };
+                        let callbacks = self.callbacks.read().await;
+                        println!(
+                            "Calling {} broadcast callbacks for topic '{}'",
+                            callbacks.len(),
+                            self.topic
+                        );
+                        for (id, callback) in callbacks.iter() {
+                             // TODO: Filter based on the original BroadcastChanges config
+                            println!("  -> Calling Broadcast callback ID: {}", id);
+                            (callback)(payload_for_callback.clone());
+                        }
+                    }
+
+                    // --- Presence --- uses events "presence_diff" or "presence_state"
+                    Some("presence_diff") | Some("presence_state") => {
+                        if let Some(data) = payload_data {
+                            match serde_json::from_value::<PresenceChange>(data.clone()) {
+                                Ok(presence_change) => {
+                                    let presence_callbacks = self.presence_callbacks.read().await;
+                                    println!(
+                                        "Calling {} presence callbacks for topic '{}'",
+                                        presence_callbacks.len(),
+                                        self.topic
+                                    );
+                                    for callback in presence_callbacks.iter() {
+                                        (callback)(presence_change.clone());
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!(
+                                        "Failed to parse presence payload for topic '{}': {}. Payload: {:?}",
+                                        self.topic,
+                                        e,
+                                        data // Log the nested payload data
+                                    );
+                                }
+                            }
+                        } else {
+                            eprintln!(
+                                "Presence event '{:?}' received without payload data for topic '{}'",
+                                event_field,
+                                self.topic
+                            );
+                        }
+                    }
+
+                    // --- Other Phoenix Events ---
+                    Some("phx_close") => {
+                        println!("Channel '{}' received phx_close", self.topic);
+                        // TODO: Maybe clear callbacks or notify client?
+                    }
+                    Some("phx_error") => {
+                        eprintln!(
+                            "Channel '{}' received phx_error: {:?}",
+                            self.topic,
+                            payload_data // Log the nested payload
+                        );
+                        // TODO: Maybe trigger reconnect or notify user?
+                    }
+
+                    // --- Unknown Event ---
+                    Some(unknown_event) => {
+                        println!(
+                            "Unhandled event '{}' on channel '{}': {:?}",
+                            unknown_event,
+                            self.topic,
+                            json_msg // Log the whole message
+                        );
+                    }
+                    None => {
+                        println!("Received message without event field: {:?}", json_msg);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!(
+                    "Failed to parse incoming message for topic '{}' into JSON Value: {}. Message: {:?}",
+                    self.topic,
+                    e,
+                    message // Log original potentially non-JSON value
+                );
+            }
+        }
+    }
 }
 
 /// チャンネル作成と購読設定のためのビルダー

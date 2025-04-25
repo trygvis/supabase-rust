@@ -268,8 +268,7 @@ impl RealtimeClient {
                                                 tokio::spawn(async move {
                                                     // Assuming Channel::handle_message exists
                                                     // Need to define handle_message in channel.rs
-                                                    // target_channel.handle_message(msg_clone).await;
-                                                    println!("TODO: Call target_channel.handle_message({:?})", msg_clone);
+                                                    target_channel.handle_message(msg_clone).await;
                                                 });
                                             } else {
                                                 println!("Warning: Received message for unknown topic: {}", topic);
