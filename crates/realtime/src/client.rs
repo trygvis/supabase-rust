@@ -389,15 +389,25 @@ impl RealtimeClient {
         self.set_connection_state(ConnectionState::Disconnected)
             .await;
 
-        // Close the socket sender channel
+        // Attempt to send a Close frame first
         let mut socket_guard = self.socket.write().await;
+        if let Some(socket_tx) = socket_guard.as_ref() {
+            debug!("disconnect(): Sending Close frame.");
+            let close_msg = Message::Close(None);
+            // Send might fail if connection is already broken, ignore error
+            let _ = socket_tx.send(close_msg).await;
+        } else {
+             warn!("disconnect(): No active socket sender found to send Close frame.");
+        }
+
+        // Now close the socket sender channel
         if let Some(socket_tx) = socket_guard.take() {
             debug!("disconnect(): Dropping socket sender to signal tasks.");
             drop(socket_tx); // This signals the writer task to exit.
                              // Reader task should exit upon seeing sender drop or stream close.
             info!("WebSocket connection closed manually via disconnect().");
         } else {
-            warn!("disconnect(): No active socket sender found, likely already disconnected.");
+            // Warning already logged above if sender wasn't found for Close frame
         }
 
         Ok(())
