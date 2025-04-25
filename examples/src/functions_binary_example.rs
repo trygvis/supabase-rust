@@ -182,7 +182,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
             // チャンク処理関数
             // 実際のアプリケーションでは、ここでフレーム解析や変換などを行うことができます
-            let processor = |data: &[u8]| -> Result<bytes::Bytes, String> {
+            let processor = |data: &[u8]| -> std::result::Result<bytes::Bytes, String> {
                 // このサンプルでは単純に元のデータを返しますが、
                 // 実際のアプリケーションでは何らかの処理を行うことができます
                 Ok(bytes::Bytes::copy_from_slice(data))

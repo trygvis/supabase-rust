@@ -225,17 +225,21 @@ impl AdminAuth {
     /// # Example
     ///
     /// ```no_run
-    /// # use supabase_rust_auth::{AdminAuth, User, AuthError};
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
     /// # use reqwest::Client;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let auth_url = "https://example.supabase.co/auth/v1";
-    /// # let service_key = "service-role-key";
-    /// # let admin_auth = AdminAuth::new(auth_url, service_key, Client::new());
-    /// let user = admin_auth.get_user_by_id("some-user-id").await?;
-    /// println!("User: {:?}", user);
-    /// # Ok(())
-    /// # }
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    ///
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     let user = admin_auth.get_user_by_id("some-user-id").await?;
+    ///     println!("User: {:?}", user);
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
     /// ```
     pub async fn get_user_by_id(&self, user_id: &str) -> Result<User, AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
@@ -272,17 +276,21 @@ impl AdminAuth {
     /// # Example
     ///
     /// ```no_run
-    /// # use supabase_rust_auth::{AdminAuth, User, AuthError};
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
     /// # use reqwest::Client;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let auth_url = "https://example.supabase.co/auth/v1";
-    /// # let service_key = "service-role-key";
-    /// # let admin_auth = AdminAuth::new(auth_url, service_key, Client::new());
-    /// let users = admin_auth.list_users(Some(1), Some(100)).await?;
-    /// println!("Users: {:?}", users);
-    /// # Ok(())
-    /// # }
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    ///
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     let users = admin_auth.list_users(Some(1), Some(100)).await?;
+    ///     println!("Users: {:?}", users);
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
     /// ```
     pub async fn list_users(
         &self,
@@ -335,18 +343,32 @@ impl AdminAuth {
     ///
     /// # 例
     ///
-    /// ```
-    /// let metadata = serde_json::json!({
-    ///     "first_name": "John",
-    ///     "last_name": "Doe"
-    /// });
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
     ///
-    /// let user = supabase.auth().admin().create_user(
-    ///     "user@example.com",
-    ///     Some("password123"),
-    ///     Some(metadata),
-    ///     Some(true)
-    /// ).await?;
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     let metadata = serde_json::json!({
+    ///         "first_name": "John",
+    ///         "last_name": "Doe"
+    ///     });
+    ///
+    ///     let user = admin_auth.create_user(
+    ///         "user@example.com",
+    ///         Some("password123"),
+    ///         Some(metadata),
+    ///         Some(true)
+    ///     ).await?;
+    ///     println!("Created user: {:?}", user);
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
     /// ```
     pub async fn create_user(
         &self,
@@ -406,8 +428,24 @@ impl AdminAuth {
     ///
     /// # 例
     ///
-    /// ```
-    /// supabase.auth().admin().delete_user("some-user-id").await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    ///
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     admin_auth.delete_user("some-user-id").await?;
+    ///     println!("User deleted");
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn delete_user(&self, user_id: &str) -> Result<(), AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
@@ -443,20 +481,34 @@ impl AdminAuth {
     ///
     /// # 例
     ///
-    /// ```
-    /// let attributes = serde_json::json!({
-    ///     "email": "newemail@example.com",
-    ///     "user_metadata": {
-    ///         "first_name": "Jane",
-    ///         "last_name": "Smith"
-    ///     },
-    ///     "email_confirm": true
-    /// });
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
     ///
-    /// let user = supabase.auth().admin().update_user(
-    ///     "some-user-id",
-    ///     attributes
-    /// ).await?;
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     let attributes = serde_json::json!({
+    ///         "email": "newemail@example.com",
+    ///         "user_metadata": {
+    ///             "first_name": "Jane",
+    ///             "last_name": "Smith"
+    ///         },
+    ///         "email_confirm": true
+    ///     });
+    ///
+    ///     let user = admin_auth.update_user(
+    ///         "some-user-id",
+    ///         attributes
+    ///     ).await?;
+    ///     println!("Updated user: {:?}", user);
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
     /// ```
     pub async fn update_user(
         &self,
@@ -502,11 +554,27 @@ impl AdminAuth {
     ///
     /// # 例
     ///
-    /// ```
-    /// supabase.auth().admin().invite_user_by_email(
-    ///     "user@example.com",
-    ///     Some("https://your-app.com/welcome")
-    /// ).await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    ///
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     let user = admin_auth.invite_user_by_email(
+    ///         "user@example.com",
+    ///         Some("https://your-app.com/welcome")
+    ///     ).await?;
+    ///     println!("Invited user: {:?}", user);
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn invite_user_by_email(
         &self,
@@ -560,11 +628,27 @@ impl AdminAuth {
     ///
     /// # 例
     ///
-    /// ```
-    /// supabase.auth().admin().delete_user_factor(
-    ///     "some-user-id",
-    ///     "factor-id"
-    /// ).await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    ///
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     admin_auth.delete_user_factor(
+    ///         "some-user-id",
+    ///         "factor-id"
+    ///     ).await?;
+    ///     println!("User factor deleted");
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn delete_user_factor(
         &self,
@@ -605,12 +689,28 @@ impl AdminAuth {
     ///
     /// # 例
     ///
-    /// ```
-    /// let link = supabase.auth().admin().generate_link(
-    ///     "user@example.com",
-    ///     "magiclink",
-    ///     Some("https://your-app.com/welcome")
-    /// ).await?;
+    /// ```no_run
+    /// # use supabase_rust_auth::{Auth, AdminAuth, AuthOptions, AuthError};
+    /// # use reqwest::Client;
+    /// #
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    ///
+    /// // Initialize the admin client using a service role key
+    /// let auth = auth.init_admin("your-service-role-key");
+    ///
+    /// if let Some(admin_auth) = auth.admin() {
+    ///     let link = admin_auth.generate_link(
+    ///         "user@example.com",
+    ///         "magiclink",
+    ///         Some("https://your-app.com/welcome")
+    ///     ).await?;
+    ///     println!("Generated link: {}", link);
+    /// } else {
+    ///     println!("Admin client not initialized");
+    /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn generate_link(
         &self,

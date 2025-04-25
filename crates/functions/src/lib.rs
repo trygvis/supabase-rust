@@ -362,10 +362,85 @@ impl FunctionsClient {
             ..Default::default()
         };
 
-        let response = self
-            .invoke::<String, B>(function_name, body, Some(options))
-            .await?;
-        Ok(response.data)
+        // URLの構築 (invokeからコピー＆修正)
+        let mut url = Url::parse(&self.base_url)?;
+        url.path_segments_mut()
+            .map_err(|_| FunctionsError::UrlError(url::ParseError::EmptyHost))?
+            .push("functions")
+            .push("v1")
+            .push(function_name);
+
+        // リクエストの構築 (invokeからコピー＆修正)
+        let mut request_builder = self
+            .http_client
+            .post(url)
+            .header("apikey", &self.api_key)
+            .header("Authorization", format!("Bearer {}", &self.api_key));
+
+        // リクエストタイムアウトの設定
+        if let Some(timeout) = options.timeout_seconds {
+            request_builder = request_builder.timeout(Duration::from_secs(timeout));
+        }
+
+        // コンテンツタイプの設定
+        if let Some(content_type) = options.content_type {
+            request_builder = request_builder.header("Content-Type", content_type);
+        } else {
+            request_builder = request_builder.header("Content-Type", "application/json");
+        }
+
+        // Accept ヘッダーを設定 (テキストを期待)
+        request_builder = request_builder.header("Accept", "text/plain, */*;q=0.9");
+
+        // カスタムヘッダーの追加
+        if let Some(headers) = options.headers {
+            for (key, value) in headers {
+                request_builder = request_builder.header(key, value);
+            }
+        }
+
+        // リクエストボディの追加
+        if let Some(body_data) = body {
+            request_builder = request_builder.json(&body_data);
+        }
+
+        // リクエストの送信
+        let response = request_builder.send().await.map_err(|e| {
+            if e.is_timeout() {
+                FunctionsError::TimeoutError
+            } else {
+                FunctionsError::from(e)
+            }
+        })?;
+
+        // ステータスコードの確認
+        let status = response.status();
+        if !status.is_success() {
+            // エラーレスポンスのパース (invokeからコピー)
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Failed to read error response".to_string());
+            if let Ok(error_details) = serde_json::from_str::<FunctionErrorDetails>(&error_body) {
+                return Err(FunctionsError::FunctionError {
+                    message: error_details.message.as_ref().map_or_else(
+                        || format!("Function returned error status: {}", status),
+                        |msg| msg.clone(),
+                    ),
+                    status,
+                    details: Some(error_details),
+                });
+            } else {
+                return Err(FunctionsError::FunctionError {
+                    message: error_body,
+                    status,
+                    details: None,
+                });
+            }
+        }
+
+        // テキストを直接取得
+        response.text().await.map_err(FunctionsError::from)
     }
 
     /// バイナリ形式で関数レスポンスを取得
@@ -777,7 +852,10 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(format!("/functions/v1/{}", function_name)))
             .and(header("apikey", api_key))
-            .and(header("Authorization", format!("Bearer {}", api_key).as_str()))
+            .and(header(
+                "Authorization",
+                format!("Bearer {}", api_key).as_str(),
+            ))
             .and(header("Content-Type", "application/json"))
             .and(body_json(&request_body))
             .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
@@ -818,7 +896,10 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(format!("/functions/v1/{}", function_name)))
             .and(header("apikey", api_key))
-            .and(header("Authorization", format!("Bearer {}", api_key).as_str()))
+            .and(header(
+                "Authorization",
+                format!("Bearer {}", api_key).as_str(),
+            ))
             .and(body_json(&request_body))
             .respond_with(
                 ResponseTemplate::new(500)
@@ -839,18 +920,72 @@ mod tests {
         // Assert: Check the error result
         assert!(result.is_err());
         match result.err().unwrap() {
-            FunctionsError::FunctionError { message, status, details } => {
+            FunctionsError::FunctionError {
+                message,
+                status,
+                details,
+            } => {
                 assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
                 assert_eq!(message, "Something went wrong!");
                 assert!(details.is_some());
                 let details_unwrapped = details.unwrap();
-                assert_eq!(details_unwrapped.message, Some("Something went wrong!".to_string()));
+                assert_eq!(
+                    details_unwrapped.message,
+                    Some("Something went wrong!".to_string())
+                );
                 assert_eq!(details_unwrapped.code, Some("FUNC_ERROR".to_string()));
                 assert!(details_unwrapped.details.is_some());
-                assert_eq!(details_unwrapped.details.unwrap(), json!({ "reason": "Internal failure" }));
+                assert_eq!(
+                    details_unwrapped.details.unwrap(),
+                    json!({ "reason": "Internal failure" })
+                );
             }
             _ => panic!("Expected FunctionError, got different error type"),
         }
+        server.verify().await;
+    }
+
+    // Test successful text invocation
+    #[tokio::test]
+    async fn test_invoke_text_success() {
+        // Arrange: Start mock server
+        let server = MockServer::start().await;
+        let mock_uri = server.uri();
+        let api_key = "test-key";
+        let function_name = "plain-text-func";
+
+        // Arrange: Prepare request and expected response
+        let request_body = json!({ "format": "text" });
+        let expected_response_text = "This is a plain text response.";
+
+        // Arrange: Mock the API endpoint
+        Mock::given(method("POST"))
+            .and(path(format!("/functions/v1/{}", function_name)))
+            .and(header("apikey", api_key))
+            .and(header(
+                "Authorization",
+                format!("Bearer {}", api_key).as_str(),
+            ))
+            .and(header("Content-Type", "application/json")) // Default for invoke_text wrapper
+            .and(body_json(&request_body))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(expected_response_text)
+                    .insert_header("Content-Type", "text/plain"), // Server responds with text
+            )
+            .mount(&server)
+            .await;
+
+        // Act: Create client and invoke function
+        let client = FunctionsClient::new(&mock_uri, api_key, reqwest::Client::new());
+        let result = client
+            .invoke_text::<Value>(function_name, Some(request_body)) // Body type is generic
+            .await;
+
+        // Assert: Check the result
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data, expected_response_text);
         server.verify().await;
     }
 }

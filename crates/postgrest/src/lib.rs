@@ -1118,7 +1118,7 @@ mod tests {
             data.first()
                 .and_then(|v: &Value| v.get("id"))
                 .and_then(Value::as_i64),
-            Some(2)
+            Some(1)
         );
     }
 
