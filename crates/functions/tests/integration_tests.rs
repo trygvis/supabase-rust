@@ -154,7 +154,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let options = FunctionOptions {
+        let _options = FunctionOptions {
             response_type: ResponseType::Text,
             ..Default::default()
         };
@@ -187,14 +187,14 @@ mod tests {
             .mount(&server)
             .await;
 
-        let options = FunctionOptions {
+        let _options = FunctionOptions {
             response_type: ResponseType::Binary,
             ..Default::default()
         };
 
         // Use invoke_binary helper or invoke with options
         let result = client
-            .invoke_binary::<Value>(function_name, None, Some(options))
+            .invoke_binary::<Value>(function_name, None, Some(_options))
             .await;
 
         assert!(result.is_ok());
@@ -219,13 +219,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let options = FunctionOptions {
+        let _options = FunctionOptions {
             headers: Some(custom_headers),
             ..Default::default()
         };
 
         let result = client
-            .invoke::<Value, Value>(function_name, None, Some(options))
+            .invoke::<Value, Value>(function_name, None, Some(_options))
             .await;
 
         assert!(result.is_ok());
@@ -254,13 +254,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let options = FunctionOptions {
+        let _options = FunctionOptions {
             response_type: ResponseType::Stream,
             ..Default::default()
         };
 
         let result = client
-            .invoke_stream::<Value>(function_name, None, Some(options))
+            .invoke_stream::<Value>(function_name, None, Some(_options))
             .await;
 
         assert!(result.is_ok());
@@ -287,7 +287,7 @@ mod tests {
 
         let json1 = json!({ "id": 1, "status": "pending" });
         let json2 = json!({ "id": 2, "status": "completed" });
-        let stream_body = format!("{}\n{}\n", json1.to_string(), json2.to_string());
+        let stream_body = format!("{}\n{}\n", json1, json2);
 
         Mock::given(method("POST"))
             .and(path(format!("/functions/v1/{}", function_name)))
@@ -300,14 +300,14 @@ mod tests {
             .mount(&server)
             .await;
 
-        let options = FunctionOptions {
+        let _options = FunctionOptions {
             response_type: ResponseType::Stream, // Still use stream type
             ..Default::default()
         };
 
         // Use invoke_json_stream helper
         let result = client
-            .invoke_json_stream::<Value>(function_name, None, Some(options))
+            .invoke_json_stream::<Value>(function_name, None, Some(_options))
             .await;
 
         assert!(result.is_ok());

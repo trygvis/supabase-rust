@@ -4,10 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs::File as StdFile;
 use std::io::{Read, Write};
-use supabase_rust_gftd::storage::{FileOptions, ListOptions};
+use supabase_rust_gftd::storage::{FileOptions, ListOptions, SortOrder};
 use supabase_rust_gftd::Supabase;
 use tempfile::NamedTempFile;
-use uuid::Uuid;
+use tokio;
+use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FileObject {
@@ -75,12 +76,7 @@ mod image_transform_examples {
         let upload_options = FileOptions::new().with_content_type("image/png");
         let upload_result = storage
             .from(bucket_name)
-            .with_auth(&dummy_token)?
-            .upload(
-                upload_path,
-                local_image_path.as_path(),
-                Some(upload_options),
-            )
+            .upload(upload_path, local_image_path.as_path(), Some(upload_options))
             .await?;
 
         println!("画像をアップロードしました: {}", upload_result.name);
@@ -120,7 +116,6 @@ mod image_transform_examples {
             // 変換画像を取得
             let transformed_image = storage
                 .from(bucket_name)
-                .with_auth(&dummy_token)?
                 .transform_image(upload_path, options.clone())
                 .await?;
 
@@ -136,7 +131,6 @@ mod image_transform_examples {
             // 変換画像の署名付きURLを取得
             let signed_url = storage
                 .from(bucket_name)
-                .with_auth(&dummy_token)?
                 .create_signed_transform_url(upload_path, options, 60)
                 .await?;
 
@@ -147,7 +141,6 @@ mod image_transform_examples {
         println!("\nテスト画像を削除します...");
         storage
             .from(bucket_name)
-            .with_auth(&dummy_token)?
             .remove(vec![upload_path])
             .await?;
 
@@ -287,7 +280,6 @@ async fn run_basic_storage_operations(
     let upload_options = FileOptions::new().with_content_type("text/plain");
     let upload_result = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .upload(upload_path, local_file_path, Some(upload_options))
         .await?;
     println!("ファイルをアップロードしました: {}", upload_result.name);
@@ -297,7 +289,6 @@ async fn run_basic_storage_operations(
     let list_options = ListOptions::new().with_limit(10).with_offset(0);
     let files = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .list(Some(""), Some(list_options))
         .await?;
     println!("ファイル一覧:");
@@ -312,7 +303,6 @@ async fn run_basic_storage_operations(
     // ファイルの署名付きURLを取得
     let signed_url = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .create_signed_url(upload_path, 60) // 60秒間有効なURL
         .await?;
     println!("署名付きURL (有効期限60秒): {}", signed_url);
@@ -321,7 +311,6 @@ async fn run_basic_storage_operations(
     println!("\nファイルをダウンロードしています...");
     let download_data = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .download(upload_path)
         .await?;
     println!(
@@ -337,7 +326,6 @@ async fn run_basic_storage_operations(
     );
     storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .move_(upload_path, move_destination)
         .await?;
     println!("ファイルを移動しました。");
@@ -345,7 +333,6 @@ async fn run_basic_storage_operations(
     // 移動後のファイルを確認
     let moved_files = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .list(Some("moved/"), None)
         .await?;
     println!("移動先のディレクトリの内容:");
@@ -357,7 +344,6 @@ async fn run_basic_storage_operations(
     println!("\nファイルを削除しています...");
     let deleted_files = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .remove(vec![move_destination])
         .await?;
     println!("削除されたファイル: {}", deleted_files.len());
@@ -422,7 +408,6 @@ async fn run_large_file_upload(
     // マルチパートアップロードを実行（大きなファイルのため）
     let upload_result = storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .upload_large_file(
             "large-file.bin",
             file_path,
@@ -440,11 +425,119 @@ async fn run_large_file_upload(
     println!("\nファイルを削除しています...");
     storage
         .from(bucket_name)
-        .with_auth(&dummy_token)?
         .remove(vec!["large-file.bin"])
         .await?;
 
     println!("ファイルを削除しました");
+
+    Ok(())
+}
+
+async fn test_authenticated_operations(storage: &Supabase) -> Result<(), Box<dyn std::error::Error>> {
+    let bucket_name = "authenticated-bucket"; // Use a separate bucket for authenticated tests
+    println!("\n--- Testing Authenticated Operations in bucket: {} ---", bucket_name);
+
+    // Ensure bucket exists (assuming create_bucket needs auth)
+    match storage.create_bucket(bucket_name, false).await {
+        Ok(_) => println!("Bucket '{}' created or already exists.", bucket_name),
+        Err(e) => {
+            // Ignore "Bucket already exists" error, propagate others
+            if !e.to_string().contains("Duplicate") { // Adjust error check as needed
+                 return Err(format!("Failed to ensure bucket exists: {}", e).into());
+            }
+             println!("Bucket '{}' already exists.", bucket_name);
+        }
+    }
+
+    // 1. Authenticated Upload
+    let upload_path = "private/secret_file.txt";
+    let temp_path = Path::new("secret_file_temp.txt");
+    tokio::fs::write(temp_path, "This is a secret file.").await?;
+    let file_options = FileOptions::new().with_content_type("text/plain");
+
+    println!("Attempting authenticated upload to: {}", upload_path);
+    let upload_result = storage
+        .from(bucket_name)
+        .upload(upload_path, temp_path, Some(file_options))
+        .await;
+    handle_result("Authenticated Upload", upload_result.map(|_| "Success".to_string()));
+    tokio::fs::remove_file(temp_path).await?; // Clean up temp file
+
+    // 2. Authenticated List
+    println!("Listing files in authenticated bucket with prefix 'private/'");
+    let list_options = ListOptions::new().limit(10).offset(0);
+    let files = storage
+        .from(bucket_name)
+        .list("private/", Some(list_options))
+        .await;
+    handle_result("Authenticated List", files.map(|f| format!("Found {} files", f.len())));
+
+    // 3. Create Signed URL (for authenticated download)
+    let expires_in = 60; // 1 minute
+    println!(
+        "Creating signed URL for '{}' expiring in {} seconds",
+        upload_path, expires_in
+    );
+    let signed_url = storage
+        .from(bucket_name)
+        .create_signed_url(upload_path, expires_in)
+        .await;
+    handle_result("Create Signed URL", signed_url.clone());
+
+    // 4. Authenticated Download (using signed URL conceptually - direct download test)
+    println!("Attempting authenticated download of: {}", upload_path);
+    let download_data = storage
+        .from(bucket_name)
+        .download(upload_path)
+        .await;
+    handle_result(
+        "Authenticated Download",
+        download_data.map(|d| format!("Downloaded {} bytes", d.len())),
+    );
+
+    // 5. Authenticated Move (requires a source file)
+    let source_path = "private/move_source.txt";
+    let dest_path = "private/moved_destination.txt";
+    let temp_source_path = Path::new("move_source_temp.txt");
+    tokio::fs::write(temp_source_path, "File to be moved.").await?;
+    println!(
+        "Uploading source file for move test: {}",
+        source_path
+    );
+    storage
+        .from(bucket_name)
+        .upload(source_path, temp_source_path, None)
+        .await?;
+    tokio::fs::remove_file(temp_source_path).await?;
+
+    println!("Attempting authenticated move: {} -> {}", source_path, dest_path);
+    let remove_result = storage.from(bucket_name).remove(vec![source_path]).await;
+    handle_result("Authenticated Move (Simulated - Remove Source)", remove_result.map(|_| "Source Removed".to_string()));
+
+    // 6. Authenticated Delete
+    let delete_path = "private/to_delete.txt";
+    let temp_delete_path = Path::new("to_delete_temp.txt");
+    tokio::fs::write(temp_delete_path, "Delete me.").await?;
+     println!("Uploading file for delete test: {}", delete_path);
+    storage
+        .from(bucket_name)
+        .upload(delete_path, temp_delete_path, None)
+        .await?;
+    tokio::fs::remove_file(temp_delete_path).await?;
+
+    println!("Attempting authenticated delete of: {}", delete_path);
+    let deleted_files = storage
+        .from(bucket_name)
+        .remove(vec![delete_path])
+        .await;
+    handle_result("Authenticated Delete", deleted_files.map(|_| "Success".to_string()));
+
+    // Cleanup: Delete the authenticated bucket
+    println!("Cleaning up: Deleting bucket '{}'", bucket_name);
+    match storage.delete_bucket(bucket_name).await {
+        Ok(_) => println!("Bucket '{}' deleted successfully.", bucket_name),
+        Err(e) => println!("Failed to delete bucket '{}': {}", bucket_name, e),
+    }
 
     Ok(())
 }
@@ -463,13 +556,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // Supabaseクライアントの初期化
     let supabase = Supabase::new(&supabase_url, &supabase_key);
-
-    // !!!!! 仮定: 認証セッションを取得 !!!!!
-    // 本来は auth_example.rs のように sign_in する必要があります
-    // ここでは、環境変数からダミーのトークンを取得するか、
-    // 適切な認証処理を実装する必要があります。
-    let dummy_token =
-        env::var("SUPABASE_DUMMY_TOKEN").unwrap_or_else(|_| "dummy-jwt-token".to_string());
 
     let storage = supabase.storage();
 

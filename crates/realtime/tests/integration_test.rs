@@ -1,5 +1,4 @@
 use futures_util::{SinkExt, StreamExt};
-use pretty_env_logger;
 use serde_json::json;
 use std::sync::Once;
 use supabase_rust_realtime::{

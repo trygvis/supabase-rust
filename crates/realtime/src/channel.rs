@@ -1,8 +1,8 @@
-use crate::client::{ConnectionState, RealtimeClient}; // Assuming RealtimeClient will be in client.rs
+use crate::client::RealtimeClient; // Removed unused ConnectionState
 use crate::error::RealtimeError;
 use crate::filters::{DatabaseFilter, FilterOperator};
 use crate::message::{ChannelEvent, Payload, PresenceChange, RealtimeMessage};
-use log::{debug, error, info, trace, warn}; // Use log crate
+use log::{debug, error, info, trace}; // Removed unused warn
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use std::sync::Arc;
 // use tokio::sync::mpsc; // Unused import after commenting out `socket` field
 use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
-use tokio_tungstenite::tungstenite::Message; // Add timeout import
+// use tokio_tungstenite::tungstenite::Message; // Removed unused import
 
 /// データベース変更監視設定
 #[derive(Debug, Clone, Serialize)]
@@ -118,40 +118,10 @@ impl DatabaseChanges {
 
     // --- Internal methods ---
 
-    /// Convert config to JSON for the websocket message
-    pub(crate) fn to_channel_config(&self) -> serde_json::Value {
-        let events_str: Vec<String> = self.events.iter().map(|e| e.to_string()).collect();
-
-        let mut config = json!({
-            "schema": self.schema,
-            "table": self.table,
-            "events": events_str
-        });
-
-        if let Some(filters) = &self.filter {
-            let filters_json: Vec<serde_json::Value> = filters
-                .iter()
-                .map(|f| {
-                    json!({
-                        "column": f.column,
-                        "filter": f.operator.to_string(),
-                        "value": f.value
-                    })
-                })
-                .collect();
-            // Assuming Realtime expects filters like: `column=eq.value` in URL query format
-            // This needs clarification based on actual protocol.
-            // For now, adding as a structured object, might need adjustment.
-            config["filter"] = json!(filters_json);
-        }
-
-        json!({
-            "type": "postgres_changes",
-            "payload": {
-                "config": config
-            }
-        })
-    }
+    // /// Convert config to JSON for the websocket message
+    // pub(crate) fn to_channel_config(&self) -> serde_json::Value {
+    //     // ... implementation ...
+    // }
 }
 
 /// ブロードキャストイベント監視設定
@@ -273,24 +243,9 @@ impl Channel {
         // Need mechanism to wait for phx_reply with matching ref
     }
 
-    async fn send_message(&self, payload: serde_json::Value) -> Result<(), RealtimeError> {
-        // Called by client's reader task
-        // Need access to client's socket sender
-        let socket_guard = self.client.socket.read().await;
-        if let Some(socket_tx) = socket_guard.as_ref() {
-            let ws_msg = Message::Text(payload.to_string());
-            trace!("Channel '{}' sending message: {:?}", self.topic, ws_msg);
-            socket_tx.send(ws_msg).await.map_err(RealtimeError::from)
-        } else {
-            warn!(
-                "Channel '{}': Cannot send message, client socket unavailable.",
-                self.topic
-            );
-            Err(RealtimeError::ConnectionError(
-                "Client socket unavailable".to_string(),
-            ))
-        }
-    }
+    // async fn send_message(&self, payload: serde_json::Value) -> Result<(), RealtimeError> {
+    //    // ... implementation ...
+    // }
 
     async fn unsubscribe(&self, id: &str) -> Result<(), RealtimeError> {
         // Remove callback

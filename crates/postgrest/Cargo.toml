@@ -32,3 +32,4 @@ chrono = { version = "0.4", features = ["serde"] }
 [features]
 default = []
 integration-tests = []
+schema-convert = []

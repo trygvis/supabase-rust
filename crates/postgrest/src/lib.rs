@@ -1564,10 +1564,7 @@ mod tests {
         // contains のモック
         Mock::given(method("GET"))
             .and(path("/rest/v1/data"))
-            .and(query_param(
-                "metadata",
-                format!("cs.{}", contains_value.to_string()),
-            ))
+            .and(query_param("metadata", format!("cs.{}", contains_value)))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id": 1}])))
             .mount(&mock_server)
             .await;
@@ -1575,10 +1572,7 @@ mod tests {
         // contained_by のモック
         Mock::given(method("GET"))
             .and(path("/rest/v1/data"))
-            .and(query_param(
-                "tags",
-                format!("cd.{}", contained_by_value.to_string()),
-            ))
+            .and(query_param("tags", format!("cd.{}", contained_by_value)))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!([{"id": 2}])))
             .mount(&mock_server)
             .await;

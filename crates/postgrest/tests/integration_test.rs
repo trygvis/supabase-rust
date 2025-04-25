@@ -116,7 +116,7 @@ async fn test_crud_operations() {
         1,
         "Should select exactly one item by ID"
     );
-    let selected_item = selected_items.get(0).expect("Selected item should exist");
+    let selected_item = selected_items.first().expect("Selected item should exist");
     let selected_name = selected_item
         .as_object()
         .expect("Selected item should be object")

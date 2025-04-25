@@ -246,7 +246,7 @@ impl RealtimeClient {
             let writer_socket_arc = socket_arc.clone();
             let writer_state_arc = state_arc.clone();
             let writer_state_change_tx = state_change_tx.clone();
-            let writer_handle = tokio::spawn(async move {
+            let _writer_handle = tokio::spawn(async move {
                 debug!("Writer task started");
                 while let Some(message) = socket_rx.recv().await {
                     trace!("Writer task sending message: {:?}", message);
@@ -277,7 +277,7 @@ impl RealtimeClient {
             // Clone channels Arc for the reader task
             let reader_channels_arc = _channels_arc.clone();
 
-            let reader_handle = tokio::spawn(async move {
+            let _reader_handle = tokio::spawn(async move {
                 debug!("Reader task started");
                 loop {
                     let socket_tx_ref = reader_socket_arc.read().await;
