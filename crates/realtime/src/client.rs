@@ -1,6 +1,6 @@
 use crate::channel::{Channel, ChannelBuilder}; // Added ChannelBuilder import
 use crate::error::RealtimeError;
-use crate::message::{ChannelEvent, RealtimeMessage}; // Added ChannelEvent import here
+use crate::message::RealtimeMessage; // Added ChannelEvent import here
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::collections::HashMap;
@@ -283,10 +283,10 @@ impl RealtimeClient {
             )
             .await;
 
-            let (mut write, mut read) = ws_stream.split();
+            let (write, read) = ws_stream.split();
             debug!("WebSocket stream split into writer and reader");
 
-            let (socket_tx, mut socket_rx) = mpsc::channel::<Message>(100);
+            let (socket_tx, socket_rx) = mpsc::channel::<Message>(100);
             *socket_arc.write().await = Some(socket_tx.clone()); // Clone for writer task
             debug!("Internal MPSC channel created, sender stored");
 
