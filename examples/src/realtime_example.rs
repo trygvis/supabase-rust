@@ -290,11 +290,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     println!("Created test user with ID: {}", user_id);
 
+    // --- Set Auth Token for Realtime ---
+    let realtime = supabase.realtime();
+    realtime.set_auth(Some(access_token.clone())).await; // Set the token
+
     // タスクテーブルの準備
     println!("\n基本的なリアルタイム購読のデモを開始します");
-
-    // リアルタイムクライアントを取得
-    let realtime = supabase.realtime();
 
     // シンプルなチャンネルを作成
     println!("Tasksテーブルに対する基本的なチャンネルを作成します...");
@@ -483,6 +484,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // チャンネルを解放すると自動的に購読解除される
     drop(channel);
     println!("チャンネルの購読を解除しました");
+
+    // --- Clear Auth Token (optional cleanup) ---
+    realtime.set_auth(None).await; // Clear the token before exiting
 
     println!("Realtime example completed");
 

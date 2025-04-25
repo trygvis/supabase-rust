@@ -61,6 +61,8 @@ pub struct RealtimeClient {
     // Wrap AtomicBool in Arc for sharing across tasks
     is_manually_closed: Arc<AtomicBool>,
     state_change: broadcast::Sender<ConnectionState>,
+    // Add field to store the access token
+    access_token: Arc<RwLock<Option<String>>>,
 }
 
 impl RealtimeClient {
@@ -84,7 +86,18 @@ impl RealtimeClient {
             // Initialize the Arc<AtomicBool>
             is_manually_closed: Arc::new(AtomicBool::new(false)),
             state_change: state_change_tx,
+            // Initialize token as None
+            access_token: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// Method to set the authentication token
+    pub async fn set_auth(&self, token: Option<String>) {
+        let mut current_token = self.access_token.write().await;
+        *current_token = token;
+        // TODO: If already connected, maybe send a message to update auth or reconnect?
+        // Consider triggering a reconnect if the token changes while connected.
+        // For now, token is only used during the initial connect call.
     }
 
     /// 接続状態変更の通知を受け取るためのレシーバーを取得
@@ -130,10 +143,16 @@ impl RealtimeClient {
         let _channels_arc = self.channels.clone();
         let options = self.options.clone();
         let is_manually_closed_arc = self.is_manually_closed.clone();
+        let token_arc = self.access_token.clone(); // Clone token Arc
 
         async move {
             // Reset manual close flag using the cloned Arc
             is_manually_closed_arc.store(false, Ordering::SeqCst);
+
+            // Read the current token
+            let token_guard = token_arc.read().await;
+            let token_param = token_guard.as_ref().map(|t| format!("&token={}", t)).unwrap_or_default();
+            drop(token_guard); // Release read lock
 
             // Construct the WebSocket URL carefully
             let base_url = Url::parse(&url)?;
@@ -148,17 +167,18 @@ impl RealtimeClient {
             let host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
             let ws_url_str = if let Some(port) = base_url.port() {
                 format!(
-                    "{}://{}:{}/realtime/v1/websocket?apikey={}&vsn=1.0.0",
-                    ws_scheme, host, port, key
+                    "{}://{}:{}/realtime/v1/websocket?apikey={}&vsn=1.0.0{}",
+                    ws_scheme, host, port, key, token_param
                 )
             } else {
                 format!(
-                    "{}://{}/realtime/v1/websocket?apikey={}&vsn=1.0.0",
-                    ws_scheme, host, key
+                    "{}://{}/realtime/v1/websocket?apikey={}&vsn=1.0.0{}",
+                    ws_scheme, host, key, token_param
                 )
             };
 
             let ws_url = Url::parse(&ws_url_str)?;
+            println!("Connecting to WebSocket: {}", ws_url); // Log the URL
 
             Self::set_connection_state_internal(
                 state_arc.clone(),
@@ -214,6 +234,8 @@ impl RealtimeClient {
             let reader_state_arc = state_arc.clone();
             let reader_state_change_tx = state_change_tx.clone();
             let heartbeat_interval = Duration::from_millis(options.heartbeat_interval);
+            // Clone channels Arc for the reader task
+            let reader_channels_arc = _channels_arc.clone();
 
             loop {
                 let socket_tx_ref = reader_socket_arc.read().await;
@@ -231,17 +253,43 @@ impl RealtimeClient {
                     msg_result = read.next() => {
                         match msg_result {
                             Some(Ok(msg)) => {
-                                // TODO: Process incoming message (phx_reply, events, presence)
                                 println!("Received WS message: {:?}", msg);
-                                // Example: Handle heartbeat replies
                                 if let Message::Text(text) = &msg {
                                     if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(text) {
-                                        if json_msg["event"].as_str() == Some("phx_reply") && json_msg["payload"]["status"].as_str() == Some("ok") {
-                                            // Likely heartbeat response, do nothing specific for now
+                                        // --- START: Message Routing Logic ---
+                                        if let Some(topic) = json_msg["topic"].as_str() {
+                                            let channels_guard = reader_channels_arc.read().await;
+                                            if let Some(channel) = channels_guard.get(topic) {
+                                                let target_channel = channel.clone();
+                                                drop(channels_guard);
+
+                                                // Spawn a task to handle the callback
+                                                let msg_clone = json_msg.clone(); // Clone for the spawned task
+                                                tokio::spawn(async move {
+                                                    // Assuming Channel::handle_message exists
+                                                    // Need to define handle_message in channel.rs
+                                                    // target_channel.handle_message(msg_clone).await;
+                                                    println!("TODO: Call target_channel.handle_message({:?})", msg_clone);
+                                                });
+                                            } else {
+                                                println!("Warning: Received message for unknown topic: {}", topic);
+                                            }
+                                        } else if json_msg["event"].as_str() == Some("phx_reply") {
+                                             if json_msg["payload"]["status"].as_str() == Some("ok") {
+                                                // TODO: Process successful replies (e.g., confirm JOIN)
+                                             } else {
+                                                 // Log or handle error replies
+                                                 eprintln!("Received error reply: {:?}", json_msg);
+                                             }
                                         } else {
-                                             // TODO: Route other messages to relevant channel callbacks
+                                            println!("Received message without topic: {:?}", json_msg);
                                         }
+                                        // --- END: Message Routing Logic ---
+                                    } else {
+                                         eprintln!("Failed to parse incoming text message as JSON: {}", text);
                                     }
+                                } else {
+                                    println!("Received non-text message: {:?}", msg);
                                 }
                             }
                             Some(Err(e)) => {
@@ -393,6 +441,8 @@ impl Clone for RealtimeClient {
             // Clone the Arc<AtomicBool>
             is_manually_closed: self.is_manually_closed.clone(),
             state_change: self.state_change.clone(),
+            // Clone the token Arc
+            access_token: self.access_token.clone(),
         }
     }
 }
