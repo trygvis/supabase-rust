@@ -312,15 +312,16 @@ Current development focus:
 
 ### Recent Updates
 
-- v0.1.3 (Latest)
-  - Added initial schema generation tools
+- v0.2.0 (Latest)
+  - Refactored workspace dependencies to v0.2.0
+  - Added initial schema generation tools (Experimental: Note feature gate in root Cargo.toml)
   - Improved error handling across all modules
   - Enhanced binary support in Functions module
   - Fixed compatibility issues with latest Supabase JS
 
 ### System Requirements
 
-- Rust 1.70.0 or higher
+- Rust 1.86.0 or higher
 - Compatible with Supabase projects using v2.x API
 
 ## Getting Started
@@ -331,7 +332,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-supabase-rust = "0.1.2"
+supabase-rust = "0.2.0"
 ```
 
 ### Basic Usage
