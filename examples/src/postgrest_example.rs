@@ -233,7 +233,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Need to parse ID differently now if insert returns minimal response
     let tx_task_id: i64 = tx_insert_result // Assuming insert now returns something minimal or we handle it
         .as_array()
-        .and_then(|arr| arr.get(0))
+        .and_then(|arr| arr.first())
         .and_then(|obj| obj.get("id"))
         .and_then(|id_val| id_val.as_i64())
         .ok_or_else(|| {
@@ -326,7 +326,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Parse ID from response (assuming minimal response for now)
     let roll_task_id: i64 = roll_insert_result
         .as_array()
-        .and_then(|arr| arr.get(0))
+        .and_then(|arr| arr.first())
         .and_then(|obj| obj.get("id"))
         .and_then(|id_val| id_val.as_i64())
         .ok_or_else(|| {
