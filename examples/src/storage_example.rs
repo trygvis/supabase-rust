@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use supabase_rust_gftd::storage::{FileOptions, ListOptions};
 use supabase_rust_gftd::Supabase;
 use tempfile::NamedTempFile;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FileObject {
@@ -245,111 +246,123 @@ async fn run_s3_compatible_example(
 
 /// 基本的なストレージ操作の例を実行
 async fn run_basic_storage_operations(
-    supabase: &Supabase,
+    storage: &supabase_rust_gftd::storage::StorageClient,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 基本的なストレージ操作の例 ===\n");
 
-    // テストバケットの名前
+    // バケット名とテストファイルのパスを設定
     let bucket_name = "test-bucket";
+    let upload_path = "test-file.txt";
+    let local_file_path = "local-test-file.txt";
 
-    // ストレージクライアントを取得
-    let storage = supabase.storage();
+    // テスト用の一時ファイルを作成
+    let mut file = StdFile::create(local_file_path)?;
+    writeln!(file, "これはテストファイルです。")?;
 
-    // バケット操作
+    // バケット一覧を取得
     println!("バケット一覧を取得中...");
     let buckets = storage.list_buckets().await?;
-    println!("バケット一覧: {:?}", buckets);
+    println!("利用可能なバケット:");
+    for bucket in &buckets {
+        println!("- {} (Public: {})", bucket.name, bucket.public);
+    }
 
-    // テストバケットが存在するか確認
+    // バケットが存在するか確認し、なければ作成
     let bucket_exists = buckets.iter().any(|b| b.name == bucket_name);
-
     if !bucket_exists {
         println!("バケット '{}' を作成します...", bucket_name);
         storage.create_bucket(bucket_name, true).await?;
-        println!("バケットを作成しました: {}", bucket_name);
-    } else {
-        println!("バケット '{}' は既に存在します", bucket_name);
+        println!("バケットを作成しました。");
     }
 
-    // テキストファイルのアップロード
-    println!("\nテキストファイルをアップロードしています...");
-
-    // 一時ファイルを作成
-    let mut temp_file = NamedTempFile::new()?;
-    let text_content = "This is a test file for storage operations.";
-    temp_file.write_all(text_content.as_bytes())?;
-
+    // ファイルをアップロード
+    println!("ファイルをアップロードしています...");
+    let upload_options = FileOptions::new().with_content_type("text/plain");
     let upload_result = storage
         .from(bucket_name)
-        .upload("test.txt", temp_file.path(), None)
+        .upload(upload_path, local_file_path, Some(upload_options))
         .await?;
-
     println!("ファイルをアップロードしました: {}", upload_result.name);
 
-    // ファイル一覧の取得
-    println!("\nファイル一覧を取得しています...");
-
-    let list_options = ListOptions::new().limit(100);
-
+    // バケット内のファイル一覧を取得
+    println!("\nバケット '{}' のファイル一覧を取得中...", bucket_name);
+    let list_options = ListOptions::new().with_limit(10).with_offset(0);
     let files = storage
         .from(bucket_name)
-        .list("", Some(list_options))
+        .list(Some(""), Some(list_options))
         .await?;
-
-    println!("バケット内のファイル:");
+    println!("ファイル一覧:");
     for file in &files {
-        println!("  - {}: {} bytes", file.name, file.size);
+        println!("- {} (サイズ: {} バイト)", file.name, file.metadata.size);
     }
 
-    // 公開URLの取得
-    println!("\n公開URLを取得しています...");
-    let public_url = storage.from(bucket_name).get_public_url("test.txt");
+    // ファイルの公開URLを取得
+    let public_url = storage.from(bucket_name).get_public_url(upload_path);
+    println!("\n公開URL: {}", public_url);
 
-    println!("公開URL: {}", public_url);
-
-    // 署名付きURLの取得
-    println!("\n署名付きURLを取得しています...");
+    // ファイルの署名付きURLを取得
     let signed_url = storage
         .from(bucket_name)
-        .create_signed_url("test.txt", 60)
+        .create_signed_url(upload_path, 60) // 60秒間有効なURL
         .await?;
-
     println!("署名付きURL (有効期限60秒): {}", signed_url);
 
-    // ファイルのダウンロード
+    // ファイルをダウンロード
     println!("\nファイルをダウンロードしています...");
-    let downloaded_data = storage.from(bucket_name).download("test.txt").await?;
+    let download_data = storage.from(bucket_name).download(upload_path).await?;
+    println!("ダウンロードしたファイルサイズ: {} バイト", download_data.len());
+    // ダウンロードした内容をファイルに保存（オプション）
+    // let mut download_file = StdFile::create("downloaded-test-file.txt")?;\n    // download_file.write_all(&download_data)?;\n\n    // ファイルを移動
+    let move_destination = "moved/test-file.txt";
+    println!("\nファイルを移動しています: {} -> {}", upload_path, move_destination);
+    storage
+        .from(bucket_name)
+        .move_(upload_path, move_destination)
+        .await?;
+    println!("ファイルを移動しました。");
 
-    let downloaded_text = String::from_utf8_lossy(&downloaded_data);
-    println!("ダウンロードしたテキスト: {}", downloaded_text);
+    // 移動後のファイルを確認
+    let moved_files = storage
+        .from(bucket_name)
+        .list(Some("moved/"), None)
+        .await?;
+    println!("移動先のディレクトリの内容:");
+    for file in moved_files {
+        println!("- {}", file.name);
+    }
 
-    // ファイルの削除
+    // ファイルを削除
     println!("\nファイルを削除しています...");
-    storage.from(bucket_name).remove(vec!["test.txt"]).await?;
+    let deleted_files = storage
+        .from(bucket_name)
+        .remove(vec![move_destination])
+        .await?;
+    println!("削除されたファイル: {}", deleted_files.len());
 
-    println!("ファイルを削除しました");
+    // バケットを空にする
+    // println!("\nバケット '{}' を空にしています...", bucket_name);
+    // storage.empty_bucket(bucket_name).await?;
+    // println!("バケットを空にしました。");
 
-    // バケットの削除（オプション）
-    /*
-    println!("\nバケットを削除しています...");
-    storage.delete_bucket(bucket_name).await?;
-    println!("バケットを削除しました: {}", bucket_name);
-    */
+    // バケットを削除
+    // println!("\nバケット '{}' を削除しています...", bucket_name);
+    // storage.delete_bucket(bucket_name).await?;
+    // println!("バケットを削除しました。");
+
+    // ローカルテストファイルを削除
+    std::fs::remove_file(local_file_path)?;
 
     Ok(())
 }
 
 /// 大容量ファイルのアップロード例を実行
 async fn run_large_file_upload(
-    supabase: &Supabase,
+    storage: &supabase_rust_gftd::storage::StorageClient,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 大容量ファイルのアップロード例 ===\n");
 
     // テストバケットの名前
     let bucket_name = "test-bucket";
-
-    // ストレージクライアントを取得
-    let storage = supabase.storage();
 
     // バケットが存在するか確認し、なければ作成
     let buckets = storage.list_buckets().await?;
@@ -413,7 +426,7 @@ async fn run_large_file_upload(
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    // 環境変数を.envファイルから読み込む
+    // .env ファイルを読み込む
     dotenv().ok();
 
     // Supabaseの認証情報を環境変数から取得
@@ -421,39 +434,55 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
 
     println!("Using Supabase URL: {}", supabase_url);
+    println!("==== Supabase Storage Examples ====");
 
     // Supabaseクライアントの初期化
     let supabase = Supabase::new(&supabase_url, &supabase_key);
 
-    println!("==== Supabase Storage Examples ====");
+    // --- Authentication Start ---
+    // Create a unique email for the test user
+    let test_email = format!("test-storage-{}-{}", Uuid::new_v4(), "@example.com");
+    let test_password = "testpassword";
 
-    // S3ドキュメントを処理...
-    match run_basic_storage_operations(&supabase).await {
-        Ok(_) => println!("\n基本的なストレージ操作の例が完了しました"),
-        Err(e) => println!(
-            "\n基本的なストレージ操作の例でエラーが発生しました: {:?}",
-            e
-        ),
+    println!("\nSigning up a test user with email: {}", test_email);
+    let auth_client = supabase.auth();
+    let session = auth_client
+        .sign_up_with_email_password(&test_email, test_password)
+        .await?;
+
+    if let Some(user) = &session.user {
+        println!("Created test user with ID: {}", user.id);
+    } else {
+        eprintln!("Failed to create test user or get user info");
+        // Optionally try signing in if signup failed (e.g., user already exists)
+        // let session = auth_client.sign_in_with_email_password(&test_email, test_password).await?;\n        // if session.access_token.is_empty() {\n        //     return Err(\"Failed to sign in test user\".into());\n        // }\n    }\n\n    let access_token = session.access_token;\n    if access_token.is_empty() {\n        return Err(\"Failed to obtain access token after signup/signin\".into());\n    }\n    println!(\n        \"Access token obtained (first 20 chars): {}\",\n        access_token.chars().take(20).collect::<String>()\n    );\n\n    // Set authentication token for the client
+    supabase.auth(&access_token);
+    println!("Authentication token set for the client.");
+    // --- Authentication End ---
+
+    let storage = supabase.storage();
+
+    // 各サンプル関数を呼び出す
+    match run_basic_storage_operations(&storage).await {
+        Ok(_) => println!("基本的なストレージ操作の例が正常に完了しました。"),
+        Err(e) => eprintln!("基本的なストレージ操作の例でエラーが発生しました: {}", e),
     }
 
-    match run_large_file_upload(&supabase).await {
-        Ok(_) => println!("\n大容量ファイルのアップロード例が完了しました"),
-        Err(e) => println!(
-            "\n大容量ファイルのアップロード例でエラーが発生しました: {:?}",
-            e
-        ),
+    match run_large_file_upload(&storage).await {
+        Ok(_) => println!("大容量ファイルのアップロード例が正常に完了しました。"),
+        Err(e) => eprintln!("大容量ファイルのアップロード例でエラーが発生しました: {}", e),
     }
 
-    // 画像変換の例を実行
+    // Note: These examples still create their own unauthenticated clients internally.
+    // To fix their auth errors, they need refactoring similar to the above.
     match image_transform_examples::run_image_transform_examples().await {
-        Ok(_) => println!("\n画像変換機能の例が完了しました"),
-        Err(e) => println!("\n画像変換機能の例でエラーが発生しました: {:?}", e),
+        Ok(_) => println!("画像変換機能の例が正常に完了しました。"),
+        Err(e) => eprintln!("画像変換機能の例でエラーが発生しました: {}", e),
     }
 
-    // S3互換APIの例を実行
     match run_s3_compatible_example(&supabase).await {
-        Ok(_) => println!("\nS3互換APIの例が完了しました"),
-        Err(e) => println!("\nS3互換APIの例でエラーが発生しました: {:?}", e),
+        Ok(_) => println!("S3互換APIの例が正常に完了しました。"),
+        Err(e) => eprintln!("S3互換APIの例でエラーが発生しました: {}", e),
     }
 
     println!("\n全ての例が実行されました。");

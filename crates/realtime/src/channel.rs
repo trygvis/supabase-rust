@@ -527,12 +527,21 @@ impl<'a> ChannelBuilder<'a> {
         let socket_guard = self.client.socket.read().await;
         if let Some(socket_tx) = socket_guard.as_ref() {
             let join_ref = self.client.next_ref();
+
+            // Add access_token to the payload for V2 authentication
+            let token_guard = self.client.access_token.read().await;
+            if let Some(token) = token_guard.as_ref() {
+                 payload_config["access_token"] = json!(token);
+            }
+            drop(token_guard);
+
             let message = json!({
                 "topic": self.topic,
                 "event": "phx_join",
-                "payload": payload_config,
+                "payload": payload_config, // Payload now includes access_token and configs
                 "ref": join_ref,
             });
+            println!("Sending JOIN message: {}", message.to_string()); // Log the JOIN message
             let ws_message = Message::Text(message.to_string());
 
             socket_tx

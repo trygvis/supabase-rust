@@ -61,8 +61,8 @@ pub struct RealtimeClient {
     // Wrap AtomicBool in Arc for sharing across tasks
     is_manually_closed: Arc<AtomicBool>,
     state_change: broadcast::Sender<ConnectionState>,
-    // Add field to store the access token
-    access_token: Arc<RwLock<Option<String>>>,
+    // Make token field accessible within the crate
+    pub(crate) access_token: Arc<RwLock<Option<String>>>,
 }
 
 impl RealtimeClient {
@@ -165,15 +165,16 @@ impl RealtimeClient {
 
             // Use the correct path /realtime/v1/websocket
             let host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
+            // Use vsn=2.0.0 and remove token parameter from URL
             let ws_url_str = if let Some(port) = base_url.port() {
                 format!(
-                    "{}://{}:{}/realtime/v1/websocket?apikey={}&vsn=1.0.0{}",
-                    ws_scheme, host, port, key, token_param
+                    "{}://{}:{}/realtime/v1/websocket?apikey={}&vsn=2.0.0", // Use vsn=2.0.0
+                    ws_scheme, host, port, key // Removed token_param
                 )
             } else {
                 format!(
-                    "{}://{}/realtime/v1/websocket?apikey={}&vsn=1.0.0{}",
-                    ws_scheme, host, key, token_param
+                    "{}://{}/realtime/v1/websocket?apikey={}&vsn=2.0.0", // Use vsn=2.0.0
+                    ws_scheme, host, key // Removed token_param
                 )
             };
 
