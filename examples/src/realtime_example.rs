@@ -9,9 +9,11 @@ use std::time::Duration;
 use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
 use supabase_rust_gftd::Supabase;
 use tokio::time::sleep;
+use supabase_rust_gftd::auth::Session;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
+    #[serde(skip_serializing_if = "Option::is_none")]
     id: Option<i32>,
     title: String,
     description: Option<String>,
@@ -33,6 +35,7 @@ struct RealtimePayload<T> {
 async fn run_advanced_filter_example(
     supabase: &Supabase,
     user_id: &str,
+    access_token: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 高度なリアルタイムフィルタリングの例 ===\n");
 
@@ -96,7 +99,11 @@ async fn run_advanced_filter_example(
         };
 
         println!("タスクを作成: {}", task.title);
-        let insert_result = supabase.from("tasks").insert(json!(task)).await?;
+        let insert_result = supabase
+            .from("tasks")
+            .with_auth(access_token)?
+            .insert(json!(task))
+            .await?;
 
         let task_id = if let Some(task) = insert_result.get(0) {
             task["id"].as_i64().unwrap()
@@ -109,6 +116,7 @@ async fn run_advanced_filter_example(
             println!("タスク {} を完了済みに更新（フィルターに合致）", i);
             let update_result = supabase
                 .from("tasks")
+                .with_auth(access_token)?
                 .eq("id", &task_id.to_string())
                 .update(json!({ "is_complete": true }))
                 .await?;
@@ -189,6 +197,7 @@ async fn run_advanced_filter_example(
         let task_list: Vec<serde_json::Value> = supabase
             .from("tasks")
             .select("*")
+            .with_auth(access_token)?
             .eq("title", &task_title)
             .eq("user_id", user_id)
             .execute()
@@ -200,6 +209,7 @@ async fn run_advanced_filter_example(
             // タスクを更新
             let update_client = supabase.from("tasks");
             let update_result = update_client
+                .with_auth(access_token)?
                 .eq("id", &task_id.to_string())
                 .update(json!({
                     "description": format!("複合フィルターテスト用に更新 {}", i)
@@ -245,7 +255,9 @@ async fn run_advanced_filter_example(
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
     let delete_client = supabase.from("tasks");
-    let delete_result = delete_client.eq("user_id", user_id).delete().await?;
+    let delete_result = delete_client
+        .with_auth(access_token)?
+        .eq("user_id", &user_id).delete().await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
@@ -273,7 +285,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let sign_up_result = supabase.auth().sign_up(&test_email, test_password).await?;
 
-    let user_id = sign_up_result.user.id;
+    let user_id = sign_up_result.user.id.clone();
+    let access_token = sign_up_result.access_token.clone();
+
     println!("Created test user with ID: {}", user_id);
 
     // タスクテーブルの準備
@@ -290,9 +304,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let counter_clone = message_counter.clone();
 
     // チャンネルを作成し、tasksテーブルの変更を購読
-    // 改善されたchannel()メソッドを使用
     let channel = realtime
-        .channel("public:tasks")
+        .channel("tasks")
         .on(
             DatabaseChanges::new("tasks")
                 .event(ChannelEvent::Insert)
@@ -363,7 +376,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             user_id: user_id.clone(),
         };
 
-        supabase.from("tasks").insert(json!(task)).await?;
+        supabase
+            .from("tasks")
+            .with_auth(&access_token)?
+            .insert(json!(task))
+            .await?;
 
         println!("タスク {} を作成しました", i);
 
@@ -378,6 +395,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let task1_list = supabase
         .from("tasks")
         .select("*")
+        .with_auth(&access_token)?
         .eq("title", "Realtime Task 1")
         .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
@@ -389,6 +407,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // タスクを更新
         let update_client = supabase.from("tasks");
         let update_result = update_client
+            .with_auth(&access_token)?
             .eq("id", &task1_id.to_string())
             .update(json!({ "is_complete": true }))
             .await?;
@@ -408,6 +427,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let task2_list = supabase
         .from("tasks")
         .select("*")
+        .with_auth(&access_token)?
         .eq("title", "Realtime Task 2")
         .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
@@ -419,6 +439,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         // タスクを削除
         let delete_client = supabase.from("tasks");
         let delete_result = delete_client
+            .with_auth(&access_token)?
             .eq("id", &task2_id.to_string())
             .delete()
             .await?;
@@ -437,7 +458,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("期待値: 5 (作成イベント3件 + 更新イベント1件 + 削除イベント1件)");
 
     // 高度なフィルタリングの例を実行
-    if let Err(e) = run_advanced_filter_example(&supabase, &user_id).await {
+    if let Err(e) = run_advanced_filter_example(&supabase, &user_id, &access_token).await {
         println!("フィルタリング例でエラーが発生しました: {}", e);
     }
 
@@ -445,18 +466,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
     let delete_client = supabase.from("tasks");
-    let delete_result = delete_client.eq("user_id", user_id).delete().await?;
+    let delete_result = delete_client
+        .with_auth(&access_token)?
+        .eq("user_id", &user_id).delete().await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
-
-    // クリーンアップ - 例で作成したテストユーザーを削除
-    println!("\nテストユーザーを削除します...");
-
-    let delete_client = supabase.from("tasks");
-    let delete_result = delete_client.eq("user_id", &user_id).delete().await?;
-
-    println!("削除結果: {:?}", delete_result);
 
     // チャンネルの購読を解除
     println!("\n続行するには何かキーを押してください...");

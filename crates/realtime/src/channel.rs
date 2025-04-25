@@ -1,4 +1,4 @@
-use crate::client::RealtimeClient; // Assuming RealtimeClient will be in client.rs
+use crate::client::{ConnectionState, RealtimeClient}; // Assuming RealtimeClient will be in client.rs
 use crate::error::RealtimeError;
 use crate::filters::{DatabaseFilter, FilterOperator};
 use crate::message::{ChannelEvent, Payload, PresenceChange};
@@ -9,6 +9,7 @@ use std::sync::Arc;
 // use tokio::sync::mpsc; // Unused import after commenting out `socket` field
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
+use tokio::time::{timeout, Duration}; // Add timeout import
 
 /// データベース変更監視設定
 #[derive(Debug, Clone, Serialize)]
@@ -285,102 +286,131 @@ impl<'a> ChannelBuilder<'a> {
 
     /// チャンネルへの接続と購読を開始
     pub async fn subscribe(self) -> Result<Vec<Subscription>, RealtimeError> {
-        // TODO: Lock client's channels map
-        // TODO: Check if channel already exists, if so, add callbacks
-        // TODO: If not, create new Channel struct
+        // --- START: Improved Connection Handling ---
+        let mut rx = self.client.on_state_change(); // Get state change receiver
 
-        // Send JOIN message to server
-        let join_ref = self.client.next_ref(); // Get unique ref from client
-        let topic = self.topic.clone();
+        // Check current state first
+        let initial_state = self.client.get_connection_state().await;
+        if initial_state != ConnectionState::Connected {
+            println!(
+                "Client not connected (state: {:?}). Ensuring connection attempt...",
+                initial_state
+            );
+            // Initiate connection if not already connecting/connected
+            // Spawning it prevents blocking the subscribe call.
+            let connect_future = self.client.connect();
+             // TODO: Add handling for immediate connect errors. For now, spawn and wait for state.
+             tokio::spawn(async move {
+                 if let Err(e) = connect_future.await {
+                     eprintln!("Background connect task failed: {}", e);
+                 }
+             });
 
-        // Construct payload with all subscription configs
-        let mut db_configs = json!({});
-        for (changes, _) in self.db_callbacks.values() {
-            let config = changes.to_channel_config();
-            // Merge config into db_configs (needs careful handling if multiple configs)
-            // This part depends heavily on how Phoenix Channels expect multiple configs.
-            // Assuming for now we just send one config per 'type'.
-            if let Some(payload) = config.get("payload") {
-                if let Some(cfg) = payload.get("config") {
-                    db_configs = cfg.clone(); // Overwrites previous, needs better merge
+            println!("Waiting for client to connect...");
+            // Wait for the Connected state notification with a timeout, skipping Connecting state
+            let wait_result = timeout(Duration::from_secs(10), async {
+                loop {
+                    match rx.recv().await {
+                        Ok(ConnectionState::Connected) => break Ok(()), // Success
+                        Ok(ConnectionState::Connecting) => continue, // Ignore Connecting, wait further
+                        Ok(other_state) => break Err(RealtimeError::ConnectionError(format!(
+                            "Connection attempt resulted in unexpected state: {:?}",
+                            other_state
+                        ))),
+                        Err(_) => break Err(RealtimeError::ConnectionError(
+                            "State change receiver error while waiting for connection.".to_string(),
+                        )),
+                    }
                 }
-            }
-        }
+            }).await;
 
-        // Simplified join payload
-        let payload = json!({
-            "config": {
-                 "postgres_changes": [db_configs], // Adjust based on actual protocol
-                 "broadcast": {
-                     "self": false, // Example option
-                     "ack": false
-                 },
-                 "presence": {
-                     "key": ""
+            match wait_result {
+                 Ok(Ok(_)) => {
+                    println!("Client connected successfully.");
+                 }
+                 Ok(Err(e)) => {
+                    // Inner error (unexpected state or recv error)
+                    return Err(e);
+                 }
+                 Err(_) => {
+                    // Timeout occurred
+                    let current_state = self.client.get_connection_state().await;
+                     return Err(RealtimeError::ConnectionError(format!(
+                        "Timeout waiting for connection. Current state: {:?}", current_state
+                    )));
                  }
             }
-        });
-
-        let message = json!({
-            "topic": topic,
-            "event": "phx_join",
-            "payload": payload,
-            "ref": join_ref
-        });
-
-        let socket_guard = self.client.socket.read().await;
-        if let Some(socket_tx) = socket_guard.as_ref() {
-            socket_tx.send(Message::Text(message.to_string())).await?; // Use ? with From<SendError> for RealtimeError
-        } else {
-            return Err(RealtimeError::ConnectionError("Not connected".to_string()));
         }
-        drop(socket_guard); // Release read lock
+        // --- END: Improved Connection Handling ---
 
-        // TODO: Wait for phx_reply with status "ok" for this join_ref
-
-        // --- Create Channel and Subscriptions ---
-        // This part needs careful synchronization with the client's channel map
-
-        let mut subscriptions = Vec::new();
-        let mut client_channels = self.client.channels.write().await;
-
-        let channel = client_channels
-            .entry(topic.clone())
+        // 2. Get or create the channel representation (Existing code)
+        let mut channels = self.client.channels.write().await;
+        let channel = channels
+            .entry(self.topic.clone())
             .or_insert_with(|| {
                 Arc::new(Channel {
-                    topic: topic.clone(),
-                    // socket: self.client.socket.clone(), // Matches commented-out field
+                    topic: self.topic.clone(),
                     callbacks: Arc::new(RwLock::new(HashMap::new())),
                     presence_callbacks: Arc::new(RwLock::new(Vec::new())),
                 })
             })
             .clone();
-        drop(client_channels); // Release write lock
 
-        // Add callbacks to the shared channel state
-        let mut channel_callbacks = channel.callbacks.write().await;
-        for (id, (_changes, callback)) in self.db_callbacks {
-            channel_callbacks.insert(id.clone(), callback);
+        // 3. Register callbacks and prepare JOIN message payload (Existing code)
+        let mut payload_config = json!({});
+        let mut subscriptions = Vec::new();
+
+        for (id, (changes, callback)) in self.db_callbacks {
+            channel.callbacks.write().await.insert(id.clone(), callback);
+            payload_config["postgres_changes"] =
+                serde_json::Value::Array(vec![changes.to_channel_config()]);
             subscriptions.push(Subscription {
                 id,
                 channel: channel.clone(),
             });
         }
-        for (id, (_changes, callback)) in self.broadcast_callbacks {
-            channel_callbacks.insert(id.clone(), callback);
+
+        for (id, (changes, callback)) in self.broadcast_callbacks {
+            channel.callbacks.write().await.insert(id.clone(), callback);
+            payload_config["broadcast"] = json!({ "event": changes.get_event_name() });
             subscriptions.push(Subscription {
                 id,
                 channel: channel.clone(),
             });
         }
-        drop(channel_callbacks);
 
-        let mut channel_presence_callbacks = channel.presence_callbacks.write().await;
-        channel_presence_callbacks.extend(self.presence_callbacks);
-        drop(channel_presence_callbacks);
+         if !self.presence_callbacks.is_empty() {
+            let mut presence_cbs = channel.presence_callbacks.write().await;
+            for cb in self.presence_callbacks {
+                presence_cbs.push(cb);
+            }
+            payload_config["presence"] = json!({ "key": "" });
+        }
 
-        // Return subscriptions (caller holds these to keep connection alive)
-        Ok(subscriptions)
+
+        // 4. Send JOIN message via the client's socket (Existing code)
+        let socket_guard = self.client.socket.read().await;
+        if let Some(socket_tx) = socket_guard.as_ref() {
+            let join_ref = self.client.next_ref();
+            let message = json!({
+                "topic": self.topic,
+                "event": "phx_join",
+                "payload": payload_config,
+                "ref": join_ref,
+            });
+            let ws_message = Message::Text(message.to_string());
+
+            socket_tx
+                .send(ws_message)
+                .await
+                .map_err(|e| RealtimeError::ConnectionError(format!("Failed to send JOIN message: {}", e)))?;
+
+            Ok(subscriptions)
+        } else {
+            Err(RealtimeError::ConnectionError(
+                "Connection established but socket sender not found.".to_string(),
+            ))
+        }
     }
 
     // Method to track presence - might belong on RealtimeClient or Channel directly?

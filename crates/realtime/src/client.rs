@@ -135,7 +135,30 @@ impl RealtimeClient {
             // Reset manual close flag using the cloned Arc
             is_manually_closed_arc.store(false, Ordering::SeqCst);
 
-            let ws_url = Url::parse(&format!("{}/websocket?apikey={}&vsn=1.0.0", url, key))?;
+            // Construct the WebSocket URL carefully
+            let base_url = Url::parse(&url)?;
+            let ws_scheme = match base_url.scheme() {
+                 "http" => "ws",
+                 "https" => "wss",
+                 // Use ConnectionError for unsupported schemes
+                 s => return Err(RealtimeError::ConnectionError(format!("Unsupported URL scheme: {}", s))),
+            };
+
+            // Use the correct path /realtime/v1/websocket
+            let host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
+            let ws_url_str = if let Some(port) = base_url.port() {
+                format!(
+                    "{}://{}:{}/realtime/v1/websocket?apikey={}&vsn=1.0.0",
+                    ws_scheme, host, port, key
+                )
+            } else {
+                format!(
+                    "{}://{}/realtime/v1/websocket?apikey={}&vsn=1.0.0",
+                    ws_scheme, host, key
+                )
+            };
+
+            let ws_url = Url::parse(&ws_url_str)?;
 
             Self::set_connection_state_internal(
                 state_arc.clone(),

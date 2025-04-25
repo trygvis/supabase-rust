@@ -6,9 +6,9 @@
 //! また、型安全なデータベース操作のためのトレイトも提供します。
 
 // 基本機能: 型安全なデータベース操作
+use crate::PostgrestError;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use crate::PostgrestError;
 use std::marker::PhantomData;
 
 // TypeScript変換関連の機能

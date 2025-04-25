@@ -818,7 +818,7 @@ impl Auth {
     /// # use reqwest::Client;
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
+    /// # let mut auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
     /// # let mut auth = auth.init_admin("your-service-role-key");
     /// if let Some(admin) = auth.admin() {
     ///     // Use admin API here
