@@ -454,6 +454,27 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## Project Structure and Priorities
+
+The project is organized as a Cargo workspace to manage different Supabase features as separate crates:
+
+-   **`crates/`**: Contains the core implementation for each Supabase service:
+    -   `auth`: Authentication (High Priority - Core functionality)
+    -   `postgrest`: Database interactions (High Priority - Core functionality, focus on enabling type-safety)
+    -   `storage`: File storage (Medium Priority - Needs test coverage)
+    -   `realtime`: Realtime subscriptions (Medium Priority - Needs tests, docs, refactoring)
+    -   `functions`: Edge function invocation (Medium Priority - Needs tests)
+    -   `migration`: Database migration utilities (Low Priority - Undefined scope)
+-   **`src/`**: The main `supabase-rust` library crate that ties the modules together.
+-   **`examples/`**: Usage examples for each module (High Priority - Needs fixing and maintenance).
+-   **`tests/`**: Integration tests (Medium Priority - Coverage needs expansion).
+-   **`supabase/`**: Supabase-specific configuration or migration files (related to the `migration` crate).
+-   **`docs/`**: Additional documentation (Low Priority - Needs population).
+-   **`Cargo.toml`**: Workspace and root crate definition.
+-   **`Makefile`**: Development and build tasks.
+
+Current priorities are stabilizing the existing features (especially PostgREST type-safety), fixing the examples, and increasing test coverage across all modules as outlined in the roadmap.
+
 ## Examples
 
 The `/examples` directory contains various usage examples for the different crates.
@@ -487,77 +508,3 @@ The `/examples` directory contains various usage examples for the different crat
 | `functions_example`        | ❌ Fails                   | Fails due to missing `hello-world` Edge Function. Requires Supabase setup.                                                        |
 | `auth_admin_example`       | ❌ Fails                   | Panics due to missing `SUPABASE_SERVICE_ROLE_KEY` environment variable. Requires setup.                                          |
 | `functions_binary_example` | ❌ Fails                   | Fails due to missing Edge Functions (e.g., `generate-image`). Requires Supabase setup.                                             |
-
-## Roadmap
-
-1.  **Priority Implementation Items** (Targeting Q3/Q4 2024):
-    *   **PostgresT:** Investigate, fix, and enable the experimental type-safe methods (`schema-convert` feature, commented out code in `lib.rs`).
-    *   **Realtime:** Improve Test Coverage & Documentation, Refactor large `lib.rs`.
-    *   **Functions:** Implement Automated Tests, Simplify request setup code.
-    *   **Storage:** Improve Test Coverage.
-    *   **Core:** Validate/Refactor Root Client Filter Methods.
-    *   **Migration:** Define scope, implement, and document `crates/migration`.
-    *   **API Enhancements:** Continue work on Admin API extensions, Advanced RLS, Realtime features (Channel status, JOIN monitoring), Async optimization.
-
-2.  **Module-Specific Roadmap**:
-
-    **Auth** (95% → 100%, by Q3 2024):
-    *   Advanced multi-factor authentication (MFA) features
-        *   WebAuthn/passkey support improvements
-        *   Backup code management
-    *   Advanced JWT verification
-        *   Custom claim validation
-        *   JWKS support enhancements
-    *   Admin API extensions
-        *   Organization management
-        *   Risk management and auditing
-
-    **PostgresT** (90% → 100%, by Q3 2024):
-    *   **Critical:** Resolve type-safe method import/compilation issues blocking examples.
-    *   Relationship auto-expansion with nested relationships
-        *   Efficient retrieval of multi-level relationships
-        *   Circular reference handling
-    *   Advanced RLS support
-        *   Complex policy condition application
-        *   RLS verification tools
-
-    **Storage** (95% → 100%, by Q3 2024):
-    *   **Testing:** Improve test coverage significantly using mocking frameworks.
-    *   Recursive folder operations
-        *   Efficient handling of deep directory structures
-        *   Batch operation optimization
-    *   Detailed access control
-        *   Custom policy definitions
-        *   Time-limited access
-
-    **Realtime** (80% → 100%, by Q4 2024): // Aligned with overview table
-    *   **Testing & Docs:** Expand Unit/Integration tests and add practical usage examples.
-    *   **Refactoring:** Split large `lib.rs` into smaller, more manageable modules.
-    *   **Presence:** Improve state synchronization robustness and testing.
-    *   Complete Presence feature implementation
-        *   State synchronization
-        *   Presence conflict resolution
-    *   Channel Status Notifications
-        *   Connection state monitoring
-        *   Reconnection strategies
-    *   Complex JOIN table monitoring
-        *   Related table change tracking
-        *   Efficient notification filtering
-
-    **Functions** (85% → 100%, by Q3 2024):
-    *   **Testing:** Implement comprehensive automated tests.
-    *   **Refactoring:** Simplify request setup code to reduce duplication.
-    *   Complete binary data support
-        *   Efficient binary streams
-        *   File upload/download via functions
-    *   Advanced error handling
-        *   Detailed error information
-        *   Retry strategies
-
-    **Migration** (New Target: Basic implementation by Q4 2024):
-    *   Define scope and implement core migration utilities (apply, revert, status).
-    *   Document usage and best practices within the Supabase context.
-
-    **Client Core** (Ongoing):
-    *   Validate and potentially refactor root client filter methods (`.eq()`, etc.).
-    *   Ensure consistency and avoid redundancy with `PostgrestClient` filtering.
