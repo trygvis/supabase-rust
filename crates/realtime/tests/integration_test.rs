@@ -2,7 +2,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::sync::Once;
 use supabase_rust_realtime::{
-    ChannelEvent, DatabaseChanges, RealtimeClient, RealtimeClientOptions, RealtimeMessage,
+    ChannelEvent, DatabaseChanges, RealtimeClient, RealtimeClientOptions, RealtimeMessage
 };
 use tokio::sync::mpsc;
 // Add tracing imports
@@ -11,14 +11,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::Mutex; // For thread-safe access to received messages
-use tokio::time::error::Elapsed;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 use tracing_subscriber::{fmt, EnvFilter};
-use supabase_rust_realtime::{ChannelBuilder, ConnectionState};
-use tokio::net::TcpListener;
-use tokio::time::{sleep, Duration};
-use tokio_tungstenite::tungstenite::protocol::Message;
 
 // Ensure logger is initialized only once across all tests
 static INIT_LOGGER: Once = Once::new();
