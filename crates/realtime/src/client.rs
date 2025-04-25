@@ -1,5 +1,6 @@
-use crate::channel::Channel; // Assuming Channel is in channel.rs
+use crate::channel::{Channel, ChannelBuilder}; // Added ChannelBuilder import
 use crate::error::RealtimeError;
+use crate::message::{RealtimeMessage, ChannelEvent}; // Added ChannelEvent import here
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::collections::HashMap;
@@ -12,6 +13,7 @@ use tokio::time::sleep;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 use url::Url;
+use log::{debug, error, info, trace, warn}; // Use log crate
 
 /// 接続状態
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,11 +95,10 @@ impl RealtimeClient {
 
     /// Method to set the authentication token
     pub async fn set_auth(&self, token: Option<String>) {
+        info!("Setting auth token (is_some: {})", token.is_some());
         let mut current_token = self.access_token.write().await;
         *current_token = token;
-        // TODO: If already connected, maybe send a message to update auth or reconnect?
-        // Consider triggering a reconnect if the token changes while connected.
-        // For now, token is only used during the initial connect call.
+        // TODO: Handle auth update while connected
     }
 
     /// 接続状態変更の通知を受け取るためのレシーバーを取得
@@ -111,8 +112,9 @@ impl RealtimeClient {
     }
 
     /// 特定のトピックに対するチャンネルビルダーを作成
-    pub fn channel(&self, topic: &str) -> crate::channel::ChannelBuilder {
-        crate::channel::ChannelBuilder::new(self, topic)
+    pub fn channel(&self, topic: &str) -> ChannelBuilder {
+        info!("Creating channel builder for topic: {}", topic);
+        ChannelBuilder::new(self, topic)
     }
 
     /// 次のメッセージ参照番号を生成
@@ -124,9 +126,14 @@ impl RealtimeClient {
     async fn set_connection_state(&self, state: ConnectionState) {
         let mut current_state = self.state.write().await;
         if *current_state != state {
+            info!("Client state changing from {:?} to {:?}", *current_state, state);
             *current_state = state;
             // Ignore send error if no receivers are listening
-            let _ = self.state_change.send(state);
+            if let Err(e) = self.state_change.send(state) {
+                warn!("Failed to broadcast state change {:?}: {}", state, e);
+            }
+        } else {
+            trace!("Client state already {:?}, not changing.", state);
         }
     }
 
@@ -134,6 +141,7 @@ impl RealtimeClient {
     pub fn connect(
         &self,
     ) -> impl std::future::Future<Output = Result<(), RealtimeError>> + Send + 'static {
+        info!("connect() called");
         // Clone necessary Arcs and fields for the async task
         let url = self.url.clone();
         let key = self.key.clone();
@@ -146,16 +154,17 @@ impl RealtimeClient {
         let token_arc = self.access_token.clone(); // Clone token Arc
 
         async move {
-            // Reset manual close flag using the cloned Arc
+            debug!("connect task started");
             is_manually_closed_arc.store(false, Ordering::SeqCst);
+            debug!("Reset manual close flag");
 
-            // Read the current token
             let token_guard = token_arc.read().await;
-            let _token_param = token_guard.as_ref().map(|t| format!("&token={}", t)).unwrap_or_default();
-            drop(token_guard); // Release read lock
+            let token_param = token_guard.as_ref().map(|t| format!("&token={}", t)).unwrap_or_default();
+            debug!("Read token (present: {})", token_guard.is_some());
+            drop(token_guard);
 
-            // Construct the WebSocket URL carefully
             let base_url = Url::parse(&url)?;
+            debug!("Parsed base URL: {}", base_url);
             let _ws_scheme = match base_url.scheme() {
                  "http" => "ws",
                  "https" => "wss",
@@ -165,15 +174,15 @@ impl RealtimeClient {
 
             // Use the correct path /realtime/v1/websocket
             let _host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
-            // Use vsn=2.0.0 and remove token parameter from URL
             let ws_url = format!(
-                "{}?apikey={}",
+                "{}?apikey={}{}",
                 base_url.join("/realtime/v1/websocket?vsn=2.0.0")
                     .map_err(RealtimeError::UrlParseError)?,
-                key
+                key,
+                token_param
             );
 
-            println!("Connecting to WebSocket: {}", ws_url); // Log the URL
+            info!("Attempting to connect to WebSocket: {}", ws_url);
 
             Self::set_connection_state_internal(
                 state_arc.clone(),
@@ -182,9 +191,24 @@ impl RealtimeClient {
             )
             .await;
 
-            let (ws_stream, _) = connect_async(ws_url).await.map_err(|e| {
-                RealtimeError::ConnectionError(format!("WebSocket connection failed: {}", e))
-            })?;
+            let connect_result = connect_async(&ws_url).await; // Store result
+            let ws_stream = match connect_result {
+                Ok((stream, response)) => {
+                    info!("WebSocket connection successful. Response: {:?}", response);
+                    stream
+                }
+                Err(e) => {
+                    error!("WebSocket connection failed: {}", e);
+                    // Set state before returning error
+                    Self::set_connection_state_internal(
+                        state_arc.clone(),
+                        state_change_tx.clone(),
+                        ConnectionState::Disconnected,
+                    )
+                    .await;
+                    return Err(RealtimeError::ConnectionError(format!("WebSocket connection failed: {}", e)));
+                }
+            };
 
             Self::set_connection_state_internal(
                 state_arc.clone(),
@@ -194,34 +218,34 @@ impl RealtimeClient {
             .await;
 
             let (mut write, mut read) = ws_stream.split();
+            debug!("WebSocket stream split into writer and reader");
 
-            // Create an MPSC channel for sending messages to the WebSocket writer task
             let (socket_tx, mut socket_rx) = mpsc::channel::<Message>(100);
-
-            // Store the sender half in the shared state
-            *socket_arc.write().await = Some(socket_tx);
+            *socket_arc.write().await = Some(socket_tx.clone()); // Clone for writer task
+            debug!("Internal MPSC channel created, sender stored");
 
             // --- WebSocket Writer Task ---
             let writer_socket_arc = socket_arc.clone();
             let writer_state_arc = state_arc.clone();
             let writer_state_change_tx = state_change_tx.clone();
-            tokio::spawn(async move {
+            let writer_handle = tokio::spawn(async move {
+                debug!("Writer task started");
                 while let Some(message) = socket_rx.recv().await {
+                    trace!("Writer task sending message: {:?}", message);
                     if let Err(e) = write.send(message).await {
-                        eprintln!("WebSocket send error: {}. Closing connection.", e);
-                        *writer_socket_arc.write().await = None; // Clear sender on error
+                        error!("Writer task: WebSocket send error: {}. Closing connection.", e);
+                        *writer_socket_arc.write().await = None;
                         Self::set_connection_state_internal(
                             writer_state_arc,
                             writer_state_change_tx,
                             ConnectionState::Disconnected,
                         )
                         .await;
-                        socket_rx.close();
+                        socket_rx.close(); // Close the receiver side
                         break;
                     }
                 }
-                // Writer task normally ends when socket_rx channel is closed
-                println!("WebSocket writer task finished.");
+                debug!("Writer task finished (sender dropped or error).");
             });
 
             // --- WebSocket Reader Task (and heartbeat/rejoin logic) ---
@@ -232,100 +256,112 @@ impl RealtimeClient {
             // Clone channels Arc for the reader task
             let reader_channels_arc = _channels_arc.clone();
 
-            loop {
-                let socket_tx_ref = reader_socket_arc.read().await;
-                let current_socket_tx = if let Some(tx) = socket_tx_ref.as_ref() {
-                    tx.clone()
-                } else {
-                    // Socket was closed (likely by writer task error or disconnect)
-                    println!("Socket sender gone, exiting reader task.");
-                    break;
-                };
-                drop(socket_tx_ref); // Release read lock
+            let reader_handle = tokio::spawn(async move {
+                debug!("Reader task started");
+                loop {
+                    let socket_tx_ref = reader_socket_arc.read().await;
+                    let current_socket_tx = if let Some(tx) = socket_tx_ref.as_ref() {
+                        tx.clone()
+                    } else {
+                        warn!("Reader task: Socket sender gone, exiting.");
+                        break;
+                    };
+                    drop(socket_tx_ref);
 
-                tokio::select! {
-                    // Read messages from WebSocket
-                    msg_result = read.next() => {
-                        match msg_result {
-                            Some(Ok(msg)) => {
-                                println!("Received WS message: {:?}", msg);
-                                if let Message::Text(text) = &msg {
-                                    if let Ok(json_msg) = serde_json::from_str::<serde_json::Value>(text) {
-                                        // --- START: Message Routing Logic ---
-                                        if let Some(topic) = json_msg["topic"].as_str() {
-                                            let channels_guard = reader_channels_arc.read().await;
-                                            if let Some(channel) = channels_guard.get(topic) {
-                                                let target_channel = channel.clone();
-                                                drop(channels_guard);
+                    tokio::select! {
+                        biased; // Prioritize reading incoming messages
 
-                                                // Spawn a task to handle the callback
-                                                let msg_clone = json_msg.clone(); // Clone for the spawned task
-                                                tokio::spawn(async move {
-                                                    // Assuming Channel::handle_message exists
-                                                    // Need to define handle_message in channel.rs
-                                                    target_channel.handle_message(msg_clone).await;
-                                                });
-                                            } else {
-                                                println!("Warning: Received message for unknown topic: {}", topic);
+                        // Read messages from WebSocket
+                        msg_result = read.next() => {
+                            match msg_result {
+                                Some(Ok(msg)) => {
+                                    trace!("Reader task received WS message: {:?}", msg);
+                                    if let Message::Text(text) = &msg {
+                                        match serde_json::from_str::<RealtimeMessage>(text) { // Parse as RealtimeMessage
+                                            Ok(realtime_msg) => {
+                                                debug!("Reader task parsed RealtimeMessage: topic='{}', event='{:?}', ref='{:?}'", 
+                                                       realtime_msg.topic, realtime_msg.event, realtime_msg.message_ref);
+                                                // Route based on topic
+                                                let channels_guard = reader_channels_arc.read().await;
+                                                if let Some(channel) = channels_guard.get(&realtime_msg.topic) {
+                                                    let target_channel = channel.clone();
+                                                    drop(channels_guard); // Release lock before await
+                                                    trace!("Reader task dispatching message to channel {}", realtime_msg.topic);
+                                                    // Spawn task for handling
+                                                    tokio::spawn(async move {
+                                                         // Pass the already parsed RealtimeMessage
+                                                        target_channel.handle_message(realtime_msg).await;
+                                                    });
+                                                } else if realtime_msg.topic == "phoenix" {
+                                                    // Handle special Phoenix replies if needed (e.g., join confirmation)
+                                                    debug!("Reader task received Phoenix message: {:?}", realtime_msg);
+                                                    // TODO: Potentially link replies back to join/leave calls via ref
+                                                } else {
+                                                    warn!("Reader task: Received message for unknown/unsubscribed topic: {}", realtime_msg.topic);
+                                                }
                                             }
-                                        } else if json_msg["event"].as_str() == Some("phx_reply") {
-                                             if json_msg["payload"]["status"].as_str() == Some("ok") {
-                                                // TODO: Process successful replies (e.g., confirm JOIN)
-                                             } else {
-                                                 // Log or handle error replies
-                                                 eprintln!("Received error reply: {:?}", json_msg);
-                                             }
-                                        } else {
-                                            println!("Received message without topic: {:?}", json_msg);
+                                            Err(e) => {
+                                                error!("Reader task: Failed to parse incoming text message as RealtimeMessage: {}. Raw: {}", e, text);
+                                            }
                                         }
-                                        // --- END: Message Routing Logic ---
+                                    } else if msg.is_close() {
+                                         debug!("Reader task received Close frame: {:?}", msg);
+                                         break; // Exit loop on Close frame
                                     } else {
-                                         eprintln!("Failed to parse incoming text message as JSON: {}", text);
+                                        trace!("Reader task received non-text/non-close message: {:?}", msg);
                                     }
-                                } else {
-                                    println!("Received non-text message: {:?}", msg);
+                                }
+                                Some(Err(e)) => {
+                                    error!("Reader task: WebSocket read error: {}", e);
+                                    break; // Exit loop on read error
+                                }
+                                None => {
+                                    debug!("Reader task: WebSocket stream closed by remote.");
+                                    break; // Exit loop on stream close
                                 }
                             }
-                            Some(Err(e)) => {
-                                eprintln!("WebSocket read error: {}", e);
-                                Self::set_connection_state_internal(reader_state_arc.clone(), reader_state_change_tx.clone(), ConnectionState::Disconnected).await;
-                                *reader_socket_arc.write().await = None;
-                                break; // Exit loop on read error
-                            }
-                            None => {
-                                println!("WebSocket stream closed by remote.");
-                                Self::set_connection_state_internal(reader_state_arc.clone(), reader_state_change_tx.clone(), ConnectionState::Disconnected).await;
-                                *reader_socket_arc.write().await = None;
-                                break; // Exit loop on stream close
-                            }
+                        }
+
+                        // Send heartbeat periodically
+                        _ = sleep(heartbeat_interval) => {
+                             trace!("Reader task: Sending heartbeat");
+                             // Revert to simple atomic ref for heartbeat within this task
+                             let heartbeat_ref = AtomicU32::new(0).fetch_add(1, Ordering::SeqCst).to_string();
+                             let heartbeat_msg = json!({
+                                 "topic": "phoenix",
+                                 "event": ChannelEvent::Heartbeat,
+                                 "payload": {},
+                                 "ref": heartbeat_ref
+                             });
+                             let ws_msg = Message::Text(heartbeat_msg.to_string());
+                             if let Err(e) = current_socket_tx.send(ws_msg).await {
+                                 error!("Reader task: Failed to send heartbeat: {}. Assuming connection lost.", e);
+                                 break; // Exit loop if heartbeat send fails
+                             }
                         }
                     }
-                    // Send heartbeat periodically
-                    _ = sleep(heartbeat_interval) => {
-                         let heartbeat_ref = AtomicU32::new(0).fetch_add(1, Ordering::SeqCst).to_string(); // Simple ref for heartbeat
-                         let heartbeat_msg = json!({
-                             "topic": "phoenix",
-                             "event": "heartbeat",
-                             "payload": {},
-                             "ref": heartbeat_ref
-                         });
-                         if let Err(e) = current_socket_tx.send(Message::Text(heartbeat_msg.to_string())).await {
-                             eprintln!("Failed to send heartbeat: {}. Assuming connection lost.", e);
-                             Self::set_connection_state_internal(reader_state_arc.clone(), reader_state_change_tx.clone(), ConnectionState::Disconnected).await;
-                             *reader_socket_arc.write().await = None;
-                             break; // Exit loop if heartbeat send fails
-                         }
-                    }
                 }
-            }
+                debug!("Reader task finished loop.");
+                // When reader exits, signal disconnect and clean up socket
+                Self::set_connection_state_internal(reader_state_arc.clone(), reader_state_change_tx.clone(), ConnectionState::Disconnected).await;
+                *reader_socket_arc.write().await = None;
+            });
 
-            // Connection closed, attempt reconnect if enabled and not manually closed
-            if options.auto_reconnect && !is_manually_closed_arc.load(Ordering::SeqCst) {
-                println!("Connection lost. Auto-reconnect is enabled but reconnect logic needs implementation.");
-                // self.reconnect(); // This needs careful handling
-            }
-
+            // --- Wait for tasks or manual disconnect --- 
+            // This part needs careful thought. Do we just return Ok(()) and let tasks run? 
+            // Or wait for disconnect? Waiting here blocks the caller.
+            // Let's return Ok(()) immediately and let the tasks run in the background.
+            // The user can monitor state via on_state_change.
+            debug!("connect task returning Ok, reader/writer tasks running in background");
             Ok(())
+
+            // Example of waiting (might cause hangs if disconnect doesn't happen cleanly):
+            // tokio::select! {
+            //    _ = writer_handle => { warn!("Writer task exited unexpectedly."); },
+            //    _ = reader_handle => { debug!("Reader task exited."); },
+            // }
+            // info!("Connect task finished after reader/writer tasks exited.");
+            // Ok(())
         }
     }
 
@@ -337,6 +373,7 @@ impl RealtimeClient {
     ) {
         let mut current_state = state_arc.write().await;
         if *current_state != state {
+             trace!("set_connection_state_internal changing from {:?} to {:?}", *current_state, state);
             *current_state = state;
             let _ = state_change_tx.send(state);
         }
@@ -344,20 +381,23 @@ impl RealtimeClient {
 
     /// 切断処理
     pub async fn disconnect(&self) -> Result<(), RealtimeError> {
+        info!("disconnect() called");
         // Use the Arc<AtomicBool>
         self.is_manually_closed.store(true, Ordering::SeqCst);
+        debug!("Set manual close flag");
         self.set_connection_state(ConnectionState::Disconnected)
             .await;
 
+        // Close the socket sender channel
         let mut socket_guard = self.socket.write().await;
         if let Some(socket_tx) = socket_guard.take() {
-            // Close the sender channel, which will cause the writer task to exit
-            // The reader task should exit due to stream closure or heartbeat failure.
-            drop(socket_tx);
-            println!("WebSocket connection closed manually.");
+            debug!("disconnect(): Dropping socket sender to signal tasks.");
+            drop(socket_tx); // This signals the writer task to exit.
+                             // Reader task should exit upon seeing sender drop or stream close.
+            info!("WebSocket connection closed manually via disconnect().");
+        } else {
+            warn!("disconnect(): No active socket sender found, likely already disconnected.");
         }
-        // Clear channels? Maybe not, allow re-connecting later?
-        // self.channels.write().await.clear();
 
         Ok(())
     }
@@ -416,6 +456,19 @@ impl RealtimeClient {
                     }
                 }
             }
+        }
+    }
+
+    /// Helper to send a raw JSON message through the WebSocket connection
+    pub(crate) async fn send_message(&self, message: serde_json::Value) -> Result<(), RealtimeError> {
+        trace!("Client attempting to send message: {}", message);
+        let socket_guard = self.socket.read().await;
+        if let Some(socket_tx) = socket_guard.as_ref() {
+            let ws_message = Message::Text(message.to_string());
+            socket_tx.send(ws_message).await.map_err(RealtimeError::from)
+        } else {
+            warn!("Cannot send message, client socket unavailable.");
+            Err(RealtimeError::ConnectionError("Client socket unavailable".to_string()))
         }
     }
 }

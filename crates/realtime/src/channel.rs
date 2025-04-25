@@ -1,7 +1,8 @@
 use crate::client::{ConnectionState, RealtimeClient}; // Assuming RealtimeClient will be in client.rs
 use crate::error::RealtimeError;
 use crate::filters::{DatabaseFilter, FilterOperator};
-use crate::message::{ChannelEvent, Payload, PresenceChange};
+use crate::message::{ChannelEvent, Payload, PresenceChange, RealtimeMessage};
+use log::{debug, error, info, trace, warn}; // Use log crate
 use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
@@ -208,16 +209,74 @@ type PresenceCallbackFn = Box<dyn Fn(PresenceChange) + Send + Sync>;
 /// 内部チャンネル表現
 pub(crate) struct Channel {
     topic: String,
-    // Use Weak reference to client to avoid cycles if Channel holds client ref?
-    // For now, assume socket sender is passed down.
-    // socket: Arc<RwLock<Option<mpsc::Sender<Message>>>>, // Clippy: dead_code - Seems unused within Channel methods
+    client: Arc<RealtimeClient>, // Store Arc<RealtimeClient> for sending messages
     callbacks: Arc<RwLock<HashMap<String, CallbackFn>>>,
     presence_callbacks: Arc<RwLock<Vec<PresenceCallbackFn>>>,
-    // Add presence state if managed per-channel
-    // presence_state: Arc<RwLock<PresenceState>>,
+    // Add channel state
+    state: Arc<RwLock<ChannelState>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChannelState {
+    Closed,
+    Joining,
+    Joined,
+    Leaving,
+    Errored,
 }
 
 impl Channel {
+    pub(crate) fn new(topic: String, client: Arc<RealtimeClient>) -> Self {
+        debug!("Channel::new created for topic: {}", topic);
+        Self {
+            topic,
+            client,
+            callbacks: Arc::new(RwLock::new(HashMap::new())),
+            presence_callbacks: Arc::new(RwLock::new(Vec::new())),
+            state: Arc::new(RwLock::new(ChannelState::Closed)),
+        }
+    }
+
+    async fn set_state(&self, state: ChannelState) {
+        let mut current_state = self.state.write().await;
+        if *current_state != state {
+             info!("Channel '{}' state changing from {:?} to {:?}", self.topic, *current_state, state);
+            *current_state = state;
+        } else {
+            trace!("Channel '{}' state already {:?}, not changing.", self.topic, state);
+        }
+    }
+
+    // Simplified join - just sends the message
+    async fn join(&self) -> Result<(), RealtimeError> {
+        self.set_state(ChannelState::Joining).await;
+        let join_ref = self.client.next_ref();
+        info!("Channel '{}' sending join message with ref {}", self.topic, join_ref);
+        let join_msg = json!({
+            "topic": self.topic,
+            "event": ChannelEvent::PhoenixJoin,
+            "payload": {},
+            "ref": join_ref
+        });
+        // TODO: Add timeout for join reply
+        self.client.send_message(join_msg).await
+        // Need mechanism to wait for phx_reply with matching ref
+    }
+
+    async fn send_message(&self, payload: serde_json::Value) -> Result<(), RealtimeError> {
+        // Called by client's reader task
+        // Need access to client's socket sender
+        let socket_guard = self.client.socket.read().await;
+        if let Some(socket_tx) = socket_guard.as_ref() {
+            let ws_msg = Message::Text(payload.to_string());
+            trace!("Channel '{}' sending message: {:?}", self.topic, ws_msg);
+            socket_tx.send(ws_msg).await.map_err(RealtimeError::from)
+        } else {
+            warn!("Channel '{}': Cannot send message, client socket unavailable.", self.topic);
+            Err(RealtimeError::ConnectionError("Client socket unavailable".to_string()))
+        }
+    }
+
     async fn unsubscribe(&self, id: &str) -> Result<(), RealtimeError> {
         // Remove callback
         self.callbacks.write().await.remove(id);
@@ -232,137 +291,49 @@ impl Channel {
         Ok(())
     }
 
-    // New method to handle incoming messages for this channel
-    pub(crate) async fn handle_message(&self, message: serde_json::Value) {
-        // Parse as generic Value first to access top-level fields like 'event'
-        match serde_json::from_value::<serde_json::Value>(message.clone()) {
-            Ok(json_msg) => {
-                let event_field = json_msg.get("event").and_then(|v| v.as_str());
-                let topic = json_msg.get("topic").and_then(|v| v.as_str()); // May not always be present
-                let payload_data = json_msg.get("payload"); // This is the nested payload
-                // 'type' field is within the nested payload for db changes, but top-level for others?
-                // Let's extract it from payload_data if possible, or top level otherwise.
-                let event_type = payload_data.and_then(|p| p.get("type")).and_then(|v| v.as_str())
-                                 .or_else(|| json_msg.get("type").and_then(|v| v.as_str()));
-                let timestamp = json_msg.get("timestamp").and_then(|v| v.as_str());
+    // Adjusted to accept RealtimeMessage
+    pub(crate) async fn handle_message(&self, message: RealtimeMessage) {
+        debug!("Channel '{}' handling message: event={:?}, ref={:?}", 
+               self.topic, message.event, message.message_ref);
 
-                println!(
-                    "Handling message for topic '{}', event '{:?}'",
-                    topic.unwrap_or(&self.topic),
-                    event_field
-                );
-
-                // Route based on the 'event' field
-                match event_field {
-                    // --- Database Changes --- uses event "postgres_changes"
-                    Some("postgres_changes") => {
-                        // Construct the Payload struct expected by the callback
-                        let payload_for_callback = Payload {
-                            data: payload_data.cloned().unwrap_or(serde_json::Value::Null),
-                            event_type: event_type.map(String::from),
-                            timestamp: timestamp.map(String::from),
-                        };
-                        let callbacks = self.callbacks.read().await;
-                        println!(
-                            "Calling {} DB change callbacks for topic '{}'",
-                            callbacks.len(),
-                            self.topic
-                        );
-                        for (id, callback) in callbacks.iter() {
-                            // TODO: Filter callback based on original subscription criteria
-                            println!("  -> Calling DB callback ID: {}", id);
-                            (callback)(payload_for_callback.clone());
-                        }
-                    }
-
-                    // --- Broadcast --- uses event "broadcast"
-                    Some("broadcast") => {
-                        let payload_for_callback = Payload {
-                            data: payload_data.cloned().unwrap_or(serde_json::Value::Null),
-                            event_type: event_type.map(String::from),
-                            timestamp: timestamp.map(String::from),
-                        };
-                        let callbacks = self.callbacks.read().await;
-                        println!(
-                            "Calling {} broadcast callbacks for topic '{}'",
-                            callbacks.len(),
-                            self.topic
-                        );
-                        for (id, callback) in callbacks.iter() {
-                             // TODO: Filter based on the original BroadcastChanges config
-                            println!("  -> Calling Broadcast callback ID: {}", id);
-                            (callback)(payload_for_callback.clone());
-                        }
-                    }
-
-                    // --- Presence --- uses events "presence_diff" or "presence_state"
-                    Some("presence_diff") | Some("presence_state") => {
-                        if let Some(data) = payload_data {
-                            match serde_json::from_value::<PresenceChange>(data.clone()) {
-                                Ok(presence_change) => {
-                                    let presence_callbacks = self.presence_callbacks.read().await;
-                                    println!(
-                                        "Calling {} presence callbacks for topic '{}'",
-                                        presence_callbacks.len(),
-                                        self.topic
-                                    );
-                                    for callback in presence_callbacks.iter() {
-                                        (callback)(presence_change.clone());
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!(
-                                        "Failed to parse presence payload for topic '{}': {}. Payload: {:?}",
-                                        self.topic,
-                                        e,
-                                        data // Log the nested payload data
-                                    );
-                                }
-                            }
-                        } else {
-                            eprintln!(
-                                "Presence event '{:?}' received without payload data for topic '{}'",
-                                event_field,
-                                self.topic
-                            );
-                        }
-                    }
-
-                    // --- Other Phoenix Events ---
-                    Some("phx_close") => {
-                        println!("Channel '{}' received phx_close", self.topic);
-                        // TODO: Maybe clear callbacks or notify client?
-                    }
-                    Some("phx_error") => {
-                        eprintln!(
-                            "Channel '{}' received phx_error: {:?}",
-                            self.topic,
-                            payload_data // Log the nested payload
-                        );
-                        // TODO: Maybe trigger reconnect or notify user?
-                    }
-
-                    // --- Unknown Event ---
-                    Some(unknown_event) => {
-                        println!(
-                            "Unhandled event '{}' on channel '{}': {:?}",
-                            unknown_event,
-                            self.topic,
-                            json_msg // Log the whole message
-                        );
-                    }
-                    None => {
-                        println!("Received message without event field: {:?}", json_msg);
-                    }
+        match message.event {
+            ChannelEvent::PhoenixReply => {
+                // TODO: Check ref against pending joins/leaves
+                info!("Channel '{}' received PhoenixReply: {:?}", self.topic, message.payload);
+                if *self.state.read().await == ChannelState::Joining {
+                    // Basic assumption: any reply means join succeeded for now
+                    self.set_state(ChannelState::Joined).await;
+                } else if *self.state.read().await == ChannelState::Leaving {
+                     self.set_state(ChannelState::Closed).await;
                 }
             }
-            Err(e) => {
-                eprintln!(
-                    "Failed to parse incoming message for topic '{}' into JSON Value: {}. Message: {:?}",
-                    self.topic,
-                    e,
-                    message // Log original potentially non-JSON value
-                );
+            ChannelEvent::PhoenixClose => {
+                 info!("Channel '{}' received PhoenixClose. Setting state to Closed.", self.topic);
+                 self.set_state(ChannelState::Closed).await;
+            }
+            ChannelEvent::PhoenixError => {
+                 error!("Channel '{}' received PhoenixError: {:?}", self.topic, message.payload);
+                 self.set_state(ChannelState::Errored).await;
+            }
+            ChannelEvent::PostgresChanges | ChannelEvent::Broadcast | ChannelEvent::Presence => {
+                // These events have nested data we need to pass to callbacks
+                let payload = Payload {
+                    data: message.payload.clone(), // Pass the whole payload as data for now
+                    event_type: Some(message.event.to_string()), // Reflect the event type
+                    timestamp: None, // Timestamp might be deeper in payload, needs parsing
+                };
+                trace!("Channel '{}' dispatching event {:?} to callbacks", self.topic, message.event);
+                let callbacks_guard = self.callbacks.read().await;
+                for callback in callbacks_guard.values() {
+                    // Execute callback - Consider spawning if long-running
+                    callback(payload.clone());
+                }
+                // TODO: Handle presence callbacks separately if event is Presence
+            }
+            // Ignore other events like Heartbeat, Insert, Update, Delete, All at the channel level
+            // (Those might be relevant *inside* a PostgresChanges payload)
+            _ => {
+                 trace!("Channel '{}' ignored event: {:?}", self.topic, message.event);
             }
         }
     }
@@ -379,6 +350,7 @@ pub struct ChannelBuilder<'a> {
 
 impl<'a> ChannelBuilder<'a> {
     pub(crate) fn new(client: &'a RealtimeClient, topic: &str) -> Self {
+        debug!("ChannelBuilder::new for topic: {}", topic);
         Self {
             client,
             topic: topic.to_string(),
@@ -421,140 +393,93 @@ impl<'a> ChannelBuilder<'a> {
 
     /// チャンネルへの接続と購読を開始
     pub async fn subscribe(self) -> Result<Vec<Subscription>, RealtimeError> {
-        // --- START: Improved Connection Handling ---
-        let mut rx = self.client.on_state_change(); // Get state change receiver
+        info!("ChannelBuilder subscribing for topic: {}", self.topic);
+        let client_arc = Arc::new(self.client.clone()); // Clone client Arcs into a new Arc for the Channel
 
-        // Check current state first
-        let initial_state = self.client.get_connection_state().await;
-        if initial_state != ConnectionState::Connected {
-            println!(
-                "Client not connected (state: {:?}). Ensuring connection attempt...",
-                initial_state
-            );
-            // Initiate connection if not already connecting/connected
-            // Spawning it prevents blocking the subscribe call.
-            let connect_future = self.client.connect();
-             // TODO: Add handling for immediate connect errors. For now, spawn and wait for state.
-             tokio::spawn(async move {
-                 if let Err(e) = connect_future.await {
-                     eprintln!("Background connect task failed: {}", e);
-                 }
-             });
-
-            println!("Waiting for client to connect...");
-            // Wait for the Connected state notification with a timeout, skipping Connecting state
-            let wait_result = timeout(Duration::from_secs(10), async {
-                loop {
-                    match rx.recv().await {
-                        Ok(ConnectionState::Connected) => break Ok(()), // Success
-                        Ok(ConnectionState::Connecting) => continue, // Ignore Connecting, wait further
-                        Ok(other_state) => break Err(RealtimeError::ConnectionError(format!(
-                            "Connection attempt resulted in unexpected state: {:?}",
-                            other_state
-                        ))),
-                        Err(_) => break Err(RealtimeError::ConnectionError(
-                            "State change receiver error while waiting for connection.".to_string(),
-                        )),
-                    }
-                }
-            }).await;
-
-            match wait_result {
-                 Ok(Ok(_)) => {
-                    println!("Client connected successfully.");
-                 }
-                 Ok(Err(e)) => {
-                    // Inner error (unexpected state or recv error)
-                    return Err(e);
-                 }
-                 Err(_) => {
-                    // Timeout occurred
-                    let current_state = self.client.get_connection_state().await;
-                     return Err(RealtimeError::ConnectionError(format!(
-                        "Timeout waiting for connection. Current state: {:?}", current_state
-                    )));
-                 }
-            }
-        }
-        // --- END: Improved Connection Handling ---
-
-        // 2. Get or create the channel representation (Existing code)
-        let mut channels = self.client.channels.write().await;
-        let channel = channels
+        // Get or create the channel instance
+        let mut channels_guard = client_arc.channels.write().await;
+        let channel = channels_guard
             .entry(self.topic.clone())
-            .or_insert_with(|| {
-                Arc::new(Channel {
-                    topic: self.topic.clone(),
-                    callbacks: Arc::new(RwLock::new(HashMap::new())),
-                    presence_callbacks: Arc::new(RwLock::new(Vec::new())),
-                })
-            })
+            .or_insert_with(|| Arc::new(Channel::new(self.topic.clone(), client_arc.clone())))
             .clone();
+        drop(channels_guard); // Release write lock
+        debug!("Got or created Channel Arc for topic: {}", self.topic);
 
-        // 3. Register callbacks and prepare JOIN message payload (Existing code)
-        let mut payload_config = json!({});
         let mut subscriptions = Vec::new();
+        let mut callbacks_guard = channel.callbacks.write().await;
+        let mut presence_callbacks_guard = channel.presence_callbacks.write().await;
 
-        for (id, (changes, callback)) in self.db_callbacks {
-            channel.callbacks.write().await.insert(id.clone(), callback);
-            payload_config["postgres_changes"] =
-                serde_json::Value::Array(vec![changes.to_channel_config()]);
-            subscriptions.push(Subscription {
-                id,
-                channel: channel.clone(),
-            });
+        // Add database change callbacks
+        for (id, (_changes, callback)) in self.db_callbacks {
+            debug!("Adding DB callback ID {} to channel {}", id, self.topic);
+            callbacks_guard.insert(id.clone(), callback);
+            subscriptions.push(Subscription { id, channel: channel.clone() });
         }
 
-        for (id, (changes, callback)) in self.broadcast_callbacks {
-            channel.callbacks.write().await.insert(id.clone(), callback);
-            payload_config["broadcast"] = json!({ "event": changes.get_event_name() });
-            subscriptions.push(Subscription {
-                id,
-                channel: channel.clone(),
-            });
+        // Add broadcast callbacks
+        for (id, (_changes, callback)) in self.broadcast_callbacks {
+            debug!("Adding Broadcast callback ID {} to channel {}", id, self.topic);
+            // Assuming broadcast uses the same callback mechanism for now
+            callbacks_guard.insert(id.clone(), callback);
+            subscriptions.push(Subscription { id, channel: channel.clone() });
         }
 
-         if !self.presence_callbacks.is_empty() {
-            let mut presence_cbs = channel.presence_callbacks.write().await;
-            for cb in self.presence_callbacks {
-                presence_cbs.push(cb);
+        // Add presence callbacks
+        for callback in self.presence_callbacks {
+            debug!("Adding Presence callback to channel {}", self.topic);
+            presence_callbacks_guard.push(callback);
+            // How to represent presence subscription? Use a fixed ID?
+             let id = format!("presence_{}", self.topic); // Example ID
+             subscriptions.push(Subscription { id, channel: channel.clone() });
+        }
+
+        drop(callbacks_guard);
+        drop(presence_callbacks_guard);
+
+        // Only send join if channel wasn't already joined/joining
+        let current_state = *channel.state.read().await;
+        if current_state == ChannelState::Closed || current_state == ChannelState::Errored {
+             info!("Channel '{}' is {:?}, attempting to join.", self.topic, current_state);
+            match channel.join().await {
+                Ok(_) => {
+                    // Join message sent, now wait for reply (handled by reader task)
+                    debug!("Join message sent for channel '{}'. Waiting for reply.", self.topic);
+                    // We might want a timeout here to ensure the join completes
+                     match timeout(Duration::from_secs(10), async {
+                         while *channel.state.read().await != ChannelState::Joined {
+                             tokio::time::sleep(Duration::from_millis(50)).await;
+                             // Add a check for Errored or Closed state too
+                             let check_state = *channel.state.read().await;
+                              if check_state == ChannelState::Errored || check_state == ChannelState::Closed {
+                                 return Err(RealtimeError::SubscriptionError(format!("Channel '{}' entered state {:?} while waiting for join reply", self.topic, check_state)));
+                             }
+                         }
+                         Ok(())
+                     }).await {
+                         Ok(Ok(_)) => info!("Channel '{}' successfully joined.", self.topic),
+                         Ok(Err(e)) => {
+                            error!("Error waiting for join confirmation for channel '{}': {:?}", self.topic, e);
+                            return Err(e);
+                         }
+                         Err(_) => {
+                             error!("Timed out waiting for join confirmation for channel '{}'", self.topic);
+                             channel.set_state(ChannelState::Errored).await;
+                             return Err(RealtimeError::SubscriptionError(format!("Timed out waiting for join confirmation for channel '{}'", self.topic)));
+                         }
+                     }
+                }
+                Err(e) => {
+                    error!("Failed to send join message for channel '{}': {}", self.topic, e);
+                    channel.set_state(ChannelState::Errored).await;
+                    return Err(e);
+                }
             }
-            payload_config["presence"] = json!({ "key": "" });
-        }
-
-
-        // 4. Send JOIN message via the client's socket (Existing code)
-        let socket_guard = self.client.socket.read().await;
-        if let Some(socket_tx) = socket_guard.as_ref() {
-            let join_ref = self.client.next_ref();
-
-            // Add access_token to the payload for V2 authentication
-            let token_guard = self.client.access_token.read().await;
-            if let Some(token) = token_guard.as_ref() {
-                 payload_config["access_token"] = json!(token);
-            }
-            drop(token_guard);
-
-            let message = json!({
-                "topic": self.topic,
-                "event": "phx_join",
-                "payload": payload_config, // Payload now includes access_token and configs
-                "ref": join_ref,
-            });
-            println!("Sending JOIN message: {}", message.to_string()); // Log the JOIN message
-            let ws_message = Message::Text(message.to_string());
-
-            socket_tx
-                .send(ws_message)
-                .await
-                .map_err(|e| RealtimeError::ConnectionError(format!("Failed to send JOIN message: {}", e)))?;
-
-            Ok(subscriptions)
         } else {
-            Err(RealtimeError::ConnectionError(
-                "Connection established but socket sender not found.".to_string(),
-            ))
+             info!("Channel '{}' is already {:?}, not sending join message.", self.topic, current_state);
         }
+
+        info!("ChannelBuilder subscribe finished for topic '{}', returning {} subscriptions.", self.topic, subscriptions.len());
+        Ok(subscriptions)
     }
 
     // Method to track presence - might belong on RealtimeClient or Channel directly?

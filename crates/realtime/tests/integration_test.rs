@@ -2,9 +2,22 @@ use supabase_rust_realtime::{RealtimeClient, RealtimeClientOptions, ChannelEvent
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
+use pretty_env_logger;
+use std::time::Duration;
+use std::sync::Once;
+
+// Ensure logger is initialized only once across all tests
+static INIT_LOGGER: Once = Once::new();
+
+fn setup_logger() {
+    INIT_LOGGER.call_once(|| {
+        pretty_env_logger::init();
+    });
+}
 
 #[tokio::test]
 async fn test_client_creation_default_options() {
+    setup_logger();
     let _client = RealtimeClient::new("ws://localhost:4000/socket", "someapikey");
     // Assert default options if they are accessible or test behavior based on them
     // Cannot directly access private fields like url, key, options, access_token in integration tests.
@@ -13,6 +26,7 @@ async fn test_client_creation_default_options() {
 
 #[tokio::test]
 async fn test_client_creation_custom_options() {
+    setup_logger();
     let options = RealtimeClientOptions {
         auto_reconnect: false,
         max_reconnect_attempts: Some(5),
@@ -28,6 +42,7 @@ async fn test_client_creation_custom_options() {
 
 #[tokio::test]
 async fn test_set_auth() {
+    setup_logger();
     // We cannot directly access `access_token` to verify.
     // This test requires either making `access_token` pub(crate) and running as a unit test,
     // making it fully public (not recommended), or testing behavior that depends on the token
@@ -42,6 +57,7 @@ async fn test_set_auth() {
 
 #[tokio::test]
 async fn test_channel_builder_creation() {
+    setup_logger();
     let client = RealtimeClient::new("ws://localhost:5000/socket", "apikey");
     let topic = "public:mytable";
 
@@ -75,52 +91,25 @@ async fn start_mock_server() -> Result<(std::net::SocketAddr, tokio::task::JoinH
                             match msg_res {
                                 Ok(msg) => {
                                     println!("[Mock Server] Received: {:?}", msg);
-                                    // Basic reply for join/heartbeat (can be improved)
+                                    // Revert to simple generic reply for any text message
                                     if msg.is_text() {
-                                        // Parse the incoming message to potentially customize the reply
-                                        let parsed_msg: Result<RealtimeMessage, _> = serde_json::from_str(msg.to_text().unwrap());
-                                        let reply_event;
-                                        let reply_payload;
-                                        // Declare before the `if let` block
+                                        let text_content = msg.to_text().unwrap_or("");
                                         let mut reply_ref = json!(null); // Default ref
-                                        let mut reply_topic = "phoenix".to_string(); // Default topic
 
-                                        if let Ok(parsed) = parsed_msg {
-                                            // Assign parsed values if available
-                                            reply_ref = parsed.message_ref.clone(); // Use the client's ref for the reply
-                                            reply_topic = parsed.topic.clone();     // Use the client's topic for the reply
-                                            match parsed.event {
-                                                ChannelEvent::PhoenixJoin => {
-                                                    println!("[Mock Server] Received join for topic: {}", reply_topic);
-                                                    reply_event = ChannelEvent::PhoenixReply;
-                                                    reply_payload = json!({"status": "ok", "response": {}});
-                                                }
-                                                ChannelEvent::Heartbeat => {
-                                                    println!("[Mock Server] Received heartbeat");
-                                                    reply_event = ChannelEvent::PhoenixReply;
-                                                    reply_payload = json!({"status": "ok", "response": {}});
-                                                }
-                                                _ => {
-                                                    println!("[Mock Server] Received unknown event: {:?}", parsed.event);
-                                                    // Don't send a reply for unknown events for now
-                                                    continue;
-                                                }
-                                            }
-                                        } else {
-                                            eprintln!("[Mock Server] Failed to parse message: {}", msg.to_text().unwrap());
-                                            // Send a generic ok reply if parse fails? Maybe not.
-                                            continue;
+                                        // Try to parse to get the ref if possible
+                                        if let Ok(parsed) = serde_json::from_str::<RealtimeMessage>(text_content) {
+                                            reply_ref = parsed.message_ref;
                                         }
 
                                         let reply = tokio_tungstenite::tungstenite::Message::Text(
                                             json!({
-                                                "event": reply_event,
-                                                "payload": reply_payload,
-                                                "ref": reply_ref,
-                                                "topic": reply_topic
+                                                "event": ChannelEvent::PhoenixReply,
+                                                "payload": {"status": "ok", "response": {}},
+                                                "ref": reply_ref, // Use parsed ref if available
+                                                "topic": "phoenix" // Generic topic for basic reply
                                             }).to_string()
                                         );
-                                        println!("[Mock Server] Sending reply: {}", reply);
+                                        println!("[Mock Server] Sending generic reply: {}", reply);
                                         if ws_stream.send(reply).await.is_err() {
                                             eprintln!("[Mock Server] Error sending reply");
                                             break;
@@ -152,6 +141,7 @@ async fn start_mock_server() -> Result<(std::net::SocketAddr, tokio::task::JoinH
 
 #[tokio::test]
 async fn test_connect_disconnect() {
+    setup_logger();
     // Start the mock server
     let (server_addr, server_handle) = start_mock_server().await.expect("Failed to start mock server");
     let server_url = format!("ws://{}", server_addr); // Use ws scheme
@@ -198,6 +188,7 @@ async fn test_connect_disconnect() {
 
 #[tokio::test]
 async fn test_join_channel() {
+    setup_logger();
     // Start the mock server
     let (server_addr, _server_handle) = start_mock_server().await.expect("Failed to start mock server");
     let server_url = format!("ws://{}", server_addr);
@@ -230,6 +221,7 @@ async fn test_join_channel() {
 
 #[tokio::test]
 async fn test_receive_message() {
+    setup_logger();
     // Start the mock server - modification needed to send a message *after* join reply
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind failed");
     let addr = listener.local_addr().expect("local_addr failed");
