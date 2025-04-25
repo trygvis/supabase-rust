@@ -6,7 +6,7 @@ authors = ["Jun Kawasaki"]
 description = "Rust client for Supabase"
 license = "MIT"
 repository = "https://github.com/jun784/supabase-rust"
-documentation = "https://docs.rs/supabase-rust"
+documentation = "https://docs.rs/supabase-rust-gftd"
 keywords = ["supabase", "postgres", "database", "api", "client"]
 categories = ["database", "api-bindings", "web-programming"]
 
