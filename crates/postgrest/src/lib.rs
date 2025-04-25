@@ -27,19 +27,6 @@ use serde_json::json;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-// モジュール
-// NOTE: Schema module is temporarily disabled to make tests pass
-// Feature-gated code that requires typescript_type_def needs more work
-#[cfg(feature = "schema-convert")]
-pub mod schema;
-
-// 型安全なデータベース操作
-#[cfg(feature = "schema-convert")]
-pub use crate::schema::{
-    PostgrestClientTypeExtension, Table, TypedDeleteBuilder, TypedInsertBuilder,
-    TypedPostgrestClient, TypedUpdateBuilder,
-};
-
 /// PostgREST APIエラーの詳細情報
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct PostgrestApiErrorDetails {
