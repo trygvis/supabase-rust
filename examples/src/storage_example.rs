@@ -75,6 +75,7 @@ mod image_transform_examples {
         let upload_options = FileOptions::new().with_content_type("image/png");
         let upload_result = storage
             .from(bucket_name)
+            .with_auth(&dummy_token)?
             .upload(
                 upload_path,
                 local_image_path.as_path(),
@@ -119,6 +120,7 @@ mod image_transform_examples {
             // 変換画像を取得
             let transformed_image = storage
                 .from(bucket_name)
+                .with_auth(&dummy_token)?
                 .transform_image(upload_path, options.clone())
                 .await?;
 
@@ -134,6 +136,7 @@ mod image_transform_examples {
             // 変換画像の署名付きURLを取得
             let signed_url = storage
                 .from(bucket_name)
+                .with_auth(&dummy_token)?
                 .create_signed_transform_url(upload_path, options, 60)
                 .await?;
 
@@ -142,7 +145,11 @@ mod image_transform_examples {
 
         // クリーンアップ
         println!("\nテスト画像を削除します...");
-        storage.from(bucket_name).remove(vec![upload_path]).await?;
+        storage
+            .from(bucket_name)
+            .with_auth(&dummy_token)?
+            .remove(vec![upload_path])
+            .await?;
 
         println!("テスト画像を削除しました。");
 
@@ -280,6 +287,7 @@ async fn run_basic_storage_operations(
     let upload_options = FileOptions::new().with_content_type("text/plain");
     let upload_result = storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .upload(upload_path, local_file_path, Some(upload_options))
         .await?;
     println!("ファイルをアップロードしました: {}", upload_result.name);
@@ -289,6 +297,7 @@ async fn run_basic_storage_operations(
     let list_options = ListOptions::new().with_limit(10).with_offset(0);
     let files = storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .list(Some(""), Some(list_options))
         .await?;
     println!("ファイル一覧:");
@@ -303,13 +312,14 @@ async fn run_basic_storage_operations(
     // ファイルの署名付きURLを取得
     let signed_url = storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .create_signed_url(upload_path, 60) // 60秒間有効なURL
         .await?;
     println!("署名付きURL (有効期限60秒): {}", signed_url);
 
     // ファイルをダウンロード
     println!("\nファイルをダウンロードしています...");
-    let download_data = storage.from(bucket_name).download(upload_path).await?;
+    let download_data = storage.from(bucket_name).with_auth(&dummy_token)?.download(upload_path).await?;
     println!("ダウンロードしたファイルサイズ: {} バイト", download_data.len());
     // ダウンロードした内容をファイルに保存（オプション）
     // let mut download_file = StdFile::create("downloaded-test-file.txt")?;\n    // download_file.write_all(&download_data)?;\n\n    // ファイルを移動
@@ -317,6 +327,7 @@ async fn run_basic_storage_operations(
     println!("\nファイルを移動しています: {} -> {}", upload_path, move_destination);
     storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .move_(upload_path, move_destination)
         .await?;
     println!("ファイルを移動しました。");
@@ -324,6 +335,7 @@ async fn run_basic_storage_operations(
     // 移動後のファイルを確認
     let moved_files = storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .list(Some("moved/"), None)
         .await?;
     println!("移動先のディレクトリの内容:");
@@ -335,6 +347,7 @@ async fn run_basic_storage_operations(
     println!("\nファイルを削除しています...");
     let deleted_files = storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .remove(vec![move_destination])
         .await?;
     println!("削除されたファイル: {}", deleted_files.len());
@@ -399,6 +412,7 @@ async fn run_large_file_upload(
     // マルチパートアップロードを実行（大きなファイルのため）
     let upload_result = storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .upload_large_file(
             "large-file.bin",
             file_path,
@@ -416,6 +430,7 @@ async fn run_large_file_upload(
     println!("\nファイルを削除しています...");
     storage
         .from(bucket_name)
+        .with_auth(&dummy_token)?
         .remove(vec!["large-file.bin"])
         .await?;
 
@@ -439,26 +454,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // Supabaseクライアントの初期化
     let supabase = Supabase::new(&supabase_url, &supabase_key);
 
-    // --- Authentication Start ---
-    // Create a unique email for the test user
-    let test_email = format!("test-storage-{}-{}", Uuid::new_v4(), "@example.com");
-    let test_password = "testpassword";
-
-    println!("\nSigning up a test user with email: {}", test_email);
-    let auth_client = supabase.auth();
-    let session = auth_client
-        .sign_up_with_email_password(&test_email, test_password)
-        .await?;
-
-    if let Some(user) = &session.user {
-        println!("Created test user with ID: {}", user.id);
-    } else {
-        eprintln!("Failed to create test user or get user info");
-        // Optionally try signing in if signup failed (e.g., user already exists)
-        // let session = auth_client.sign_in_with_email_password(&test_email, test_password).await?;\n        // if session.access_token.is_empty() {\n        //     return Err(\"Failed to sign in test user\".into());\n        // }\n    }\n\n    let access_token = session.access_token;\n    if access_token.is_empty() {\n        return Err(\"Failed to obtain access token after signup/signin\".into());\n    }\n    println!(\n        \"Access token obtained (first 20 chars): {}\",\n        access_token.chars().take(20).collect::<String>()\n    );\n\n    // Set authentication token for the client
-    supabase.auth(&access_token);
-    println!("Authentication token set for the client.");
-    // --- Authentication End ---
+    // !!!!! 仮定: 認証セッションを取得 !!!!!
+    // 本来は auth_example.rs のように sign_in する必要があります
+    // ここでは、環境変数からダミーのトークンを取得するか、
+    // 適切な認証処理を実装する必要があります。
+    let dummy_token = env::var("SUPABASE_DUMMY_TOKEN").unwrap_or_else(|_| "dummy-jwt-token".to_string());
 
     let storage = supabase.storage();
 

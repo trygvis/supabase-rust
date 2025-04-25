@@ -11,8 +11,6 @@
 //! - Transactions
 //! - RPC function calls
 //! - CSV export
-//! - Schema conversion from TypeScript to Rust types
-//! - Type-safe database operations using Rust structs
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::Client;

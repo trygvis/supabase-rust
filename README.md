@@ -15,11 +15,11 @@ This section explains the current implementation status and compatibility with t
 |Module|Status|API Compatibility|Notes|
 |------|------|----------------|-----|
 |Auth|✅|38/40 (95%)|Authentication features: Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented|
-|PostgresT|⚠️|27/30 (90%)|Core functions (CRUD, filtering, RPC, transactions) implemented. **NOTE:** Type-safe operations (`schema-convert` feature) are experimental/disabled. **Requires local patch** for INSERT/UPDATE/DELETE when used with PostgREST versions returning empty success responses (e.g., local v12.2.11).|
-|Storage|⚠️|19/20 (95%)|Image transformation and extensions beyond JS version. Low test coverage noted. Example requires bucket setup & auth fix.|
-|Realtime|⚠️|11/14 (~80%)|Core PubSub, DB changes, Presence implemented with filters & auto-reconnect. Needs more tests, docs & refactoring. Example fails compilation.|
+|PostgresT|⚠️|~88% (27/30 - Type Safety Removed)|Core functions (CRUD, filtering, RPC, transactions) implemented. **NOTE:** Type-safe operations feature removed. **Requires local patch** for INSERT/UPDATE/DELETE when used with certain PostgREST versions returning empty success responses (e.g., local v12.2.11).|
+|Storage|⚠️|19/20 (95%)|Image transformation and extensions beyond JS version. Low test coverage noted. Example may require bucket setup & auth fix (WIP).|
+|Realtime|⚠️|11/14 (~80%)|Core PubSub, DB changes, Presence implemented with filters & auto-reconnect. Needs significant tests, docs & refactoring (large `lib.rs`). Example compilation fix (WIP).|
 |Functions|⚠️|5/6 (85%)|Basic and streaming functionality implemented, enhancing binary support. Missing automated tests. Examples require Edge Function setup.|
-|Migration|❓|N/A|Utility crate present (`crates/migration`), purpose/status needs documentation.|
+|Migration|🚧|N/A|Utility crate for database migrations using `sea-orm-migration`/`refinery`. Status: In Development/Experimental (Not Implemented).|
 
 ### Detailed Compatibility Report
 
@@ -42,8 +42,8 @@ This section explains the current implementation status and compatibility with t
 
 #### PostgresT (`@supabase/postgrest-js`)
 
-**API Compatibility**: 27/30 (90%)
-**Status:** Core library tests passing. The type-safe operations feature (`schema-convert`) is **experimental and currently disabled** in `crates/postgrest/src/lib.rs` (commented out) due to potential issues or incompleteness. **NOTE:** Local PostgREST instances (like v12.2.11) might return empty responses for successful INSERT/UPDATE/DELETE, requiring a local patch to `crates/postgrest/src/lib.rs` to handle these cases (see recent debugging history).
+**API Compatibility**: ~88% (27/30 - Type Safety Feature Removed)
+**Status:** Core library tests passing for standard operations. **NOTE:** Local PostgREST instances (like v12.2.11) might return empty responses for successful INSERT/UPDATE/DELETE, requiring a local patch to `crates/postgrest/src/lib.rs` to handle these cases.
 
 - ✅ Basic CRUD operations for tables/views
 - ✅ Complex filtering (conditional operators, JSON operations, full-text search)
@@ -54,7 +54,7 @@ This section explains the current implementation status and compatibility with t
 - ✅ Response format control (CSV output support)
 - ✅ Single/multiple row processing optimization
 - ⚠️ Relationship auto-expansion - Basic implementation complete, nested relationships in development
-- ⚠️ Type-safe operations (`insert_typed`, etc.) - API exists in `crates/postgrest/src/schema.rs` but is **experimental and disabled** via feature gate/comments in `lib.rs`. Requires generated types from `schema-convert` feature.
+- ❌ Type-safe operations (`insert_typed`, etc.) - **Removed.**
 - ❌ Advanced Row Level Security (RLS) policy support - In development
 
 ### PostgresT RLS (Row Level Security)
@@ -189,7 +189,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Realtime (`@supabase/realtime-js`)
 
-**API Compatibility**: 11/14 (~80%) | **Tests:** ⚠️ (Low Coverage) | **Docs:** ⚠️ (Needs Examples) | **Code Structure:** ⚠️ (Large `lib.rs`)
+**API Compatibility**: 11/14 (~80%) | **Tests:** ⚠️ (Very Low Coverage - Needs Significant Expansion) | **Docs:** ⚠️ (Needs More Examples) | **Code Structure:** ⚠️ (Large `lib.rs` - Needs Refactoring)
 
 - ✅ Channel creation and management
 - ✅ Broadcast messaging
@@ -198,16 +198,16 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 - ✅ Automatic reconnection (configurable options)
 - ✅ Explicit error handling (`RealtimeError`)
 - ✅ Async primitives (`Arc`, `RwLock`, `mpsc`) used for concurrency.
-- ⚠️ Presence feature - Basic implementation complete, state synchronization likely needs more testing/refinement.
+- ⚠️ Presence feature - Basic implementation complete, state synchronization requires more testing/refinement.
 - ⚠️ Test Coverage - Requires significant expansion (unit/integration tests for various scenarios).
 - ⚠️ Documentation - Needs more practical usage examples.
-- ⚠️ Code Structure - `lib.rs` (1000+ lines) could be split into smaller modules.
+- ⚠️ Code Structure - `lib.rs` (1000+ lines) needs splitting into smaller modules.
 - ❌ Channel Status Notifications - In development
 - ❌ Complex JOIN table monitoring - Planned
 
 #### Functions (`@supabase/functions-js`)
 
-**API Compatibility**: ~5/6 (~85%) | **Tests:** ❌ (Missing)
+**API Compatibility**: ~5/6 (~85%) | **Tests:** ❌ (Missing - High Priority)
 
 - ✅ Edge function invocation
 - ✅ Function execution with parameters (JSON/serializable body)
@@ -215,41 +215,36 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 - ✅ Error handling (Network, Timeout, Non-Success Status, Error Details Parsing)
 - ✅ Streaming responses (Raw Bytes, Line-based JSON/SSE)
 - ✅ Binary data responses (`invoke_binary` returns `Bytes`)
-- ⚠️ Lack of automated tests.
+- ⚠️ Lack of automated tests - Critical for production readiness.
 - ⚠️ Potential for code simplification (reduce duplication in request setup).
 
 ### Project Status Summary
 
-Overall project completion: ~89% // Adjusted slightly based on Realtime review
+Overall project completion: ~85% (Adjusted: PostgREST type safety removed, focus shifted)
 **Root Client Notes:** The main `Supabase` client includes convenience filter methods (`.eq()`, `.gt()`, etc.). Ensure these align with Postgrest capabilities and are fully tested.
+**Production Readiness Concerns:** Low test coverage (Storage, Realtime, Functions), Realtime module maturity (refactoring, docs), and the unimplemented Migration crate are significant blockers for production use.
 
-Current development focus:
-- **Investigating and enabling the experimental type-safe PostgREST operations (`schema-convert` feature).**
-- Realtime Enhancements
-  - ✅ Filter capabilities implemented
-  - ⚠️ Expand Test Coverage (Unit & Integration)
-  - ⚠️ Add Usage Examples to Documentation
-  - ⚠️ Refactor `lib.rs` into smaller modules
-  - ⚠️ Improve Presence state sync robustness
-  - ❌ Channel status notifications
-  - ❌ Complex JOIN table monitoring
-- Async Processing Optimization
-  - ✅ Throughput improvements
+Current Development Focus:
+- **Increase Test Coverage:** Across Storage, Realtime, and especially Functions.
+- **Realtime Enhancements:** Refactor `lib.rs`, add examples, improve tests.
+- **Stabilize Examples:** Fix remaining issues in `storage`, `postgrest`, and `realtime` examples.
+- **Implement Migration Crate:** Define scope and implement basic functionality.
 
 ### Future Development
 
-1.  **Priority Implementation Items** (Targeting Q3/Q4 2024):
-    *   **PostgresT:** Investigate, fix, and enable the experimental type-safe methods (`schema-convert` feature, commented out code in `lib.rs`).
-    *   **Realtime:** Improve Test Coverage & Documentation, Refactor large `lib.rs`.
+1.  **Priority Implementation Items** (Revised Priorities):
+    *   **Testing:** Drastically improve test coverage for `Storage`, `Realtime`, `Functions`.
+    *   **Realtime:** Refactor large `lib.rs`, Improve Test Coverage & Documentation.
     *   **Functions:** Implement Automated Tests, Simplify request setup code.
-    *   **Storage:** Improve Test Coverage.
+    *   **Migration:** Define scope, implement basic functionality using `sea-orm-migration`/`refinery`, and document `crates/migration`.
+    *   **PostgresT:** Complete Relationship auto-expansion (nested) and Advanced RLS support.
+    *   **Storage:** Complete Folder operations and Access control features.
     *   **Core:** Validate/Refactor Root Client Filter Methods.
-    *   **Migration:** Define scope, implement, and document `crates/migration`.
-    *   **API Enhancements:** Continue work on Admin API extensions, Advanced RLS, Realtime features (Channel status, JOIN monitoring), Async optimization.
+    *   **Auth:** Complete Advanced JWT verification and Admin API extensions.
 
 2.  **Module-Specific Roadmap**:
 
-    **Auth** (95% → 100%, by Q3 2024):
+    **Auth** (95% → 100%, Target Q3 2024):
     *   Advanced multi-factor authentication (MFA) features
         *   WebAuthn/passkey support improvements
         *   Backup code management
@@ -260,8 +255,7 @@ Current development focus:
         *   Organization management
         *   Risk management and auditing
 
-    **PostgresT** (90% → 100%, by Q3 2024):
-    *   **Critical:** Resolve type-safe method import/compilation issues blocking examples.
+    **PostgresT** (~88% → 95%, Target Q4 2024):
     *   Relationship auto-expansion with nested relationships
         *   Efficient retrieval of multi-level relationships
         *   Circular reference handling
@@ -269,8 +263,8 @@ Current development focus:
         *   Complex policy condition application
         *   RLS verification tools
 
-    **Storage** (95% → 100%, by Q3 2024):
-    *   **Testing:** Improve test coverage significantly using mocking frameworks.
+    **Storage** (95% → 100%, Target Q4 2024):
+    *   **Testing:** Improve test coverage significantly using mocking frameworks (High Priority).
     *   Recursive folder operations
         *   Efficient handling of deep directory structures
         *   Batch operation optimization
@@ -278,9 +272,9 @@ Current development focus:
         *   Custom policy definitions
         *   Time-limited access
 
-    **Realtime** (80% → 100%, by Q4 2024): // Aligned with overview table
-    *   **Testing & Docs:** Expand Unit/Integration tests and add practical usage examples.
-    *   **Refactoring:** Split large `lib.rs` into smaller, more manageable modules.
+    **Realtime** (80% → 95%, Target Q1 2025):
+    *   **Testing & Docs:** Expand Unit/Integration tests and add practical usage examples (High Priority).
+    *   **Refactoring:** Split large `lib.rs` into smaller, more manageable modules (High Priority).
     *   **Presence:** Improve state synchronization robustness and testing.
     *   Complete Presence feature implementation
         *   State synchronization
@@ -292,8 +286,8 @@ Current development focus:
         *   Related table change tracking
         *   Efficient notification filtering
 
-    **Functions** (85% → 100%, by Q3 2024):
-    *   **Testing:** Implement comprehensive automated tests.
+    **Functions** (85% → 100%, Target Q4 2024):
+    *   **Testing:** Implement comprehensive automated tests (High Priority).
     *   **Refactoring:** Simplify request setup code to reduce duplication.
     *   Complete binary data support
         *   Efficient binary streams
@@ -302,19 +296,15 @@ Current development focus:
         *   Detailed error information
         *   Retry strategies
 
-    **Migration** (New Target: Basic implementation by Q4 2024):
+    **Migration** (0% → 50% - Basic Implementation, Target Q1 2025):
     *   Define scope and implement core migration utilities (apply, revert, status).
     *   Document usage and best practices within the Supabase context.
-
-    **Client Core** (Ongoing):
-    *   Validate and potentially refactor root client filter methods (`.eq()`, etc.).
-    *   Ensure consistency and avoid redundancy with `PostgrestClient` filtering.
 
 ### Recent Updates
 
 - v0.2.0 (Latest)
   - Refactored workspace dependencies to v0.2.0
-  - Added initial schema generation tools (Experimental: Note feature gate in root Cargo.toml)
+  - Removed experimental schema generation / type-safe PostgREST features.
   - Improved error handling across all modules
   - Enhanced binary support in Functions module
   - Fixed compatibility issues with latest Supabase JS
@@ -460,11 +450,11 @@ The project is organized as a Cargo workspace to manage different Supabase featu
 
 -   **`crates/`**: Contains the core implementation for each Supabase service:
     -   `auth`: Authentication (High Priority - Core functionality)
-    -   `postgrest`: Database interactions (High Priority - Core functionality, focus on enabling type-safety)
-    -   `storage`: File storage (Medium Priority - Needs test coverage)
-    -   `realtime`: Realtime subscriptions (Medium Priority - Needs tests, docs, refactoring)
-    -   `functions`: Edge function invocation (Medium Priority - Needs tests)
-    -   `migration`: Database migration utilities (Low Priority - Undefined scope)
+    -   `postgrest`: Database interactions (High Priority - Core functionality)
+    -   `storage`: File storage (Medium Priority - Needs significant test coverage)
+    -   `realtime`: Realtime subscriptions (Medium Priority - Needs significant tests, docs, refactoring)
+    -   `functions`: Edge function invocation (Medium Priority - Needs significant tests)
+    -   `migration`: Database migration utilities (Low Priority - Not Implemented)
 -   **`src/`**: The main `supabase-rust` library crate that ties the modules together.
 -   **`examples/`**: Usage examples for each module (High Priority - Needs fixing and maintenance).
 -   **`tests/`**: Integration tests (Medium Priority - Coverage needs expansion).
@@ -473,7 +463,7 @@ The project is organized as a Cargo workspace to manage different Supabase featu
 -   **`Cargo.toml`**: Workspace and root crate definition.
 -   **`Makefile`**: Development and build tasks.
 
-Current priorities are stabilizing the existing features (especially PostgREST type-safety), fixing the examples, and increasing test coverage across all modules as outlined in the roadmap.
+Current priorities are **increasing test coverage** across all modules, stabilizing the examples, refactoring the Realtime crate, and starting the implementation of the Migration crate.
 
 ## Examples
 
@@ -496,15 +486,26 @@ The `/examples` directory contains various usage examples for the different crat
 3.  Run the database setup script (first time): `./setup_db.sh` (or ensure the `tasks` table exists with RLS policies from `schema/create_tables.sql`).
 4.  Run a specific example: `cargo run --bin <example_name>` (e.g., `cargo run --bin auth_example`).
 
-**Current Status (as of recent testing):**
+**Current Status (Post-Fixes - Needs Verification):**
 
 | Example                    | Status                     | Notes                                                                                                                            |
 | -------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `auth_example`             | ✅ Runs                     |                                                                                                                                  |
 | `database_example`         | ✅ Runs (with patch)       | Requires local patch to `crates/postgrest/src/lib.rs` to handle empty INSERT/UPDATE/DELETE responses from local PostgREST v12.2.11. |
-| `storage_example`          | ❌ Fails                   | Errors due to missing authorization header and/or missing bucket. Requires setup/auth fix.                                       |
-| `realtime_example`         | ❌ Fails Compilation       | Type error (`E0308`) in `realtime_example.rs:448`. Needs code fix (`&user_id`).                                                    |
-| `postgrest_example`        | ❌ Fails Execution         | Fails in Example 6 (COUNT) with filter parse error (`PGRST100` for `(exact)`). Needs code/filter fix.                              |
-| `functions_example`        | ❌ Fails                   | Fails due to missing `hello-world` Edge Function. Requires Supabase setup.                                                        |
-| `auth_admin_example`       | ❌ Fails                   | Panics due to missing `SUPABASE_SERVICE_ROLE_KEY` environment variable. Requires setup.                                          |
-| `functions_binary_example` | ❌ Fails                   | Fails due to missing Edge Functions (e.g., `generate-image`). Requires Supabase setup.                                             |
+| `storage_example`          | ✅ Runs (Needs Verification) | Attempted fix for auth header. Still requires bucket setup in Supabase project.                                                |
+| `realtime_example`         | ✅ Runs (Needs Verification) | Attempted fix for type error.                                                                                                   |
+| `postgrest_example`        | ✅ Runs (Needs Verification) | Attempted fix for COUNT filter error.                                                                                            |
+| `functions_example`        | ❌ Fails (Setup Required)  | Fails due to missing `hello-world` Edge Function. Requires Supabase project setup.                                             |
+| `auth_admin_example`       | ❌ Fails (Setup Required)  | Panics due to missing `SUPABASE_SERVICE_ROLE_KEY` environment variable. Requires setup.                                          |
+| `functions_binary_example` | ❌ Fails (Setup Required)  | Fails due to missing Edge Functions (e.g., `generate-image`). Requires Supabase project setup.                                     |
+
+## Production Readiness Assessment (Updated)
+
+While core functionality exists, this library is **not yet recommended for production use** due to the following:
+
+1.  **Insufficient Testing:** Critical modules (`Storage`, `Realtime`, `Functions`) lack adequate test coverage, increasing the risk of undiscovered bugs.
+2.  **Realtime Maturity:** The `Realtime` crate requires significant refactoring, documentation improvement, and testing before being considered stable.
+3.  **Missing Migration Tool:** Database schema management is crucial for production, and the `Migration` crate is not yet implemented.
+4.  **Example Stability:** While fixes have been attempted, thorough verification of all examples across different environments is needed.
+
+Focus areas for achieving production readiness are comprehensive testing, Realtime module stabilization, and Migration crate implementation.

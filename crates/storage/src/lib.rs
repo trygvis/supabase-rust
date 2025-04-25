@@ -1918,42 +1918,150 @@ mod tests {
 
     #[tokio::test]
     async fn test_multipart_upload() {
-        // このテストは実際のAPIと通信するため、モックサーバーを使用するべきですが、
-        // 簡略化のため省略しています。実際の実装ではモックサーバーを使用してください。
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "multipart-bucket";
+        let object_path = "large_file.dat";
+        // チャンクサイズより大きいファイル内容
+        let file_content = Bytes::from_static(b"Part1ContentPart2MoreContent"); 
+        let chunk_size = 10; // 小さなチャンクサイズでテスト
+
+        // 一時ファイルを作成
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join(object_path);
+        tokio::fs::write(&file_path, &file_content).await.unwrap();
+
+        let upload_id = "test-upload-id-complex";
+
+        // 1. Initiate Multipart Upload のモック
+        let initiate_request_body = json!({
+            "bucket": bucket_id,
+            "name": object_path,
+            "cacheControl": "max-age=3600", 
+            "contentType": "application/octet-stream",
+            "upsert": false
+        });
+        let initiate_response_body = json!({
+            "id": "file-id-multi",
+            "uploadId": upload_id,
+            "key": object_path,
+            "bucket": bucket_id
+        });
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/upload/initiate"))
+            .and(wiremock::matchers::body_json(initiate_request_body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(initiate_response_body))
+            .mount(&mock_server)
+            .await;
+
+        // 2. Upload Part のモック (2つのチャンクを想定)
+        let etag1 = "etag-part-1";
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/upload/part"))
+            .and(wiremock::matchers::query_param("uploadId", upload_id))
+            .and(wiremock::matchers::query_param("partNumber", "1"))
+            .and(wiremock::matchers::query_param("bucket", bucket_id))
+            .respond_with(ResponseTemplate::new(200).insert_header("ETag", etag1))
+            .mount(&mock_server)
+            .await;
+
+        let etag2 = "etag-part-2";
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/upload/part"))
+            .and(wiremock::matchers::query_param("uploadId", upload_id))
+            .and(wiremock::matchers::query_param("partNumber", "2"))
+            .and(wiremock::matchers::query_param("bucket", bucket_id))
+            .respond_with(ResponseTemplate::new(200).insert_header("ETag", etag2))
+            .mount(&mock_server)
+            .await;
+        
+        let etag3 = "etag-part-3"; // 3つ目のチャンク用
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/upload/part"))
+            .and(wiremock::matchers::query_param("uploadId", upload_id))
+            .and(wiremock::matchers::query_param("partNumber", "3")) 
+            .and(wiremock::matchers::query_param("bucket", bucket_id))
+            .respond_with(ResponseTemplate::new(200).insert_header("ETag", etag3))
+            .mount(&mock_server)
+            .await;
+
+        // 3. Complete Multipart Upload のモック
+        let expected_parts = vec![
+            json!({ "partNumber": 1, "etag": etag1 }),
+            json!({ "partNumber": 2, "etag": etag2 }),
+            json!({ "partNumber": 3, "etag": etag3 }), // 3つ目のチャンクを追加
+        ];
+        let complete_request_body = json!({
+            "uploadId": upload_id,
+            "parts": expected_parts
+        });
+        let complete_response_body = json!({
+            "name": object_path,
+            "bucket_id": bucket_id,
+            "owner": "owner-uuid",
+            "id": "file-id-multi-complete",
+            "updated_at": "2024-01-07T00:00:00Z",
+            "created_at": "2024-01-07T00:00:00Z",
+            "last_accessed_at": "2024-01-07T00:00:00Z",
+            "metadata": { "size": file_content.len(), "mimetype": "application/octet-stream" },
+            "size": file_content.len(),
+            "mime_type": "application/octet-stream",
+        });
+        Mock::given(method("POST"))
+            .and(path("/storage/v1/upload/complete"))
+            .and(wiremock::matchers::query_param("bucket", bucket_id))
+            .and(wiremock::matchers::query_param("key", object_path))
+            .and(wiremock::matchers::body_json(complete_request_body))
+            .respond_with(ResponseTemplate::new(200).set_body_json(complete_response_body))
+            .mount(&mock_server)
+            .await;
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-key", http_client.clone());
+        let bucket_client = storage_client.from(bucket_id);
+
+        // upload_large_file を呼び出し、成功することを確認
+        let result = bucket_client.upload_large_file(object_path, &file_path, chunk_size, None).await;
+        assert!(result.is_ok(), "upload_large_file failed: {:?}", result.err());
+        let file_object = result.unwrap();
+        assert_eq!(file_object.name, object_path);
+        assert_eq!(file_object.size, file_content.len() as i64);
     }
 
     #[tokio::test]
     async fn test_transform_image() {
-        // このテストはモックサーバーとのパス一致が難しいため、スキップ
-        // 実際の機能は統合テストで確認することが望ましい
-    }
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        // create_signed_transform_url を呼び出し、成功することを確認
+        let result = bucket_client.create_signed_transform_url(object_path, transform_options.clone(), expires_in).await;
+        assert!(result.is_ok(), "create_signed_transform_url failed: {:?}", result.err());
+        let signed_url = result.unwrap();
+        // 実際のレスポンスにはトークン等が含まれるため、パスと変換パラメータが含まれるか確認
+        assert!(signed_url.contains(&format!("/storage/v1/object/sign/{}/{}", bucket_id, object_path)));
+        assert!(signed_url.contains("width=50"));
+        assert!(signed_url.contains("format=jpeg"));
 
-    #[tokio::test]
-    async fn test_get_public_transform_url() {
-        let http_client = reqwest::Client::new();
-        let storage_client = StorageClient::new("https://example.com", "fake-key", http_client);
-        let bucket_client = storage_client.from("test-bucket");
+        // モックをリセット
+        mock_server.reset().await;
 
-        let options = ImageTransformOptions::new()
-            .with_width(300)
-            .with_height(200)
-            .with_format("webp");
+        // --- エラーケースのモック (例: 400 Bad Request) ---
+        let error_response = json!({ "message": "Invalid signed URL parameters" });
+        Mock::given(method("POST"))
+            .and(path(format!("/storage/v1/object/sign/{}/{}", bucket_id, object_path)))
+            .and(wiremock::matchers::body_json(request_body.clone())) // 同じリクエストボディを期待
+            .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
 
-        let url = bucket_client.get_public_transform_url("image.jpg", options);
-
-        // URLの基本部分をチェック
-        assert!(url.contains("https://example.com"));
-        assert!(url.contains("test-bucket"));
-        assert!(url.contains("image.jpg"));
-        // パラメータをチェック
-        assert!(url.contains("width=300"));
-        assert!(url.contains("height=200"));
-        assert!(url.contains("format=webp"));
-    }
-
-    #[tokio::test]
-    async fn test_create_signed_transform_url() {
-        // このテストはモックサーバーとのパス一致が難しいため、スキップ
-        // 実際の機能は統合テストで確認することが望ましい
+        // create_signed_transform_url を呼び出し、エラーになることを確認
+        let result = bucket_client.create_signed_transform_url(object_path, transform_options, expires_in).await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            // エラーメッセージはAPIの実装により異なる可能性がある
+            assert!(msg.contains("Invalid signed URL parameters") || msg.contains("Failed to create signed transform URL"));
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
     }
 }

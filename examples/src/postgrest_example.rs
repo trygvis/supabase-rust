@@ -176,13 +176,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let count_result = supabase_client
         .from("tasks")
         .with_auth(&access_token)?
-        .select("count")
         .eq("user_id", &user_id)
         .count(true)
         .execute::<serde_json::Value>()
         .await?;
 
-    let count = count_result[0]["count"].as_i64().unwrap_or(0);
+    let count = if count_result.is_empty() {
+        0
+    } else {
+        count_result[0]["count"].as_i64().unwrap_or(0)
+    };
+
     println!("Total number of tasks for user {}: {}", user_id, count);
 
     // Example 7: DELETE with filters
