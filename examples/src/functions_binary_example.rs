@@ -6,7 +6,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use supabase_rust_gftd::functions::FunctionOptions;
-use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::functions::InvokeFunctionOptions;
 use supabase_rust_gftd::Supabase;
 
 // このサンプルは、Supabase Edge Functionsからバイナリデータを

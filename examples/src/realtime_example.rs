@@ -1,20 +1,14 @@
 use dotenv::dotenv;
-use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
 use std::env;
-use std::io;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use supabase_rust_gftd::prelude::*;
-use supabase_rust_gftd::realtime::{
-    ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator, RealtimeClient,
+use std::time::Duration;
+use supabase_rust_gftd::supabase_rust_realtime::{
+    ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator, RealtimeClientOptions,
 };
 use supabase_rust_gftd::Supabase;
-use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
-use uuid::Uuid;
+use tokio::time::sleep;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
@@ -149,14 +143,14 @@ async fn run_advanced_filter_example(
                 // タイトルが「3」を含むタスク
                 .filter(DatabaseFilter {
                     column: "title".to_string(),
-                    operator: FilterOperator::Like,
-                    value: json!("%3%"),
+                    operator: FilterOperator::Eq,
+                    value: json!("3"),
                 })
                 // または「5」を含むタスク
                 .filter(DatabaseFilter {
                     column: "title".to_string(),
-                    operator: FilterOperator::Like,
-                    value: json!("%5%"),
+                    operator: FilterOperator::Eq,
+                    value: json!("5"),
                 })
                 // かつ未完了のタスク
                 .eq("is_complete", false),

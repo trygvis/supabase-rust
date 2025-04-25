@@ -3,7 +3,7 @@ use reqwest::Client;
 use serde_json::json;
 use std::env;
 use supabase_rust_gftd::auth::AdminAuth;
-use supabase_rust_gftd::Supabase;
+// use supabase_rust_gftd::Supabase; // Unused import
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -12,12 +12,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // 環境変数からSupabase URLとキーを取得
     let supabase_url = env::var("SUPABASE_URL").expect("SUPABASE_URL must be set");
-    let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
-
-    // サービスロールキーは非常に重要です。これはクライアント側では絶対に使用せず、
-    // サーバー側コードでのみ使用してください。
-    let service_role_key =
-        env::var("SUPABASE_SERVICE_ROLE_KEY").expect("SUPABASE_SERVICE_ROLE_KEY must be set");
+    // let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set"); // Unused variable
+    let service_role_key = env::var("SUPABASE_SERVICE_ROLE_KEY")
+        .expect("SUPABASE_SERVICE_ROLE_KEY must be set for admin actions");
 
     // HTTPクライアントを初期化
     let http_client = Client::new();

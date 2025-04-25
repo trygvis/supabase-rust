@@ -39,4 +39,4 @@ impl RealtimeError {
 //     fn from(err: tokio::sync::mpsc::error::SendError<Message>) -> Self {
 //         RealtimeError::ConnectionError(format!("Failed to send message to socket task: {}", err))
 //     }
-// } 
+// }

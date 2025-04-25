@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc;
+// use tokio::sync::mpsc; // Unused import after commenting out `socket` field
 use tokio::sync::RwLock;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -104,7 +104,11 @@ impl DatabaseChanges {
         self.filter(DatabaseFilter {
             column: column.to_string(),
             operator: FilterOperator::In,
-            value: values.into_iter().map(|v| v.into()).collect::<Vec<_>>().into(),
+            value: values
+                .into_iter()
+                .map(|v| v.into())
+                .collect::<Vec<_>>()
+                .into(),
         })
     }
 
@@ -156,7 +160,9 @@ pub struct BroadcastChanges {
 
 impl BroadcastChanges {
     pub fn new(event: &str) -> Self {
-        Self { event: event.to_string() }
+        Self {
+            event: event.to_string(),
+        }
     }
 
     #[allow(dead_code)] // Mark as allowed since it might be useful later
@@ -171,7 +177,8 @@ pub struct PresenceChanges;
 
 impl PresenceChanges {
     pub fn new() -> Self {
-        Self::default()
+        // Self::default() // Clippy: default_constructed_unit_structs
+        PresenceChanges // Create directly
     }
 }
 
@@ -202,7 +209,7 @@ pub(crate) struct Channel {
     topic: String,
     // Use Weak reference to client to avoid cycles if Channel holds client ref?
     // For now, assume socket sender is passed down.
-    socket: Arc<RwLock<Option<mpsc::Sender<Message>>>>,
+    // socket: Arc<RwLock<Option<mpsc::Sender<Message>>>>, // Clippy: dead_code - Seems unused within Channel methods
     callbacks: Arc<RwLock<HashMap<String, CallbackFn>>>,
     presence_callbacks: Arc<RwLock<Vec<PresenceCallbackFn>>>,
     // Add presence state if managed per-channel
@@ -219,8 +226,7 @@ impl Channel {
         // For simplicity, assume client handles full channel leave when all subscriptions drop.
         println!(
             "Subscription {} dropped. Channel {} might need explicit leave.",
-            id,
-            self.topic
+            id, self.topic
         );
         Ok(())
     }
@@ -263,7 +269,8 @@ impl<'a> ChannelBuilder<'a> {
         F: Fn(Payload) + Send + Sync + 'static,
     {
         let id = uuid::Uuid::new_v4().to_string();
-        self.broadcast_callbacks.insert(id, (changes, Box::new(callback)));
+        self.broadcast_callbacks
+            .insert(id, (changes, Box::new(callback)));
         self
     }
 
@@ -288,14 +295,14 @@ impl<'a> ChannelBuilder<'a> {
 
         // Construct payload with all subscription configs
         let mut db_configs = json!({});
-        for (_id, (changes, _)) in &self.db_callbacks {
+        for (changes, _) in self.db_callbacks.values() {
             let config = changes.to_channel_config();
             // Merge config into db_configs (needs careful handling if multiple configs)
             // This part depends heavily on how Phoenix Channels expect multiple configs.
             // Assuming for now we just send one config per 'type'.
             if let Some(payload) = config.get("payload") {
                 if let Some(cfg) = payload.get("config") {
-                   db_configs = cfg.clone(); // Overwrites previous, needs better merge
+                    db_configs = cfg.clone(); // Overwrites previous, needs better merge
                 }
             }
         }
@@ -323,9 +330,7 @@ impl<'a> ChannelBuilder<'a> {
 
         let socket_guard = self.client.socket.read().await;
         if let Some(socket_tx) = socket_guard.as_ref() {
-            socket_tx
-                .send(Message::Text(message.to_string()))
-                .await?; // Use ? with From<SendError> for RealtimeError
+            socket_tx.send(Message::Text(message.to_string())).await?; // Use ? with From<SendError> for RealtimeError
         } else {
             return Err(RealtimeError::ConnectionError("Not connected".to_string()));
         }
@@ -344,7 +349,7 @@ impl<'a> ChannelBuilder<'a> {
             .or_insert_with(|| {
                 Arc::new(Channel {
                     topic: topic.clone(),
-                    socket: self.client.socket.clone(),
+                    // socket: self.client.socket.clone(), // Matches commented-out field
                     callbacks: Arc::new(RwLock::new(HashMap::new())),
                     presence_callbacks: Arc::new(RwLock::new(Vec::new())),
                 })
@@ -356,12 +361,18 @@ impl<'a> ChannelBuilder<'a> {
         let mut channel_callbacks = channel.callbacks.write().await;
         for (id, (_changes, callback)) in self.db_callbacks {
             channel_callbacks.insert(id.clone(), callback);
-            subscriptions.push(Subscription { id, channel: channel.clone() });
+            subscriptions.push(Subscription {
+                id,
+                channel: channel.clone(),
+            });
         }
         for (id, (_changes, callback)) in self.broadcast_callbacks {
             channel_callbacks.insert(id.clone(), callback);
-             subscriptions.push(Subscription { id, channel: channel.clone() });
-       }
+            subscriptions.push(Subscription {
+                id,
+                channel: channel.clone(),
+            });
+        }
         drop(channel_callbacks);
 
         let mut channel_presence_callbacks = channel.presence_callbacks.write().await;
@@ -379,6 +390,8 @@ impl<'a> ChannelBuilder<'a> {
         _user_data: serde_json::Value,
     ) -> Result<(), RealtimeError> {
         // TODO: Implement sending presence track message
-        Err(RealtimeError::ChannelError("track_presence not implemented".to_string()))
+        Err(RealtimeError::ChannelError(
+            "track_presence not implemented".to_string(),
+        ))
     }
-} 
+}

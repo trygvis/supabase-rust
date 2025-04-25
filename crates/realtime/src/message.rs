@@ -48,7 +48,9 @@ pub struct PresenceState {
 
 impl PresenceState {
     pub fn new() -> Self {
-        Self { state: HashMap::new() }
+        Self {
+            state: HashMap::new(),
+        }
     }
 
     /// Apply presence diff to update the state
@@ -63,7 +65,10 @@ impl PresenceState {
 
     /// List current presence state as key-value pairs
     pub fn list(&self) -> Vec<(String, serde_json::Value)> {
-        self.state.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        self.state
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Get presence info for a specific key
@@ -76,4 +81,4 @@ impl Default for PresenceState {
     fn default() -> Self {
         Self::new()
     }
-} 
+}

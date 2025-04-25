@@ -1,18 +1,9 @@
 use bytes::Bytes;
 use dotenv::dotenv;
-use mime;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::env;
+use supabase_rust_gftd::storage::{FileOptions, ListOptions};
 use std::fs::File as StdFile;
-use std::io::Read;
-use std::io::{Cursor, Write};
-use std::path::{Path, PathBuf};
-use supabase_rust_gftd::prelude::*;
-use supabase_rust_gftd::storage::{FileOptions, ImageTransformOptions, ListOptions};
-use supabase_rust_gftd::Supabase;
 use tempfile::NamedTempFile;
-use tokio::fs;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct FileObject {
@@ -31,8 +22,6 @@ struct FileObject {
 mod image_transform_examples {
     use std::env;
     use std::io::Write;
-    use std::path::{Path, PathBuf};
-    use supabase_rust_gftd::prelude::*;
     use supabase_rust_gftd::storage::{FileOptions, ImageTransformOptions};
     use supabase_rust_gftd::Supabase;
     use tempfile::NamedTempFile;

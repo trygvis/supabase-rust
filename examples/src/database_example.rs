@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
 use supabase_rust_gftd::Supabase;
-use uuid;
+use serde_json::json;
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Task {
@@ -33,7 +34,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Starting database example");
 
     // First, sign up a test user for our examples
-    let test_email = format!("test-db-{}@example.com", uuid::Uuid::new_v4());
+    let test_email = format!("test-db-{}@example.com", Uuid::new_v4());
     let test_password = "password123";
 
     println!("Signing up a test user with email: {}", test_email);

@@ -56,4 +56,4 @@ impl std::fmt::Display for FilterOperator {
         };
         write!(f, "{}", s)
     }
-} 
+}

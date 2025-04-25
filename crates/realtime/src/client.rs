@@ -41,7 +41,7 @@ impl Default for RealtimeClientOptions {
             reconnect_interval: 1000,     // 1 second
             reconnect_backoff_factor: 1.5,
             max_reconnect_interval: 30000, // 30 seconds
-            heartbeat_interval: 30000,    // 30 seconds
+            heartbeat_interval: 30000,     // 30 seconds
         }
     }
 }
@@ -118,7 +118,9 @@ impl RealtimeClient {
     }
 
     /// WebSocket接続を開始および管理するタスク
-    pub fn connect(&self) -> impl std::future::Future<Output = Result<(), RealtimeError>> + Send + 'static {
+    pub fn connect(
+        &self,
+    ) -> impl std::future::Future<Output = Result<(), RealtimeError>> + Send + 'static {
         // Clone necessary Arcs and fields for the async task
         let url = self.url.clone();
         let key = self.key.clone();
@@ -135,13 +137,23 @@ impl RealtimeClient {
 
             let ws_url = Url::parse(&format!("{}/websocket?apikey={}&vsn=1.0.0", url, key))?;
 
-            Self::set_connection_state_internal(state_arc.clone(), state_change_tx.clone(), ConnectionState::Connecting).await;
+            Self::set_connection_state_internal(
+                state_arc.clone(),
+                state_change_tx.clone(),
+                ConnectionState::Connecting,
+            )
+            .await;
 
             let (ws_stream, _) = connect_async(ws_url).await.map_err(|e| {
                 RealtimeError::ConnectionError(format!("WebSocket connection failed: {}", e))
             })?;
 
-            Self::set_connection_state_internal(state_arc.clone(), state_change_tx.clone(), ConnectionState::Connected).await;
+            Self::set_connection_state_internal(
+                state_arc.clone(),
+                state_change_tx.clone(),
+                ConnectionState::Connected,
+            )
+            .await;
 
             let (mut write, mut read) = ws_stream.split();
 
@@ -160,7 +172,12 @@ impl RealtimeClient {
                     if let Err(e) = write.send(message).await {
                         eprintln!("WebSocket send error: {}. Closing connection.", e);
                         *writer_socket_arc.write().await = None; // Clear sender on error
-                        Self::set_connection_state_internal(writer_state_arc, writer_state_change_tx, ConnectionState::Disconnected).await;
+                        Self::set_connection_state_internal(
+                            writer_state_arc,
+                            writer_state_change_tx,
+                            ConnectionState::Disconnected,
+                        )
+                        .await;
                         socket_rx.close();
                         break;
                     }
@@ -240,7 +257,7 @@ impl RealtimeClient {
             // Connection closed, attempt reconnect if enabled and not manually closed
             if options.auto_reconnect && !is_manually_closed_arc.load(Ordering::SeqCst) {
                 println!("Connection lost. Auto-reconnect is enabled but reconnect logic needs implementation.");
-                 // self.reconnect(); // This needs careful handling
+                // self.reconnect(); // This needs careful handling
             }
 
             Ok(())
@@ -264,7 +281,8 @@ impl RealtimeClient {
     pub async fn disconnect(&self) -> Result<(), RealtimeError> {
         // Use the Arc<AtomicBool>
         self.is_manually_closed.store(true, Ordering::SeqCst);
-        self.set_connection_state(ConnectionState::Disconnected).await;
+        self.set_connection_state(ConnectionState::Disconnected)
+            .await;
 
         let mut socket_guard = self.socket.write().await;
         if let Some(socket_tx) = socket_guard.take() {
@@ -297,14 +315,20 @@ impl RealtimeClient {
                 if let Some(max_attempts) = self_clone.options.max_reconnect_attempts {
                     if attempts >= max_attempts {
                         println!("Max reconnect attempts ({}) reached.", max_attempts);
-                        self_clone.set_connection_state(ConnectionState::Disconnected).await;
+                        self_clone
+                            .set_connection_state(ConnectionState::Disconnected)
+                            .await;
                         break;
                     }
                 }
 
                 attempts += 1;
-                self_clone.reconnect_attempts.store(attempts, Ordering::SeqCst);
-                self_clone.set_connection_state(ConnectionState::Reconnecting).await;
+                self_clone
+                    .reconnect_attempts
+                    .store(attempts, Ordering::SeqCst);
+                self_clone
+                    .set_connection_state(ConnectionState::Reconnecting)
+                    .await;
                 println!("Attempting to reconnect... (Attempt #{})", attempts);
 
                 sleep(Duration::from_millis(interval)).await;
@@ -315,13 +339,14 @@ impl RealtimeClient {
                     Ok(_) => {
                         println!("Reconnection successful!");
                         self_clone.reconnect_attempts.store(0, Ordering::SeqCst); // Reset attempts
-                        // TODO: Rejoin channels?
+                                                                                  // TODO: Rejoin channels?
                         break; // Exit reconnect loop
                     }
                     Err(e) => {
                         eprintln!("Reconnect attempt #{} failed: {}", attempts, e);
                         // Increase interval with backoff
-                        interval = (interval as f64 * self_clone.options.reconnect_backoff_factor) as u64;
+                        interval =
+                            (interval as f64 * self_clone.options.reconnect_backoff_factor) as u64;
                         interval = interval.min(self_clone.options.max_reconnect_interval);
                     }
                 }
@@ -352,9 +377,6 @@ impl Clone for RealtimeClient {
 // WebSocketメッセージ送信エラーからの変換
 impl From<tokio::sync::mpsc::error::SendError<Message>> for RealtimeError {
     fn from(err: tokio::sync::mpsc::error::SendError<Message>) -> Self {
-        RealtimeError::ConnectionError(format!(
-            "Failed to send message to socket task: {}",
-            err
-        ))
+        RealtimeError::ConnectionError(format!("Failed to send message to socket task: {}", err))
     }
-} 
+}

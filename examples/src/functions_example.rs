@@ -4,7 +4,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 use supabase_rust_gftd::functions::FunctionOptions;
-use supabase_rust_gftd::prelude::*;
+use supabase_rust_gftd::functions::InvokeFunctionOptions;
 use supabase_rust_gftd::Supabase;
 
 #[derive(Debug, Serialize)]
@@ -14,7 +14,8 @@ struct HelloRequest {
 
 #[derive(Debug, Deserialize)]
 struct HelloResponse {
-    message: String,
+    // #[allow(dead_code)] // Add allow attribute for unused field
+    // message: String, // Field is unused, comment out or allow dead_code
 }
 
 #[tokio::main]
