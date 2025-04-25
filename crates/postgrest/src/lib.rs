@@ -589,7 +589,29 @@ impl PostgrestClient {
             .map_err(PostgrestError::NetworkError)?;
 
         let status = response.status();
-        if !status.is_success() {
+
+        // Check for success first (e.g., 201 Created)
+        if status.is_success() {
+            // Read the body as text first to handle potential empty responses
+            let body_text = response.text().await.map_err(|e| {
+                PostgrestError::DeserializationError(format!(
+                    "Failed to read response body: {}",
+                    e
+                ))
+            })?;
+
+            // If body is empty but status was success (e.g., 201), return Null.
+            // PostgREST usually returns the inserted row(s), so empty is unexpected.
+            if body_text.trim().is_empty() {
+                // Consider returning Value::Array(vec![]) if an array is expected
+                Ok(Value::Null)
+            } else {
+                // If body is not empty, try to parse it as JSON
+                serde_json::from_str::<Value>(&body_text)
+                    .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
+            }
+        } else {
+            // Handle non-success status codes as before
             let error_text = response
                 .text()
                 .await
@@ -597,19 +619,14 @@ impl PostgrestClient {
 
             let details_result: Result<PostgrestApiErrorDetails, _> =
                 serde_json::from_str(&error_text);
-            return match details_result {
+            match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
                 Err(_) => Err(PostgrestError::UnparsedApiError {
                     message: error_text,
                     status,
                 }),
-            };
+            }
         }
-
-        response
-            .json::<Value>()
-            .await
-            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
 
     /// データを更新
@@ -626,7 +643,27 @@ impl PostgrestClient {
             .map_err(PostgrestError::NetworkError)?;
 
         let status = response.status();
-        if !status.is_success() {
+
+        // Check for success (e.g., 200 OK, 204 No Content)
+        if status.is_success() {
+            // Read the body as text first
+            let body_text = response.text().await.map_err(|e| {
+                PostgrestError::DeserializationError(format!(
+                    "Failed to read response body: {}",
+                    e
+                ))
+            })?;
+
+            // If body is empty, return Null. Update might return 204 No Content.
+            if body_text.trim().is_empty() {
+                Ok(Value::Null)
+            } else {
+                // If body is not empty, try to parse it as JSON
+                serde_json::from_str::<Value>(&body_text)
+                    .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
+            }
+        } else {
+            // Handle non-success status codes
             let error_text = response
                 .text()
                 .await
@@ -634,19 +671,14 @@ impl PostgrestClient {
 
             let details_result: Result<PostgrestApiErrorDetails, _> =
                 serde_json::from_str(&error_text);
-            return match details_result {
+            match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
                 Err(_) => Err(PostgrestError::UnparsedApiError {
                     message: error_text,
                     status,
                 }),
-            };
+            }
         }
-
-        response
-            .json::<Value>()
-            .await
-            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
 
     /// データを削除
@@ -662,7 +694,27 @@ impl PostgrestClient {
             .map_err(PostgrestError::NetworkError)?;
 
         let status = response.status();
-        if !status.is_success() {
+
+        // Check for success (e.g., 200 OK, 204 No Content)
+        if status.is_success() {
+            // Read the body as text first
+            let body_text = response.text().await.map_err(|e| {
+                PostgrestError::DeserializationError(format!(
+                    "Failed to read response body: {}",
+                    e
+                ))
+            })?;
+
+            // If body is empty, return Null. Delete often returns 204 No Content.
+            if body_text.trim().is_empty() {
+                Ok(Value::Null)
+            } else {
+                // If body is not empty, try to parse it as JSON
+                serde_json::from_str::<Value>(&body_text)
+                    .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
+            }
+        } else {
+            // Handle non-success status codes
             let error_text = response
                 .text()
                 .await
@@ -670,19 +722,14 @@ impl PostgrestClient {
 
             let details_result: Result<PostgrestApiErrorDetails, _> =
                 serde_json::from_str(&error_text);
-            return match details_result {
+            match details_result {
                 Ok(details) => Err(PostgrestError::ApiError { details, status }),
                 Err(_) => Err(PostgrestError::UnparsedApiError {
                     message: error_text,
                     status,
                 }),
-            };
+            }
         }
-
-        response
-            .json::<Value>()
-            .await
-            .map_err(|e| PostgrestError::DeserializationError(e.to_string()))
     }
 
     /// RPC関数を呼び出す (POSTリクエスト)
