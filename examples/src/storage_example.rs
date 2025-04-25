@@ -1,11 +1,11 @@
 use bytes::Bytes;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
-use std::fs::File as StdFile;
 use std::env;
+use std::fs::File as StdFile;
 use std::io::{Read, Write};
-use supabase_rust_gftd::Supabase;
 use supabase_rust_gftd::storage::{FileOptions, ListOptions};
+use supabase_rust_gftd::Supabase;
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Serialize, Deserialize)]

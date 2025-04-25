@@ -240,6 +240,8 @@ impl AdminAuth {
     /// } else {
     ///     println!("Admin client not initialized");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn get_user_by_id(&self, user_id: &str) -> Result<User, AuthError> {
         let url = format!("{}/admin/users/{}", self.url, user_id);
@@ -291,6 +293,8 @@ impl AdminAuth {
     /// } else {
     ///     println!("Admin client not initialized");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn list_users(
         &self,
@@ -369,6 +373,8 @@ impl AdminAuth {
     /// } else {
     ///     println!("Admin client not initialized");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn create_user(
         &self,
@@ -509,6 +515,8 @@ impl AdminAuth {
     /// } else {
     ///     println!("Admin client not initialized");
     /// }
+    /// # Ok(())
+    /// # }
     /// ```
     pub async fn update_user(
         &self,
@@ -811,7 +819,7 @@ impl Auth {
     /// #
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// # let auth = Auth::new("https://example.supabase.co/auth/v1", "anon-key", Client::new(), AuthOptions::default());
-    /// # let auth = auth.init_admin("your-service-role-key");
+    /// # let mut auth = auth.init_admin("your-service-role-key");
     /// if let Some(admin) = auth.admin() {
     ///     // Use admin API here
     ///     // let users = admin.list_users(None, None).await?;

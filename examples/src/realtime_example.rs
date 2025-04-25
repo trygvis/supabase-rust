@@ -2,13 +2,11 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
+use std::io;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::io;
-use supabase_rust_gftd::realtime::{
-    ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator,
-};
+use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
 use supabase_rust_gftd::Supabase;
 use tokio::time::sleep;
 
