@@ -215,6 +215,27 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 - ⚠️ Lack of automated tests - Critical for production readiness.
 - ⚠️ Potential for code simplification (reduce duplication in request setup).
 
+### Crate Publishing Order
+
+Due to inter-crate dependencies within the workspace, the crates must be published to crates.io in a specific order:
+
+1.  **Core Libraries (any order):**
+    *   `supabase-rust-auth`
+    *   `supabase-rust-functions`
+    *   `supabase-rust-postgrest`
+    *   `supabase-rust-realtime`
+    *   `supabase-rust-storage`
+2.  **Main Library:**
+    *   `supabase-rust-gftd` (depends on core libraries)
+3.  **Examples:**
+    *   `supabase-rust-examples` (depends on `supabase-rust-gftd`)
+
+You can use a tool like `cargo-workspaces` (`cargo install cargo-workspaces`) to manage publishing the entire workspace automatically, which respects these dependencies:
+
+```bash
+cargo workspaces publish --from-git
+```
+
 ### Project Completion Assessment (as of YYYY-MM-DD)
 
 -   **Overall:** The project provides functional Rust clients for major Supabase services (Auth, PostgREST, Storage, Functions, basic Realtime). Compatibility with `supabase-js` is generally high.

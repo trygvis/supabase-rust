@@ -12,6 +12,9 @@ use std::time::Duration;
 use tokio_tungstenite::tungstenite::Message;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::time::error::Elapsed;
+use std::collections::VecDeque; // For storing received messages
+use tokio::sync::Mutex; // For thread-safe access to received messages
+use std::sync::Arc;
 
 // Ensure logger is initialized only once across all tests
 static INIT_LOGGER: Once = Once::new();
@@ -92,10 +95,14 @@ async fn test_channel_builder_creation() {
 // Helper function to start a simple mock WebSocket server
 #[instrument]
 async fn start_mock_server(
-) -> Result<(std::net::SocketAddr, tokio::task::JoinHandle<()>), Box<dyn std::error::Error>> {
+) -> Result<(std::net::SocketAddr, tokio::task::JoinHandle<()>, Arc<Mutex<VecDeque<RealtimeMessage>>>), Box<dyn std::error::Error>> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     info!(address = %addr, "Mock server binding successful");
+
+    // Store received messages for assertion
+    let received_messages = Arc::new(Mutex::new(VecDeque::new()));
+    let received_messages_clone = received_messages.clone();
 
     let handle = tokio::spawn(async move {
         let server_span = span!(Level::INFO, "mock_server", %addr);
@@ -108,6 +115,23 @@ async fn start_mock_server(
                 let connection_span = span!(Level::INFO, "connection", %peer_addr);
                 let _conn_enter = connection_span.enter();
 
+                // Extract token from URL for auth test
+                let token = { 
+                    let mut token_val = None;
+                    if let Ok(req) = tokio_tungstenite::connect_async(format!("ws://{}", addr)).await {
+                        // This is a bit hacky, ideally the request URI is accessible 
+                        // during accept_async, but it's not directly available.
+                        // We simulate getting the request URI here.
+                        // In a real scenario, use a proper HTTP server framework (e.g., warp, axum)
+                        // that provides access to request details during handshake.
+                        // For now, we assume the test passes the token correctly.
+                        // We can't easily verify the *exact* token here without more complex setup.
+                        // Let's focus on verifying JOIN messages for now.
+                    }
+                     token_val
+                };
+                // if let Some(t) = token { info!(token = %t, "Client connected with token"); }
+
                 match tokio_tungstenite::accept_async(stream).await {
                     Ok(mut ws_stream) => {
                         info!("WebSocket handshake successful");
@@ -116,38 +140,46 @@ async fn start_mock_server(
                             match msg_res {
                                 Ok(msg) => {
                                     trace!(message = ?msg, "Received message");
-                                    // Revert to simple generic reply for any text message
+
                                     if msg.is_text() {
                                         let text_content = msg.to_text().unwrap_or("");
                                         trace!(content = %text_content, "Received text message");
-                                        // Try to parse to get the ref and topic if possible
-                                        let mut reply_ref = json!(null); // Default ref
-                                        let mut reply_topic = "phoenix".to_string(); // Default topic
+
                                         match serde_json::from_str::<RealtimeMessage>(text_content)
                                         {
                                             Ok(parsed) => {
-                                                debug!(parsed_ref = ?parsed.message_ref, parsed_topic = %parsed.topic, "Parsed message for reply");
-                                                reply_ref = parsed.message_ref;
-                                                reply_topic = parsed.topic; // Use original topic
+                                                debug!(?parsed, "Parsed message from client");
+
+                                                // Store received message for test assertions
+                                                received_messages_clone.lock().await.push_back(parsed.clone());
+
+                                                let mut reply_ref = parsed.message_ref.clone(); // Clone ref
+                                                let reply_topic = parsed.topic.clone(); // Clone topic
+                                                let reply_event = ChannelEvent::PhoenixReply;
+                                                let reply_payload = json!({ "status": "ok", "response": {} });
+
+                                                // Specific handling for join
+                                                if parsed.event == ChannelEvent::PhoenixJoin {
+                                                     info!(topic = %parsed.topic, "Received Join request");
+                                                    // reply_payload = json!({ "status": "ok", "response": {"some_join_info":"value"} });
+                                                }
+
+                                                let reply = Message::Text(json!({
+                                                    "event": reply_event,
+                                                    "payload": reply_payload,
+                                                    "ref": reply_ref,
+                                                    "topic": reply_topic
+                                                }).to_string());
+
+                                                debug!(reply = %reply.to_text().unwrap_or("[non-text]"), "Sending reply");
+                                                if let Err(e) = ws_stream.send(reply).await {
+                                                    error!(error = %e, "Error sending reply");
+                                                    break;
+                                                }
                                             }
                                             Err(e) => {
-                                                // Log parse error but still send a basic reply
-                                                warn!(error = %e, raw_message = %text_content, "Failed to parse message for ref/topic, using defaults");
+                                                warn!(error = %e, raw_message = %text_content, "Failed to parse message, ignoring");
                                             }
-                                        }
-
-                                        let reply_payload = json!({
-                                            "event": ChannelEvent::PhoenixReply, // Use correct event enum
-                                            "payload": {"status": "ok", "response": {}},
-                                            "ref": reply_ref, // Use parsed ref if available
-                                            "topic": reply_topic // Use original topic if parsed
-                                        });
-                                        let reply = tokio_tungstenite::tungstenite::Message::Text(reply_payload.to_string());
-
-                                        debug!(reply = %reply_payload, "Sending generic reply");
-                                        if let Err(e) = ws_stream.send(reply).await {
-                                            error!(error = %e, "Error sending reply");
-                                            break;
                                         }
                                     } else if msg.is_ping() {
                                         trace!("Received Ping, sending Pong");
@@ -180,7 +212,7 @@ async fn start_mock_server(
         info!("Mock server task finished");
     });
 
-    Ok((addr, handle))
+    Ok((addr, handle, received_messages))
 }
 
 #[tokio::test]
@@ -188,7 +220,7 @@ async fn start_mock_server(
 async fn test_connect_disconnect() {
     setup_logger();
     // Start the mock server
-    let (server_addr, server_handle) = start_mock_server()
+    let (server_addr, server_handle, _) = start_mock_server() // Ignore received_messages queue
         .await
         .expect("Failed to start mock server");
     let server_url = format!("ws://{}", server_addr); // Use ws scheme
@@ -249,45 +281,93 @@ async fn test_connect_disconnect() {
 }
 
 #[tokio::test]
-async fn test_join_channel() {
+#[instrument]
+async fn test_set_auth_connect() {
     setup_logger();
-    // Start the mock server
-    let (server_addr, _server_handle) = start_mock_server()
+    let (server_addr, server_handle, _) = start_mock_server()
+        .await
+        .expect("Failed to start mock server");
+    let server_url = format!("ws://{}", server_addr);
+    let test_token = "test-jwt-token-123".to_string();
+
+    let client = RealtimeClient::new(&server_url, "mock_api_key");
+
+    // Set auth *before* connecting
+    client.set_auth(Some(test_token.clone())).await;
+    info!(token = ?client.access_token.read().await, "Auth token set");
+
+    // Connect and verify state
+    let mut state_rx = client.on_state_change();
+    let connect_future = client.connect();
+    assert_eq!(state_rx.recv().await.unwrap(), supabase_rust_realtime::ConnectionState::Connecting);
+    tokio::time::timeout(Duration::from_secs(5), connect_future)
+        .await
+        .expect("Connect future timed out")
+        .expect("Client connect failed");
+    match tokio::time::timeout(Duration::from_secs(5), state_rx.recv()).await {
+        Ok(Ok(state)) => assert_eq!(state, supabase_rust_realtime::ConnectionState::Connected),
+        Ok(Err(RecvError::Closed)) => panic!("State channel closed unexpectedly during connect"),
+        Ok(Err(RecvError::Lagged(_))) => panic!("State receiver lagged during connect"),
+        Err(_) => panic!("Timed out waiting for Connected state after auth set"),
+    }
+
+    // TODO: Enhance mock server to capture the connection URL with the token
+    // and assert it here. Currently, we only assert connection success.
+    info!("Connected successfully after setting auth token.");
+
+    client.disconnect().await.expect("Disconnect failed");
+    let _ = tokio::time::timeout(Duration::from_secs(1), server_handle).await;
+    println!("Set auth connect test finished.");
+}
+
+#[tokio::test]
+#[instrument]
+async fn test_join_channel_success() {
+    setup_logger();
+    let (server_addr, server_handle, received_messages) = start_mock_server()
         .await
         .expect("Failed to start mock server");
     let server_url = format!("ws://{}", server_addr);
     let client = RealtimeClient::new(&server_url, "mock_api_key");
+    let topic = "public:test_join".to_string();
 
     // Connect the client
     client.connect().await.expect("Client connect failed");
-    // Allow time for connection state update
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    assert_eq!(
-        client.get_connection_state().await,
-        supabase_rust_realtime::ConnectionState::Connected
-    );
+    tokio::time::sleep(Duration::from_millis(100)).await; // Allow connection
+    assert_eq!(client.get_connection_state().await, supabase_rust_realtime::ConnectionState::Connected);
 
-    // Create and subscribe to a channel
-    let topic = "public:users".to_string();
+    // Subscribe to the channel
     let channel_builder = client.channel(&topic);
-    // Use subscribe() instead of join()
     let subscribe_result = channel_builder.subscribe().await;
 
-    // Assert subscription was successful (mock server sends phx_reply with status ok)
-    assert!(
-        subscribe_result.is_ok(),
-        "Channel subscription failed: {:?}",
-        subscribe_result.err()
+    assert!(subscribe_result.is_ok(), "Channel subscription failed: {:?}", subscribe_result.err());
+    let _subscriptions = subscribe_result.unwrap(); // Keep subscriptions in scope
+
+    // Allow time for join message to be sent and reply received
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    // Assert that the mock server received the join message
+    let received = received_messages.lock().await;
+    let join_msg = received.iter().find(|msg| 
+        msg.topic == topic && msg.event == ChannelEvent::PhoenixJoin
     );
+    assert!(join_msg.is_some(), "Mock server did not receive join message for topic {}", topic);
+    info!(message = ?join_msg.unwrap(), "Mock server received join message");
+    drop(received); // Release lock
 
-    // Keep subscriptions in scope until end of test to prevent premature unsubscribe
-    let _subscriptions = subscribe_result.unwrap();
+    // Assert client channel state (requires access or testing behavior)
+    // This part is tricky as channel state is internal.
+    // We rely on subscribe() returning Ok for now.
+    // Ideally, Channel would expose state or a way to wait for Joined.
+    let channels = client.channels.read().await;
+    let channel_arc = channels.get(&topic).expect("Channel not found in client map");
+    // Direct state access removed, rely on subscribe success and received msg assertion
+    // assert_eq!(*channel_arc.state.read().await, ChannelState::Joined);
+    info!("Channel join test successful (join message sent and received by mock)");
 
-    // Optionally, assert channel state if accessible - Requires changes to Channel/Client API
-    // assert_eq!(channel.state.read().await, ChannelState::Joined);
-
-    // Disconnect
-    client.disconnect().await.expect("Client disconnect failed");
+    client.disconnect().await.expect("Disconnect failed");
+    let _ = tokio::time::timeout(Duration::from_secs(1), server_handle).await;
+    println!("Join channel success test finished.");
 }
 
 #[tokio::test]
