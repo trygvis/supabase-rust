@@ -1,0 +1,28 @@
+# release.toml: cargo-release の設定ファイル
+
+# リリース前に実行するコマンド (例: テストを実行)
+pre-release-hook = ["cargo", "test"]
+
+# Git コミットの署名を有効にするか (GPG キー設定が必要)
+# sign-commit = true
+
+# Git タグの署名を有効にするか (GPG キー設定が必要)
+# sign-tag = true
+
+# リリース後の Git push を有効にするか
+# push = true (デフォルト)
+
+# crates.io への公開を有効にするか
+# publish = true (デフォルト)
+
+# タグ名のプレフィックス (ワークスペースの場合に便利)
+# tag-prefix = "{{crate_name}}-"
+
+# タグに付けるメッセージのテンプレート
+tag-message = "chore(release): {{crate_name}} v{{version}} をリリース"
+
+# バージョン更新コミットのメッセージテンプレート
+pre-release-commit-message = "chore(version): {{crate_name}} のバージョンを {{version}} に更新"
+
+# 開発バージョンのコミットメッセージテンプレート (enable-dev-version が true の場合)
+# post-release-commit-message = "chore(version): {{crate_name}} の開発バージョンを開始" 
