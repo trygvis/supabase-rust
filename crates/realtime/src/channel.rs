@@ -159,6 +159,7 @@ impl BroadcastChanges {
         Self { event: event.to_string() }
     }
 
+    #[allow(dead_code)] // Mark as allowed since it might be useful later
     pub(crate) fn get_event_name(&self) -> &str {
         &self.event
     }

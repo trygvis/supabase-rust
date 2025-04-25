@@ -125,8 +125,8 @@ impl RealtimeClient {
         let socket_arc = self.socket.clone();
         let state_arc = self.state.clone();
         let state_change_tx = self.state_change.clone();
-        let channels_arc = self.channels.clone();
-        let options = self.options.clone(); // Options are Clone
+        let _channels_arc = self.channels.clone();
+        let options = self.options.clone();
         let is_manually_closed_arc = self.is_manually_closed.clone();
 
         async move {
@@ -239,9 +239,8 @@ impl RealtimeClient {
 
             // Connection closed, attempt reconnect if enabled and not manually closed
             if options.auto_reconnect && !is_manually_closed_arc.load(Ordering::SeqCst) {
-                // TODO: Implement reconnect logic using self.reconnect()
                 println!("Connection lost. Auto-reconnect is enabled but reconnect logic needs implementation.");
-                 // self.reconnect(); // This needs to be handled carefully, maybe outside this function
+                 // self.reconnect(); // This needs careful handling
             }
 
             Ok(())
@@ -263,6 +262,7 @@ impl RealtimeClient {
 
     /// 切断処理
     pub async fn disconnect(&self) -> Result<(), RealtimeError> {
+        // Use the Arc<AtomicBool>
         self.is_manually_closed.store(true, Ordering::SeqCst);
         self.set_connection_state(ConnectionState::Disconnected).await;
 
@@ -282,12 +282,13 @@ impl RealtimeClient {
     /// 再接続処理 (TODO: Implement backoff logic)
     #[allow(dead_code)]
     fn reconnect(&self) -> impl std::future::Future<Output = ()> + Send + 'static {
-        let self_clone = self.clone(); // Clone Arcs
+        let self_clone = self.clone(); // Clones the Arcs including is_manually_closed
         async move {
             let mut attempts = 0;
             let mut interval = self_clone.options.reconnect_interval;
 
             loop {
+                // Use the cloned Arc<AtomicBool>
                 if self_clone.is_manually_closed.load(Ordering::SeqCst) {
                     println!("Manual disconnect requested, stopping reconnect attempts.");
                     break;
@@ -341,6 +342,7 @@ impl Clone for RealtimeClient {
             options: self.options.clone(),
             state: self.state.clone(),
             reconnect_attempts: AtomicU32::new(self.reconnect_attempts.load(Ordering::SeqCst)), // Clone value
+            // Clone the Arc<AtomicBool>
             is_manually_closed: self.is_manually_closed.clone(),
             state_change: self.state_change.clone(),
         }
