@@ -236,34 +236,76 @@ You can use a tool like `cargo-workspaces` (`cargo install cargo-workspaces`) to
 cargo workspaces publish --from-git
 ```
 
-### Project Completion Assessment (as of YYYY-MM-DD)
+### Project Completion Assessment (as of 2025-04-26)
 
 -   **Overall:** The project provides functional Rust clients for major Supabase services (Auth, PostgREST, Storage, Functions, basic Realtime). Compatibility with `supabase-js` is generally high.
 -   **Strengths:** Covers essential Supabase features, including recent additions like Storage `move_object`.
 -   **Areas for Improvement:**
-    -   **Realtime Crate:** Requires immediate attention. Test timeouts must be fixed, and test coverage significantly increased. Code refactoring is also recommended. **Publishing is blocked until Realtime issues are resolved.**
-    -   **Testing:** Overall test coverage, especially for integration scenarios and error handling across all crates, needs improvement. The new `storage::move_object` requires dedicated tests.
+    -   **Realtime Crate:** **CRITICAL:** Requires immediate attention. Test timeouts **must be fixed** before this crate can be considered stable or publishable. Test coverage is extremely low, and code refactoring is needed.
+    -   **Testing:** Overall test coverage, especially for integration scenarios and error handling across all crates, needs significant improvement. The new `storage::move_object` requires dedicated tests.
+    -   **PostgREST:** The removal of type-safe operations is a significant change. The requirement for a local patch for certain PostgREST versions needs a more robust solution.
     -   **Examples:** `storage_example.rs` contains dead code warnings that need to be addressed. Examples should be verified against the latest crate versions.
     -   **Documentation:** Inline code documentation (doc comments) should be expanded for better usability.
--   **Conclusion:** The project has a solid foundation but requires significant work on testing, stabilization (especially Realtime), and documentation before being reliably publishable.
+-   **Conclusion:** The project has a solid foundation but requires significant work on testing, stabilization (especially Realtime), documentation, and resolving the PostgREST patch requirement before being reliably publishable and production-ready.
 
 ## Roadmap
 
--   **Immediate Priority (Blocking Publish):**
-    -   [ ] **Fix Realtime Test Timeout:** Investigate and resolve the timeout issue in `crates/realtime/tests/integration_test.rs` (`test_connect_disconnect`).
-    -   [ ] **Increase Realtime Test Coverage:** Add comprehensive tests for Realtime channel joining, message broadcasting, DB changes, presence, filtering, and error handling.
--   **High Priority:**
-    -   [ ] **Test `storage::move_object`:** Add specific integration tests for the newly added file move functionality.
-    -   [ ] **Address `storage_example.rs` Warnings:** Remove or utilize the dead code identified by the compiler warnings.
-    -   [ ] **Increase Overall Test Coverage:** Add more integration tests for Auth, PostgREST, Storage, and Functions, covering edge cases and error conditions.
--   **Medium Priority:**
-    -   [ ] **Refactor Realtime Crate:** Break down the large `lib.rs` into smaller, more manageable modules.
-    -   [ ] **Improve Documentation:** Add detailed doc comments to public functions, structs, and enums across all crates.
-    -   [ ] **Review Examples:** Ensure all examples compile and run correctly with the latest code and provide clear setup instructions (e.g., required Edge Functions, bucket policies).
--   **Low Priority / Future:**
-    -   [ ] **Implement Missing Features:** Review `supabase-js` for any potentially valuable features not yet implemented (e.g., advanced RLS support, recursive Storage folder operations).
-    -   [ ] **Implement Migration Crate:** Develop the `crates/migration` utility.
-    -   [ ] **Publish Crates:** Once tests pass reliably and critical issues are resolved, publish the updated versions to crates.io.
+**Priority: High** ⭐️⭐️⭐️⭐️⭐️
+
+*   **Fix Realtime Crate:**
+    *   Resolve critical test timeout issues (`test_connect_disconnect`).
+    *   Significantly increase test coverage (integration, error handling, edge cases).
+    *   Refactor `lib.rs` for better maintainability and readability.
+    *   Improve documentation with clear examples.
+    *   **Goal:** Stabilize Realtime for reliable use and enable publishing.
+*   **Improve Overall Test Coverage:**
+    *   Increase integration test coverage across all crates (Auth, PostgREST, Storage, Functions).
+    *   Add specific tests for error handling scenarios.
+    *   Add tests for newly added features like `storage::move_object`.
+    *   **Goal:** Ensure library robustness and reliability.
+*   **Address PostgREST Empty Response Issue:**
+    *   Investigate the root cause of empty responses in specific PostgREST versions.
+    *   Determine if a client-side workaround is the best long-term solution or if coordination with PostgREST is needed.
+    *   Remove the need for local patching if possible.
+    *   **Goal:** Provide a seamless experience without requiring manual patches.
+*   **Enhance Documentation:**
+    *   Expand inline doc comments (`///`) for all public functions, structs, and enums.
+    *   Add more usage examples, especially for complex scenarios (e.g., advanced Realtime filters, PostgREST RPC).
+    *   Review and update existing examples (`examples/` directory) for clarity and correctness.
+    *   Address dead code warnings in examples (`storage_example.rs`).
+    *   **Goal:** Improve developer experience and reduce learning curve.
+
+**Priority: Medium** ⭐️⭐️⭐️
+
+*   **Functions Crate Tests:**
+    *   Implement comprehensive automated tests for the Functions crate.
+    *   **Goal:** Ensure Functions client reliability.
+*   **PostgREST Type Safety (Revisit):**
+    *   Evaluate options for re-introducing type safety in PostgREST operations, potentially through macros or alternative approaches, considering the maintenance overhead.
+    *   **Goal:** Improve developer ergonomics for PostgREST interactions if feasible.
+*   **Migration Crate Development:**
+    *   Define the scope and features for the `Migration` utility crate.
+    *   Begin implementation using `sea-orm-migration` or `refinery`.
+    *   **Goal:** Provide basic database migration capabilities.
+
+**Priority: Low** ⭐️⭐️
+
+*   **Advanced Auth Features:**
+    *   Complete implementation of advanced JWT verification and admin organization management.
+*   **Advanced PostgREST Features:**
+    *   Implement nested relationship auto-expansion.
+    *   Implement advanced RLS policy support exploration.
+*   **Advanced Storage Features:**
+    *   Implement recursive folder operations.
+    *   Implement detailed storage access control policy support.
+
+**Completed Recently:** ✅
+
+*   Added `storage::move_object` functionality.
+*   Improved basic test coverage for PostgREST CRUD, filters, and modifiers.
+*   Added `Prefer: return=representation` header for PostgREST mutations.
+*   Implemented basic MFA support in Auth.
+*   Implemented binary data support in Functions.
 
 ## Getting Started
 
