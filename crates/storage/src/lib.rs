@@ -956,6 +956,54 @@ impl<'a> StorageBucketClient<'a> {
             options,
         )
     }
+
+    /// オブジェクトをバケット内で移動または名前変更します。
+    ///
+    /// # 引数
+    ///
+    /// * `source_path` - 移動元のオブジェクトのパス。
+    /// * `destination_path` - 移動先のオブジェクトのパス。
+    ///
+    /// # 戻り値
+    ///
+    /// 移動が成功した場合は `Ok(())`、失敗した場合は `StorageError` を返します。
+    pub async fn move_object(&self, source_path: &str, destination_path: &str) -> Result<()> {
+        let url_str = format!("{}/object/move", self.parent.base_url);
+        let url = Url::parse(&url_str).map_err(StorageError::UrlParseError)?;
+
+        let body = json!({
+            "bucketId": self.bucket_id,
+            "sourceKey": source_path,
+            "destinationKey": destination_path
+        });
+
+        let response = self.parent.http_client
+            .post(url)
+            .header("apikey", &self.parent.api_key)
+            .header("Authorization", format!("Bearer {}", self.parent.api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(StorageError::NetworkError)?;
+
+        if response.status().is_success() {
+            Ok(())
+        } else {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "Failed to read error body".to_string());
+            // Try parsing Supabase error format
+            let error_message = if let Ok(json_err) = serde_json::from_str::<serde_json::Value>(&error_text) {
+                 json_err.get("message").and_then(|v| v.as_str()).unwrap_or(&error_text).to_string()
+            } else {
+                error_text
+            };
+            Err(StorageError::ApiError(format!(
+                "Failed to move object: {} (Status: {})",
+                error_message, status
+            )))
+        }
+    }
 }
 
 // S3互換API用のモジュールを追加

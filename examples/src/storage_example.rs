@@ -265,20 +265,24 @@ async fn run_basic_storage_operations(
     let upload_options = FileOptions::new().with_content_type("text/plain");
     let upload_result = storage
         .from(bucket_name)
-        .upload(upload_path, local_file_path, Some(upload_options))
+        .upload(upload_path, std::path::Path::new(local_file_path), Some(upload_options))
         .await?;
     println!("ファイルをアップロードしました: {}", upload_result.name);
 
     // バケット内のファイル一覧を取得
     println!("\nバケット '{}' のファイル一覧を取得中...", bucket_name);
-    let list_options = ListOptions::new().with_limit(10).with_offset(0);
+    let list_options = ListOptions::new().limit(10).offset(0);
     let files = storage
         .from(bucket_name)
-        .list(Some(""), Some(list_options))
+        .list("", Some(list_options))
         .await?;
     println!("ファイル一覧:");
     for file in &files {
-        println!("- {} (サイズ: {} バイト)", file.name, file.metadata.size);
+        let size = file.metadata.as_ref()
+            .and_then(|m| m.get("size"))
+            .and_then(|s| s.as_u64())
+            .unwrap_or(0);
+        println!("- {} (サイズ: {} バイト)", file.name, size);
     }
 
     // ファイルの公開URLを取得
@@ -308,24 +312,35 @@ async fn run_basic_storage_operations(
     );
     storage
         .from(bucket_name)
-        .move_(upload_path, move_destination)
+        .move_object(upload_path, move_destination)
         .await?;
     println!("ファイルを移動しました。");
 
     // 移動後のファイルを確認
-    let moved_files = storage.from(bucket_name).list(Some("moved/"), None).await?;
+    let moved_files_result = storage.from(bucket_name).list("moved/", None).await;
     println!("移動先のディレクトリの内容:");
-    for file in moved_files {
-        println!("- {}", file.name);
+    match moved_files_result {
+        Ok(moved_files) => {
+            for file in moved_files {
+                println!("- {}", file.name);
+            }
+        }
+        Err(e) => println!("移動先ディレクトリのリスト取得エラー: {}", e),
     }
 
     // ファイルを削除
     println!("\nファイルを削除しています...");
-    let deleted_files = storage
+    let delete_result = storage
         .from(bucket_name)
         .remove(vec![move_destination])
-        .await?;
-    println!("削除されたファイル: {}", deleted_files.len());
+        .await;
+
+    match delete_result {
+        Ok(_) => {
+            println!("指定されたファイルが正常に削除されました。");
+        }
+        Err(e) => println!("ファイル削除エラー: {}", e),
+    }
 
     // バケットを空にする
     // println!("\nバケット '{}' を空にしています...", bucket_name);

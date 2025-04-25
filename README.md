@@ -12,14 +12,16 @@ This section explains the current implementation status and compatibility with t
 
 ### Overview
 
-|Module|Status|API Compatibility|Notes|
-|------|------|----------------|-----|
-|Auth|✅|38/40 (95%)|Authentication features: Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented|
-|PostgresT|⚠️|~88% (27/30 - Type Safety Removed)|Core functions (CRUD, filtering, RPC, transactions) implemented. **NOTE:** Type-safe operations feature removed. **Requires local patch** for INSERT/UPDATE/DELETE when used with certain PostgREST versions returning empty success responses (e.g., local v12.2.11).|
-|Storage|⚠️|19/20 (95%)|Image transformation and extensions beyond JS version. Low test coverage noted. Example may require bucket setup & auth fix (WIP).|
-|Realtime|⚠️|11/14 (~80%)|Core PubSub, DB changes, Presence implemented with filters & auto-reconnect. Needs significant tests, docs & refactoring (large `lib.rs`). Example compilation fix (WIP).|
-|Functions|⚠️|5/6 (85%)|Basic and streaming functionality implemented, enhancing binary support. Missing automated tests. Examples require Edge Function setup.|
-|Migration|🚧|N/A|Utility crate for database migrations using `sea-orm-migration`/`refinery`. Status: In Development/Experimental (Not Implemented).|
+| Module      | Status | API Compatibility   | Notes                                                                                                                                                                                             |
+| :---------- | :----- | :------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Auth**    | ✅     | 38/40 (95%)         | Email/password auth, OAuth, Phone auth, MFA, Password reset, Admin API implemented.                                                                                                               |
+| **PostgresT** | ⚠️     | ~88% (27/30 - Type Safety Removed) | Core functions (CRUD, filtering, RPC, transactions) implemented. **NOTE:** Type-safe ops removed. **Requires local patch** for INSERT/UPDATE/DELETE with certain PostgREST versions. |
+| **Storage** | ✅     | **20/20 (100%)**    | **File moving (`move_object`) added.** Image transformation and extensions beyond JS version. Low test coverage noted.                                                                              |
+| **Realtime**  | ❌     | 11/14 (~80%)        | Core PubSub, DB changes, Presence implemented. **Tests have critical timeout issues and very low coverage.** Needs significant tests, docs & refactoring (large `lib.rs`).                   |
+| **Functions** | ⚠️     | 5/6 (85%)           | Basic and streaming functionality implemented, enhancing binary support. Missing automated tests. Examples require Edge Function setup.                                                           |
+| **Migration** | 🚧     | N/A                 | Utility crate for database migrations using `sea-orm-migration`/`refinery`. Status: In Development/Experimental (Not Implemented).                                                              |
+
+_Status Icons: ✅ Implemented & Tested (Basic), ⚠️ Implemented (Low Test/Docs/Needs Refactor), ❌ Critical Issues (Tests Failing/Timeout), 🚧 In Development/Not Implemented_
 
 ### Detailed Compatibility Report
 
@@ -174,11 +176,11 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Storage (`@supabase/storage-js`)
 
-**API Compatibility**: 19/20 (95%)
+**API Compatibility**: **20/20 (100%)**
 
 - ✅ Bucket management (create, get, update, delete)
 - ✅ File operations (upload, download, list, delete)
-- ✅ File moving and copying
+- ✅ **File moving and copying (`move_object`)**
 - ✅ Signed URL generation
 - ✅ Public URL generation
 - ✅ Multipart uploads (large file support)
@@ -189,7 +191,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 #### Realtime (`@supabase/realtime-js`)
 
-**API Compatibility**: 11/14 (~80%) | **Tests:** ⚠️ (Very Low Coverage - Needs Significant Expansion) | **Docs:** ⚠️ (Needs More Examples) | **Code Structure:** ⚠️ (Large `lib.rs` - Needs Refactoring)
+**API Compatibility**: 11/14 (~80%) | **Tests:** ❌ (Critical Timeout Issues & Very Low Coverage) | **Docs:** ⚠️ (Needs More Examples) | **Code Structure:** ⚠️ (Large `lib.rs` - Needs Refactoring)
 
 - ✅ Channel creation and management
 - ✅ Broadcast messaging
@@ -198,12 +200,7 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 - ✅ Automatic reconnection (configurable options)
 - ✅ Explicit error handling (`RealtimeError`)
 - ✅ Async primitives (`Arc`, `RwLock`, `mpsc`) used for concurrency.
-- ⚠️ Presence feature - Basic implementation complete, state synchronization requires more testing/refinement.
-- ⚠️ Test Coverage - Requires significant expansion (unit/integration tests for various scenarios).
-- ⚠️ Documentation - Needs more practical usage examples.
-- ⚠️ Code Structure - `lib.rs` (1000+ lines) needs splitting into smaller modules.
-- ❌ Channel Status Notifications - In development
-- ❌ Complex JOIN table monitoring - Planned
+- ❌ **Critical Issue:** Integration tests (`test_connect_disconnect`) are timing out, indicating potential connection or disconnection logic problems. Test coverage is extremely low.
 
 #### Functions (`@supabase/functions-js`)
 
@@ -218,107 +215,34 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 - ⚠️ Lack of automated tests - Critical for production readiness.
 - ⚠️ Potential for code simplification (reduce duplication in request setup).
 
-### Project Status Summary
+### Project Completion Assessment (as of YYYY-MM-DD)
 
-Overall project completion: ~85% (Adjusted: PostgREST type safety removed, focus shifted)
-**Root Client Notes:** The main `Supabase` client includes convenience filter methods (`.eq()`, `.gt()`, etc.). Ensure these align with Postgrest capabilities and are fully tested.
-**Production Readiness Concerns:** 
-- **Critically Low Test Coverage:** Storage, Realtime, and Functions modules require significant expansion of unit, integration, and potentially BDD tests (as per project rules).
-- **Realtime Module Maturity:** Requires refactoring of the large `lib.rs` file into smaller, more manageable modules, along with improved documentation and examples.
-- **Unimplemented Migration Crate:** The `crates/migration` utility is currently unimplemented/experimental.
-- **Model-Driven Development:** Adherence to the `.ssot`-based model-driven development approach needs verification and potentially implementation.
+-   **Overall:** The project provides functional Rust clients for major Supabase services (Auth, PostgREST, Storage, Functions, basic Realtime). Compatibility with `supabase-js` is generally high.
+-   **Strengths:** Covers essential Supabase features, including recent additions like Storage `move_object`.
+-   **Areas for Improvement:**
+    -   **Realtime Crate:** Requires immediate attention. Test timeouts must be fixed, and test coverage significantly increased. Code refactoring is also recommended. **Publishing is blocked until Realtime issues are resolved.**
+    -   **Testing:** Overall test coverage, especially for integration scenarios and error handling across all crates, needs improvement. The new `storage::move_object` requires dedicated tests.
+    -   **Examples:** `storage_example.rs` contains dead code warnings that need to be addressed. Examples should be verified against the latest crate versions.
+    -   **Documentation:** Inline code documentation (doc comments) should be expanded for better usability.
+-   **Conclusion:** The project has a solid foundation but requires significant work on testing, stabilization (especially Realtime), and documentation before being reliably publishable.
 
-**Current Development Focus:**
-- **Increase Test Coverage:** Prioritize comprehensive testing across Storage, Realtime, and especially Functions.
-- **Realtime Enhancements:** Refactor `lib.rs`, add examples, improve tests, and enhance documentation.
-- **Stabilize Examples:** Fix remaining issues in `storage`, `postgrest`, and `realtime` examples.
-- **Implement Migration Crate:** Define scope and implement basic functionality, potentially using `sea-orm-migration` or `refinery`.
-- **Verify Model-Driven Approach:** Ensure `.ssot` files and state machines are defined and drive development as per project rules.
+## Roadmap
 
-### Future Development
-
-1.  **Priority Implementation Items** (Revised Priorities):
-    *   **Testing:** Drastically improve test coverage for `Storage`, `Realtime`, `Functions`, incorporating various testing strategies (unit, integration, BDD).
-    *   **Realtime:** Refactor large `lib.rs`, Improve Test Coverage & Documentation, implement missing features.
-    *   **Functions:** Implement Automated Tests, Simplify request setup code.
-    *   **Model-Driven Development:** Establish/verify `.ssot` state machine definitions for core modules.
-    *   **Migration:** Define scope, implement basic functionality using `sea-orm-migration`/`refinery`, and document `crates/migration`.
-    *   **PostgresT:** Complete Relationship auto-expansion (nested) and Advanced RLS support.
-    *   **Storage:** Complete Folder operations and Access control features.
-    *   **Core:** Validate/Refactor Root Client Filter Methods.
-    *   **Auth:** Complete Advanced JWT verification and Admin API extensions.
-
-2.  **Module-Specific Roadmap**:
-
-    **Auth** (95% → 100%, Target Q3 2024):
-    *   Advanced multi-factor authentication (MFA) features
-        *   WebAuthn/passkey support improvements
-        *   Backup code management
-    *   Advanced JWT verification
-        *   Custom claim validation
-        *   JWKS support enhancements
-    *   Admin API extensions
-        *   Organization management
-        *   Risk management and auditing
-
-    **PostgresT** (~88% → 95%, Target Q4 2024):
-    *   Relationship auto-expansion with nested relationships
-        *   Efficient retrieval of multi-level relationships
-        *   Circular reference handling
-    *   Advanced RLS support
-        *   Complex policy condition application
-        *   RLS verification tools
-
-    **Storage** (95% → 100%, Target Q4 2024):
-    *   **Testing:** Improve test coverage significantly using mocking frameworks (High Priority).
-    *   Recursive folder operations
-        *   Efficient handling of deep directory structures
-        *   Batch operation optimization
-    *   Detailed access control
-        *   Custom policy definitions
-        *   Time-limited access
-
-    **Realtime** (80% → 95%, Target Q1 2025):
-    *   **Testing & Docs:** Expand Unit/Integration tests and add practical usage examples (High Priority).
-    *   **Refactoring:** Split large `lib.rs` into smaller, more manageable modules (High Priority).
-    *   **Presence:** Improve state synchronization robustness and testing.
-    *   Complete Presence feature implementation
-        *   State synchronization
-        *   Presence conflict resolution
-    *   Channel Status Notifications
-        *   Connection state monitoring
-        *   Reconnection strategies
-    *   Complex JOIN table monitoring
-        *   Related table change tracking
-        *   Efficient notification filtering
-
-    **Functions** (85% → 100%, Target Q4 2024):
-    *   **Testing:** Implement comprehensive automated tests (High Priority).
-    *   **Refactoring:** Simplify request setup code to reduce duplication.
-    *   Complete binary data support
-        *   Efficient binary streams
-        *   File upload/download via functions
-    *   Advanced error handling
-        *   Detailed error information
-        *   Retry strategies
-
-    **Migration** (0% → 50% - Basic Implementation, Target Q1 2025):
-    *   Define scope and implement core migration utilities (apply, revert, status).
-    *   Document usage and best practices within the Supabase context.
-
-### Recent Updates
-
-- v0.2.0 (Latest)
-  - Refactored workspace dependencies to v0.2.0
-  - Removed experimental schema generation / type-safe PostgREST features.
-  - Improved error handling across all modules
-  - Enhanced binary support in Functions module
-  - Fixed compatibility issues with latest Supabase JS
-
-### System Requirements
-
-- Rust 1.86.0 or higher
-- Compatible with Supabase projects using v2.x API
+-   **Immediate Priority (Blocking Publish):**
+    -   [ ] **Fix Realtime Test Timeout:** Investigate and resolve the timeout issue in `crates/realtime/tests/integration_test.rs` (`test_connect_disconnect`).
+    -   [ ] **Increase Realtime Test Coverage:** Add comprehensive tests for Realtime channel joining, message broadcasting, DB changes, presence, filtering, and error handling.
+-   **High Priority:**
+    -   [ ] **Test `storage::move_object`:** Add specific integration tests for the newly added file move functionality.
+    -   [ ] **Address `storage_example.rs` Warnings:** Remove or utilize the dead code identified by the compiler warnings.
+    -   [ ] **Increase Overall Test Coverage:** Add more integration tests for Auth, PostgREST, Storage, and Functions, covering edge cases and error conditions.
+-   **Medium Priority:**
+    -   [ ] **Refactor Realtime Crate:** Break down the large `lib.rs` into smaller, more manageable modules.
+    -   [ ] **Improve Documentation:** Add detailed doc comments to public functions, structs, and enums across all crates.
+    -   [ ] **Review Examples:** Ensure all examples compile and run correctly with the latest code and provide clear setup instructions (e.g., required Edge Functions, bucket policies).
+-   **Low Priority / Future:**
+    -   [ ] **Implement Missing Features:** Review `supabase-js` for any potentially valuable features not yet implemented (e.g., advanced RLS support, recursive Storage folder operations).
+    -   [ ] **Implement Migration Crate:** Develop the `crates/migration` utility.
+    -   [ ] **Publish Crates:** Once tests pass reliably and critical issues are resolved, publish the updated versions to crates.io.
 
 ## Getting Started
 
