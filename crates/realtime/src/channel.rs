@@ -1,0 +1,383 @@
+use crate::client::RealtimeClient; // Assuming RealtimeClient will be in client.rs
+use crate::error::RealtimeError;
+use crate::filters::{DatabaseFilter, FilterOperator};
+use crate::message::{ChannelEvent, Payload, PresenceChange};
+use serde::Serialize;
+use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::RwLock;
+use tokio_tungstenite::tungstenite::Message;
+
+/// データベース変更監視設定
+#[derive(Debug, Clone, Serialize)]
+pub struct DatabaseChanges {
+    schema: String,
+    table: String,
+    events: Vec<ChannelEvent>,
+    filter: Option<Vec<DatabaseFilter>>,
+}
+
+impl DatabaseChanges {
+    /// 新しいデータベース変更監視設定を作成
+    pub fn new(table: &str) -> Self {
+        Self {
+            schema: "public".to_string(),
+            table: table.to_string(),
+            events: Vec::new(),
+            filter: None,
+        }
+    }
+
+    /// スキーマを設定
+    pub fn schema(mut self, schema: &str) -> Self {
+        self.schema = schema.to_string();
+        self
+    }
+
+    /// イベントを追加
+    pub fn event(mut self, event: ChannelEvent) -> Self {
+        if !self.events.contains(&event) {
+            self.events.push(event);
+        }
+        self
+    }
+
+    /// フィルター条件を追加
+    pub fn filter(mut self, filter: DatabaseFilter) -> Self {
+        self.filter.get_or_insert_with(Vec::new).push(filter);
+        self
+    }
+
+    // --- Filter convenience methods ---
+
+    pub fn eq<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Eq,
+            value: value.into(),
+        })
+    }
+
+    pub fn neq<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Neq,
+            value: value.into(),
+        })
+    }
+
+    pub fn gt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Gt,
+            value: value.into(),
+        })
+    }
+
+    pub fn gte<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Gte,
+            value: value.into(),
+        })
+    }
+
+    pub fn lt<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Lt,
+            value: value.into(),
+        })
+    }
+
+    pub fn lte<T: Into<serde_json::Value>>(self, column: &str, value: T) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::Lte,
+            value: value.into(),
+        })
+    }
+
+    pub fn in_values<T: Into<serde_json::Value>>(self, column: &str, values: Vec<T>) -> Self {
+        self.filter(DatabaseFilter {
+            column: column.to_string(),
+            operator: FilterOperator::In,
+            value: values.into_iter().map(|v| v.into()).collect::<Vec<_>>().into(),
+        })
+    }
+
+    // Add other filter methods (like, ilike, contains) if needed
+
+    // --- Internal methods ---
+
+    /// Convert config to JSON for the websocket message
+    pub(crate) fn to_channel_config(&self) -> serde_json::Value {
+        let events_str: Vec<String> = self.events.iter().map(|e| e.to_string()).collect();
+
+        let mut config = json!({
+            "schema": self.schema,
+            "table": self.table,
+            "events": events_str
+        });
+
+        if let Some(filters) = &self.filter {
+            let filters_json: Vec<serde_json::Value> = filters
+                .iter()
+                .map(|f| {
+                    json!({
+                        "column": f.column,
+                        "filter": f.operator.to_string(),
+                        "value": f.value
+                    })
+                })
+                .collect();
+            // Assuming Realtime expects filters like: `column=eq.value` in URL query format
+            // This needs clarification based on actual protocol.
+            // For now, adding as a structured object, might need adjustment.
+            config["filter"] = json!(filters_json);
+        }
+
+        json!({
+            "type": "postgres_changes",
+            "payload": {
+                "config": config
+            }
+        })
+    }
+}
+
+/// ブロードキャストイベント監視設定
+#[derive(Debug, Clone, Serialize)]
+pub struct BroadcastChanges {
+    event: String, // Specific event name to listen for
+}
+
+impl BroadcastChanges {
+    pub fn new(event: &str) -> Self {
+        Self { event: event.to_string() }
+    }
+
+    pub(crate) fn get_event_name(&self) -> &str {
+        &self.event
+    }
+}
+
+/// プレゼンスイベント監視設定 (シンプルなマーカー型)
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct PresenceChanges;
+
+impl PresenceChanges {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+/// アクティブなチャンネル購読を表す
+pub struct Subscription {
+    id: String, // Internal subscription identifier
+    channel: Arc<Channel>,
+}
+
+impl Drop for Subscription {
+    fn drop(&mut self) {
+        let id_clone = self.id.clone();
+        let channel_clone = self.channel.clone();
+        tokio::spawn(async move {
+            if let Err(e) = channel_clone.unsubscribe(&id_clone).await {
+                // TODO: Log unsubscribe error properly
+                eprintln!("Error unsubscribing from channel: {}", e);
+            }
+        });
+    }
+}
+
+type CallbackFn = Box<dyn Fn(Payload) + Send + Sync>;
+type PresenceCallbackFn = Box<dyn Fn(PresenceChange) + Send + Sync>;
+
+/// 内部チャンネル表現
+pub(crate) struct Channel {
+    topic: String,
+    // Use Weak reference to client to avoid cycles if Channel holds client ref?
+    // For now, assume socket sender is passed down.
+    socket: Arc<RwLock<Option<mpsc::Sender<Message>>>>,
+    callbacks: Arc<RwLock<HashMap<String, CallbackFn>>>,
+    presence_callbacks: Arc<RwLock<Vec<PresenceCallbackFn>>>,
+    // Add presence state if managed per-channel
+    // presence_state: Arc<RwLock<PresenceState>>,
+}
+
+impl Channel {
+    async fn unsubscribe(&self, id: &str) -> Result<(), RealtimeError> {
+        // Remove callback
+        self.callbacks.write().await.remove(id);
+        // TODO: Unsubscribe presence if needed
+
+        // Send unsubscribe message if this was the last callback? Requires tracking.
+        // For simplicity, assume client handles full channel leave when all subscriptions drop.
+        println!(
+            "Subscription {} dropped. Channel {} might need explicit leave.",
+            id,
+            self.topic
+        );
+        Ok(())
+    }
+}
+
+/// チャンネル作成と購読設定のためのビルダー
+pub struct ChannelBuilder<'a> {
+    client: &'a RealtimeClient,
+    topic: String,
+    db_callbacks: HashMap<String, (DatabaseChanges, CallbackFn)>,
+    broadcast_callbacks: HashMap<String, (BroadcastChanges, CallbackFn)>,
+    presence_callbacks: Vec<PresenceCallbackFn>,
+}
+
+impl<'a> ChannelBuilder<'a> {
+    pub(crate) fn new(client: &'a RealtimeClient, topic: &str) -> Self {
+        Self {
+            client,
+            topic: topic.to_string(),
+            db_callbacks: HashMap::new(),
+            broadcast_callbacks: HashMap::new(),
+            presence_callbacks: Vec::new(),
+        }
+    }
+
+    /// データベース変更イベントのコールバックを登録
+    pub fn on<F>(mut self, changes: DatabaseChanges, callback: F) -> Self
+    where
+        F: Fn(Payload) + Send + Sync + 'static,
+    {
+        // Use a unique identifier for the subscription
+        let id = uuid::Uuid::new_v4().to_string();
+        self.db_callbacks.insert(id, (changes, Box::new(callback)));
+        self
+    }
+
+    /// ブロードキャストイベントのコールバックを登録
+    pub fn on_broadcast<F>(mut self, changes: BroadcastChanges, callback: F) -> Self
+    where
+        F: Fn(Payload) + Send + Sync + 'static,
+    {
+        let id = uuid::Uuid::new_v4().to_string();
+        self.broadcast_callbacks.insert(id, (changes, Box::new(callback)));
+        self
+    }
+
+    /// プレゼンス変更イベントのコールバックを登録
+    pub fn on_presence<F>(mut self, callback: F) -> Self
+    where
+        F: Fn(PresenceChange) + Send + Sync + 'static,
+    {
+        self.presence_callbacks.push(Box::new(callback));
+        self
+    }
+
+    /// チャンネルへの接続と購読を開始
+    pub async fn subscribe(self) -> Result<Vec<Subscription>, RealtimeError> {
+        // TODO: Lock client's channels map
+        // TODO: Check if channel already exists, if so, add callbacks
+        // TODO: If not, create new Channel struct
+
+        // Send JOIN message to server
+        let join_ref = self.client.next_ref(); // Get unique ref from client
+        let topic = self.topic.clone();
+
+        // Construct payload with all subscription configs
+        let mut db_configs = json!({});
+        for (_id, (changes, _)) in &self.db_callbacks {
+            let config = changes.to_channel_config();
+            // Merge config into db_configs (needs careful handling if multiple configs)
+            // This part depends heavily on how Phoenix Channels expect multiple configs.
+            // Assuming for now we just send one config per 'type'.
+            if let Some(payload) = config.get("payload") {
+                if let Some(cfg) = payload.get("config") {
+                   db_configs = cfg.clone(); // Overwrites previous, needs better merge
+                }
+            }
+        }
+
+        // Simplified join payload
+        let payload = json!({
+            "config": {
+                 "postgres_changes": [db_configs], // Adjust based on actual protocol
+                 "broadcast": {
+                     "self": false, // Example option
+                     "ack": false
+                 },
+                 "presence": {
+                     "key": ""
+                 }
+            }
+        });
+
+        let message = json!({
+            "topic": topic,
+            "event": "phx_join",
+            "payload": payload,
+            "ref": join_ref
+        });
+
+        let socket_guard = self.client.socket.read().await;
+        if let Some(socket_tx) = socket_guard.as_ref() {
+            socket_tx
+                .send(Message::Text(message.to_string()))
+                .await?; // Use ? with From<SendError> for RealtimeError
+        } else {
+            return Err(RealtimeError::ConnectionError("Not connected".to_string()));
+        }
+        drop(socket_guard); // Release read lock
+
+        // TODO: Wait for phx_reply with status "ok" for this join_ref
+
+        // --- Create Channel and Subscriptions ---
+        // This part needs careful synchronization with the client's channel map
+
+        let mut subscriptions = Vec::new();
+        let mut client_channels = self.client.channels.write().await;
+
+        let channel = client_channels
+            .entry(topic.clone())
+            .or_insert_with(|| {
+                Arc::new(Channel {
+                    topic: topic.clone(),
+                    socket: self.client.socket.clone(),
+                    callbacks: Arc::new(RwLock::new(HashMap::new())),
+                    presence_callbacks: Arc::new(RwLock::new(Vec::new())),
+                })
+            })
+            .clone();
+        drop(client_channels); // Release write lock
+
+        // Add callbacks to the shared channel state
+        let mut channel_callbacks = channel.callbacks.write().await;
+        for (id, (_changes, callback)) in self.db_callbacks {
+            channel_callbacks.insert(id.clone(), callback);
+            subscriptions.push(Subscription { id, channel: channel.clone() });
+        }
+        for (id, (_changes, callback)) in self.broadcast_callbacks {
+            channel_callbacks.insert(id.clone(), callback);
+             subscriptions.push(Subscription { id, channel: channel.clone() });
+       }
+        drop(channel_callbacks);
+
+        let mut channel_presence_callbacks = channel.presence_callbacks.write().await;
+        channel_presence_callbacks.extend(self.presence_callbacks);
+        drop(channel_presence_callbacks);
+
+        // Return subscriptions (caller holds these to keep connection alive)
+        Ok(subscriptions)
+    }
+
+    // Method to track presence - might belong on RealtimeClient or Channel directly?
+    pub async fn track_presence(
+        &self,
+        _user_id: &str,
+        _user_data: serde_json::Value,
+    ) -> Result<(), RealtimeError> {
+        // TODO: Implement sending presence track message
+        Err(RealtimeError::ChannelError("track_presence not implemented".to_string()))
+    }
+} 
