@@ -1,7 +1,8 @@
 use crate::channel::{Channel, ChannelBuilder}; // Added ChannelBuilder import
 use crate::error::RealtimeError;
-use crate::message::{RealtimeMessage, ChannelEvent}; // Added ChannelEvent import here
+use crate::message::{ChannelEvent, RealtimeMessage}; // Added ChannelEvent import here
 use futures_util::{SinkExt, StreamExt};
+use log::{debug, error, info, trace, warn};
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -12,8 +13,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::sleep;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
-use url::Url;
-use log::{debug, error, info, trace, warn}; // Use log crate
+use url::Url; // Use log crate
 
 /// 接続状態
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,7 +126,10 @@ impl RealtimeClient {
     async fn set_connection_state(&self, state: ConnectionState) {
         let mut current_state = self.state.write().await;
         if *current_state != state {
-            info!("Client state changing from {:?} to {:?}", *current_state, state);
+            info!(
+                "Client state changing from {:?} to {:?}",
+                *current_state, state
+            );
             *current_state = state;
             // Ignore send error if no receivers are listening
             if let Err(e) = self.state_change.send(state) {
@@ -159,7 +162,10 @@ impl RealtimeClient {
             debug!("Reset manual close flag");
 
             let token_guard = token_arc.read().await;
-            let token_param = token_guard.as_ref().map(|t| format!("&token={}", t)).unwrap_or_default();
+            let token_param = token_guard
+                .as_ref()
+                .map(|t| format!("&token={}", t))
+                .unwrap_or_default();
             debug!("Read token (present: {})", token_guard.is_some());
             drop(token_guard);
 
@@ -167,17 +173,25 @@ impl RealtimeClient {
             debug!("Parsed base URL: {}", base_url);
             // Allow ws/wss schemes directly, map http/https
             match base_url.scheme() {
-                 "http" | "ws" => { /* Ok, will use ws */ }
-                 "https" | "wss" => { /* Ok, will use wss */ }
-                 // Reject other schemes
-                 s => return Err(RealtimeError::ConnectionError(format!("Unsupported URL scheme: {}", s))),
+                "http" | "ws" => { /* Ok, will use ws */ }
+                "https" | "wss" => { /* Ok, will use wss */ }
+                // Reject other schemes
+                s => {
+                    return Err(RealtimeError::ConnectionError(format!(
+                        "Unsupported URL scheme: {}",
+                        s
+                    )))
+                }
             };
 
             // Use the correct path /realtime/v1/websocket
-            let _host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
+            let _host = base_url
+                .host_str()
+                .ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
             let ws_url = format!(
                 "{}?apikey={}{}",
-                base_url.join("/realtime/v1/websocket?vsn=2.0.0") // Use join which preserves scheme/host/port
+                base_url
+                    .join("/realtime/v1/websocket?vsn=2.0.0") // Use join which preserves scheme/host/port
                     .map_err(RealtimeError::UrlParseError)?,
                 key,
                 token_param
@@ -207,7 +221,10 @@ impl RealtimeClient {
                         ConnectionState::Disconnected,
                     )
                     .await;
-                    return Err(RealtimeError::ConnectionError(format!("WebSocket connection failed: {}", e)));
+                    return Err(RealtimeError::ConnectionError(format!(
+                        "WebSocket connection failed: {}",
+                        e
+                    )));
                 }
             };
 
@@ -234,7 +251,10 @@ impl RealtimeClient {
                 while let Some(message) = socket_rx.recv().await {
                     trace!("Writer task sending message: {:?}", message);
                     if let Err(e) = write.send(message).await {
-                        error!("Writer task: WebSocket send error: {}. Closing connection.", e);
+                        error!(
+                            "Writer task: WebSocket send error: {}. Closing connection.",
+                            e
+                        );
                         *writer_socket_arc.write().await = None;
                         Self::set_connection_state_internal(
                             writer_state_arc,
@@ -280,7 +300,7 @@ impl RealtimeClient {
                                     if let Message::Text(text) = &msg {
                                         match serde_json::from_str::<RealtimeMessage>(text) { // Parse as RealtimeMessage
                                             Ok(realtime_msg) => {
-                                                debug!("Reader task parsed RealtimeMessage: topic='{}', event='{:?}', ref='{:?}'", 
+                                                debug!("Reader task parsed RealtimeMessage: topic='{}', event='{:?}', ref='{:?}'",
                                                        realtime_msg.topic, realtime_msg.event, realtime_msg.message_ref);
                                                 // Route based on topic
                                                 let channels_guard = reader_channels_arc.read().await;
@@ -344,12 +364,17 @@ impl RealtimeClient {
                 }
                 debug!("Reader task finished loop.");
                 // When reader exits, signal disconnect and clean up socket
-                Self::set_connection_state_internal(reader_state_arc.clone(), reader_state_change_tx.clone(), ConnectionState::Disconnected).await;
+                Self::set_connection_state_internal(
+                    reader_state_arc.clone(),
+                    reader_state_change_tx.clone(),
+                    ConnectionState::Disconnected,
+                )
+                .await;
                 *reader_socket_arc.write().await = None;
             });
 
-            // --- Wait for tasks or manual disconnect --- 
-            // This part needs careful thought. Do we just return Ok(()) and let tasks run? 
+            // --- Wait for tasks or manual disconnect ---
+            // This part needs careful thought. Do we just return Ok(()) and let tasks run?
             // Or wait for disconnect? Waiting here blocks the caller.
             // Let's return Ok(()) immediately and let the tasks run in the background.
             // The user can monitor state via on_state_change.
@@ -374,7 +399,11 @@ impl RealtimeClient {
     ) {
         let mut current_state = state_arc.write().await;
         if *current_state != state {
-             trace!("set_connection_state_internal changing from {:?} to {:?}", *current_state, state);
+            trace!(
+                "set_connection_state_internal changing from {:?} to {:?}",
+                *current_state,
+                state
+            );
             *current_state = state;
             let _ = state_change_tx.send(state);
         }
@@ -397,7 +426,7 @@ impl RealtimeClient {
             // Send might fail if connection is already broken, ignore error
             let _ = socket_tx.send(close_msg).await;
         } else {
-             warn!("disconnect(): No active socket sender found to send Close frame.");
+            warn!("disconnect(): No active socket sender found to send Close frame.");
         }
 
         // Now close the socket sender channel
@@ -471,15 +500,23 @@ impl RealtimeClient {
     }
 
     /// Helper to send a raw JSON message through the WebSocket connection
-    pub(crate) async fn send_message(&self, message: serde_json::Value) -> Result<(), RealtimeError> {
+    pub(crate) async fn send_message(
+        &self,
+        message: serde_json::Value,
+    ) -> Result<(), RealtimeError> {
         trace!("Client attempting to send message: {}", message);
         let socket_guard = self.socket.read().await;
         if let Some(socket_tx) = socket_guard.as_ref() {
             let ws_message = Message::Text(message.to_string());
-            socket_tx.send(ws_message).await.map_err(RealtimeError::from)
+            socket_tx
+                .send(ws_message)
+                .await
+                .map_err(RealtimeError::from)
         } else {
             warn!("Cannot send message, client socket unavailable.");
-            Err(RealtimeError::ConnectionError("Client socket unavailable".to_string()))
+            Err(RealtimeError::ConnectionError(
+                "Client socket unavailable".to_string(),
+            ))
         }
     }
 }

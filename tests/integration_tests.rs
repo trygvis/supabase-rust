@@ -45,7 +45,8 @@ async fn test_storage_realtime_postgrest_integration() {
                 // タスクを作成
                 let postgrest = supabase.from("tasks").with_auth(&auth_token).unwrap();
                 let task_result = postgrest
-                    .with_header("Prefer", "return=representation").unwrap()
+                    .with_header("Prefer", "return=representation")
+                    .unwrap()
                     .insert(json!({
                         "title": "統合テスト用タスク",
                         "description": "ストレージ、リアルタイム、PostgreSTの統合テスト",
@@ -99,7 +100,9 @@ async fn test_storage_realtime_postgrest_integration() {
 
                                     match update_result {
                                         Ok(_) => {
-                                            println!("タスク更新成功 - リアルタイム更新が送信されます")
+                                            println!(
+                                                "タスク更新成功 - リアルタイム更新が送信されます"
+                                            )
                                         }
                                         Err(e) => println!("タスク更新エラー: {:?}", e),
                                     }
@@ -135,12 +138,13 @@ async fn test_storage_realtime_postgrest_integration() {
 
                             // テスト用画像の作成 (1x1ピクセルのPNG)
                             let test_image_data: &[u8] = &[
-                                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-                                0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-                                0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-                                0x0A, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0x60, 0x00, 0x00, 0x00,
-                                0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49,
-                                0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+                                0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00,
+                                0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00,
+                                0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89,
+                                0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63,
+                                0x60, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0xE2, 0x21, 0xBC, 0x33,
+                                0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60,
+                                0x82,
                             ];
 
                             // テスト用の一時ファイルを作成
@@ -166,18 +170,25 @@ async fn test_storage_realtime_postgrest_integration() {
 
                                     let transform_result = storage
                                         .from(bucket_name)
-                                        .transform_image("test_image.png", transform_options.clone())
+                                        .transform_image(
+                                            "test_image.png",
+                                            transform_options.clone(),
+                                        )
                                         .await;
 
                                     match transform_result {
-                                        Ok(bytes) => println!("画像変換成功: {} バイト", bytes.len()),
+                                        Ok(bytes) => {
+                                            println!("画像変換成功: {} バイト", bytes.len())
+                                        }
                                         Err(e) => println!("画像変換エラー: {:?}", e),
                                     }
 
                                     // 変換画像の公開URLを取得
-                                    let public_url = storage
-                                        .from(bucket_name)
-                                        .get_public_transform_url("test_image.png", transform_options);
+                                    let public_url =
+                                        storage.from(bucket_name).get_public_transform_url(
+                                            "test_image.png",
+                                            transform_options,
+                                        );
 
                                     println!("変換画像の公開URL: {}", public_url);
 
@@ -209,7 +220,10 @@ async fn test_storage_realtime_postgrest_integration() {
                                 Err(e) => println!("タスク削除エラー: {:?}", e),
                             }
                         } else {
-                            println!("タスク作成エラー: 挿入レスポンスが予期しない形式でした: {:?}", task);
+                            println!(
+                                "タスク作成エラー: 挿入レスポンスが予期しない形式でした: {:?}",
+                                task
+                            );
                         }
                     }
                     Err(e) => println!("タスク作成エラー: {:?}", e),

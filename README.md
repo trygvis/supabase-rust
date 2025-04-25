@@ -222,20 +222,26 @@ if let Some(verified_token) = supabase.auth().verify_token(&input_token).await? 
 
 Overall project completion: ~85% (Adjusted: PostgREST type safety removed, focus shifted)
 **Root Client Notes:** The main `Supabase` client includes convenience filter methods (`.eq()`, `.gt()`, etc.). Ensure these align with Postgrest capabilities and are fully tested.
-**Production Readiness Concerns:** Low test coverage (Storage, Realtime, Functions), Realtime module maturity (refactoring, docs), and the unimplemented Migration crate are significant blockers for production use.
+**Production Readiness Concerns:** 
+- **Critically Low Test Coverage:** Storage, Realtime, and Functions modules require significant expansion of unit, integration, and potentially BDD tests (as per project rules).
+- **Realtime Module Maturity:** Requires refactoring of the large `lib.rs` file into smaller, more manageable modules, along with improved documentation and examples.
+- **Unimplemented Migration Crate:** The `crates/migration` utility is currently unimplemented/experimental.
+- **Model-Driven Development:** Adherence to the `.ssot`-based model-driven development approach needs verification and potentially implementation.
 
-Current Development Focus:
-- **Increase Test Coverage:** Across Storage, Realtime, and especially Functions.
-- **Realtime Enhancements:** Refactor `lib.rs`, add examples, improve tests.
+**Current Development Focus:**
+- **Increase Test Coverage:** Prioritize comprehensive testing across Storage, Realtime, and especially Functions.
+- **Realtime Enhancements:** Refactor `lib.rs`, add examples, improve tests, and enhance documentation.
 - **Stabilize Examples:** Fix remaining issues in `storage`, `postgrest`, and `realtime` examples.
-- **Implement Migration Crate:** Define scope and implement basic functionality.
+- **Implement Migration Crate:** Define scope and implement basic functionality, potentially using `sea-orm-migration` or `refinery`.
+- **Verify Model-Driven Approach:** Ensure `.ssot` files and state machines are defined and drive development as per project rules.
 
 ### Future Development
 
 1.  **Priority Implementation Items** (Revised Priorities):
-    *   **Testing:** Drastically improve test coverage for `Storage`, `Realtime`, `Functions`.
-    *   **Realtime:** Refactor large `lib.rs`, Improve Test Coverage & Documentation.
+    *   **Testing:** Drastically improve test coverage for `Storage`, `Realtime`, `Functions`, incorporating various testing strategies (unit, integration, BDD).
+    *   **Realtime:** Refactor large `lib.rs`, Improve Test Coverage & Documentation, implement missing features.
     *   **Functions:** Implement Automated Tests, Simplify request setup code.
+    *   **Model-Driven Development:** Establish/verify `.ssot` state machine definitions for core modules.
     *   **Migration:** Define scope, implement basic functionality using `sea-orm-migration`/`refinery`, and document `crates/migration`.
     *   **PostgresT:** Complete Relationship auto-expansion (nested) and Advanced RLS support.
     *   **Storage:** Complete Folder operations and Access control features.

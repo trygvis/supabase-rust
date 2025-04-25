@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod tests {
-    use supabase_rust_functions::{FunctionsClient, FunctionsError, FunctionOptions, ResponseType};
+    use futures_util::StreamExt;
     use serde::{Deserialize, Serialize};
     use serde_json::{json, Value};
-    use wiremock::matchers::{method, path, body_json, header};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
     use std::collections::HashMap;
-    use futures_util::StreamExt; // Import StreamExt for stream processing
+    use supabase_rust_functions::{FunctionOptions, FunctionsClient, FunctionsError, ResponseType};
+    use wiremock::matchers::{body_json, header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate}; // Import StreamExt for stream processing
 
     #[derive(Serialize, Deserialize, Debug, PartialEq)]
     struct TestRequest {
@@ -35,8 +35,14 @@ mod tests {
         let client = setup_client(&server.uri()).await;
         let function_name = "test-json-func";
 
-        let request_body = TestRequest { name: "test".to_string(), count: 5 };
-        let expected_response = TestResponse { message: "Success".to_string(), value: 10 };
+        let request_body = TestRequest {
+            name: "test".to_string(),
+            count: 5,
+        };
+        let expected_response = TestResponse {
+            message: "Success".to_string(),
+            value: 10,
+        };
 
         Mock::given(method("POST"))
             .and(path(format!("/functions/v1/{}", function_name)))
@@ -76,7 +82,11 @@ mod tests {
 
         assert!(result.is_err());
         match result.err().unwrap() {
-            FunctionsError::FunctionError { status, message, details } => {
+            FunctionsError::FunctionError {
+                status,
+                message,
+                details,
+            } => {
                 assert_eq!(status, 500);
                 assert_eq!(message, "Internal Server Error");
                 assert!(details.is_none());
@@ -85,7 +95,7 @@ mod tests {
         }
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_invoke_json_error_with_details() {
         let server = MockServer::start().await;
         let client = setup_client(&server.uri()).await;
@@ -110,12 +120,19 @@ mod tests {
 
         assert!(result.is_err());
         match result.err().unwrap() {
-            FunctionsError::FunctionError { status, message, details } => {
+            FunctionsError::FunctionError {
+                status,
+                message,
+                details,
+            } => {
                 assert_eq!(status, 400);
                 assert_eq!(message, "Specific error message");
                 assert!(details.is_some());
                 let unwrapped_details = details.unwrap();
-                assert_eq!(unwrapped_details.message, Some("Specific error message".to_string()));
+                assert_eq!(
+                    unwrapped_details.message,
+                    Some("Specific error message".to_string())
+                );
                 assert_eq!(unwrapped_details.code, Some("FUNC_ERR_CODE".to_string()));
                 assert!(unwrapped_details.details.is_some());
             }
@@ -143,7 +160,7 @@ mod tests {
         };
 
         // Use invoke_text helper or invoke with options
-         let result = client
+        let result = client
             .invoke_text::<Value>(function_name, None) // Using invoke_text helper
             .await;
         // Alternatively:
@@ -156,7 +173,7 @@ mod tests {
         assert_eq!(response_text, expected_text);
     }
 
-     #[tokio::test]
+    #[tokio::test]
     async fn test_invoke_binary_success() {
         let server = MockServer::start().await;
         let client = setup_client(&server.uri()).await;
@@ -222,20 +239,18 @@ mod tests {
         let client = setup_client(&server.uri()).await;
         let function_name = "test-stream-func";
         let expected_body_part1 = b"hello\n"; // 6 bytes
-        let expected_body_part2 = b"world";   // 5 bytes
-        
+        let expected_body_part2 = b"world"; // 5 bytes
+
         // Concatenate parts beforehand for the mock response and expected data
-        let mut full_body = Vec::with_capacity(expected_body_part1.len() + expected_body_part2.len());
+        let mut full_body =
+            Vec::with_capacity(expected_body_part1.len() + expected_body_part2.len());
         full_body.extend_from_slice(expected_body_part1);
         full_body.extend_from_slice(expected_body_part2);
 
         Mock::given(method("POST"))
             .and(path(format!("/functions/v1/{}", function_name)))
             .and(header("apikey", "fake-api-key"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_bytes(full_body.clone())
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(full_body.clone()))
             .mount(&server)
             .await;
 
@@ -308,4 +323,4 @@ mod tests {
         assert_eq!(received_objects[0], json1);
         assert_eq!(received_objects[1], json2);
     }
-} 
+}

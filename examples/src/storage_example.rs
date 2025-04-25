@@ -319,12 +319,22 @@ async fn run_basic_storage_operations(
 
     // ファイルをダウンロード
     println!("\nファイルをダウンロードしています...");
-    let download_data = storage.from(bucket_name).with_auth(&dummy_token)?.download(upload_path).await?;
-    println!("ダウンロードしたファイルサイズ: {} バイト", download_data.len());
+    let download_data = storage
+        .from(bucket_name)
+        .with_auth(&dummy_token)?
+        .download(upload_path)
+        .await?;
+    println!(
+        "ダウンロードしたファイルサイズ: {} バイト",
+        download_data.len()
+    );
     // ダウンロードした内容をファイルに保存（オプション）
     // let mut download_file = StdFile::create("downloaded-test-file.txt")?;\n    // download_file.write_all(&download_data)?;\n\n    // ファイルを移動
     let move_destination = "moved/test-file.txt";
-    println!("\nファイルを移動しています: {} -> {}", upload_path, move_destination);
+    println!(
+        "\nファイルを移動しています: {} -> {}",
+        upload_path, move_destination
+    );
     storage
         .from(bucket_name)
         .with_auth(&dummy_token)?
@@ -458,7 +468,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // 本来は auth_example.rs のように sign_in する必要があります
     // ここでは、環境変数からダミーのトークンを取得するか、
     // 適切な認証処理を実装する必要があります。
-    let dummy_token = env::var("SUPABASE_DUMMY_TOKEN").unwrap_or_else(|_| "dummy-jwt-token".to_string());
+    let dummy_token =
+        env::var("SUPABASE_DUMMY_TOKEN").unwrap_or_else(|_| "dummy-jwt-token".to_string());
 
     let storage = supabase.storage();
 
@@ -470,7 +481,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     match run_large_file_upload(&storage).await {
         Ok(_) => println!("大容量ファイルのアップロード例が正常に完了しました。"),
-        Err(e) => eprintln!("大容量ファイルのアップロード例でエラーが発生しました: {}", e),
+        Err(e) => eprintln!(
+            "大容量ファイルのアップロード例でエラーが発生しました: {}",
+            e
+        ),
     }
 
     // Note: These examples still create their own unauthenticated clients internally.

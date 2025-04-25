@@ -5,7 +5,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RealtimeMessage {
     pub topic: String,
-    pub event: ChannelEvent, // Use the ChannelEvent enum
+    pub event: ChannelEvent,        // Use the ChannelEvent enum
     pub payload: serde_json::Value, // Flexible payload
     #[serde(rename = "ref")]
     pub message_ref: serde_json::Value, // Can be string or null
@@ -15,11 +15,11 @@ pub struct RealtimeMessage {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")] // Use snake_case for serialization
 pub enum ChannelEvent {
-    Insert,         // Database change events
+    Insert, // Database change events
     Update,
     Delete,
-    All,            // Wildcard for database changes
-    PostgresChanges,// Specific event type for Supabase DB changes
+    All,             // Wildcard for database changes
+    PostgresChanges, // Specific event type for Supabase DB changes
 
     #[serde(rename = "phx_join")] // Explicit rename for Phoenix events
     PhoenixJoin,
@@ -40,7 +40,11 @@ impl std::fmt::Display for ChannelEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Use serde to get the correct string representation
         // This relies on the rename attributes defined above.
-        write!(f, "{}", serde_json::to_string(self).unwrap_or_else(|_| format!("{:?}", self)))
+        write!(
+            f,
+            "{}",
+            serde_json::to_string(self).unwrap_or_else(|_| format!("{:?}", self))
+        )
         // Simple match for basic cases (less reliable than serde)
         // match self {
         //     Self::Insert => write!(f, "INSERT"),

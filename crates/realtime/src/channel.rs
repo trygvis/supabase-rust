@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 // use tokio::sync::mpsc; // Unused import after commenting out `socket` field
 use tokio::sync::RwLock;
-use tokio_tungstenite::tungstenite::Message;
-use tokio::time::{timeout, Duration}; // Add timeout import
+use tokio::time::{timeout, Duration};
+use tokio_tungstenite::tungstenite::Message; // Add timeout import
 
 /// データベース変更監視設定
 #[derive(Debug, Clone, Serialize)]
@@ -240,10 +240,17 @@ impl Channel {
     async fn set_state(&self, state: ChannelState) {
         let mut current_state = self.state.write().await;
         if *current_state != state {
-             info!("Channel '{}' state changing from {:?} to {:?}", self.topic, *current_state, state);
+            info!(
+                "Channel '{}' state changing from {:?} to {:?}",
+                self.topic, *current_state, state
+            );
             *current_state = state;
         } else {
-            trace!("Channel '{}' state already {:?}, not changing.", self.topic, state);
+            trace!(
+                "Channel '{}' state already {:?}, not changing.",
+                self.topic,
+                state
+            );
         }
     }
 
@@ -251,7 +258,10 @@ impl Channel {
     async fn join(&self) -> Result<(), RealtimeError> {
         self.set_state(ChannelState::Joining).await;
         let join_ref = self.client.next_ref();
-        info!("Channel '{}' sending join message with ref {}", self.topic, join_ref);
+        info!(
+            "Channel '{}' sending join message with ref {}",
+            self.topic, join_ref
+        );
         let join_msg = json!({
             "topic": self.topic,
             "event": ChannelEvent::PhoenixJoin,
@@ -272,8 +282,13 @@ impl Channel {
             trace!("Channel '{}' sending message: {:?}", self.topic, ws_msg);
             socket_tx.send(ws_msg).await.map_err(RealtimeError::from)
         } else {
-            warn!("Channel '{}': Cannot send message, client socket unavailable.", self.topic);
-            Err(RealtimeError::ConnectionError("Client socket unavailable".to_string()))
+            warn!(
+                "Channel '{}': Cannot send message, client socket unavailable.",
+                self.topic
+            );
+            Err(RealtimeError::ConnectionError(
+                "Client socket unavailable".to_string(),
+            ))
         }
     }
 
@@ -293,27 +308,38 @@ impl Channel {
 
     // Adjusted to accept RealtimeMessage
     pub(crate) async fn handle_message(&self, message: RealtimeMessage) {
-        debug!("Channel '{}' handling message: event={:?}, ref={:?}", 
-               self.topic, message.event, message.message_ref);
+        debug!(
+            "Channel '{}' handling message: event={:?}, ref={:?}",
+            self.topic, message.event, message.message_ref
+        );
 
         match message.event {
             ChannelEvent::PhoenixReply => {
                 // TODO: Check ref against pending joins/leaves
-                info!("Channel '{}' received PhoenixReply: {:?}", self.topic, message.payload);
+                info!(
+                    "Channel '{}' received PhoenixReply: {:?}",
+                    self.topic, message.payload
+                );
                 if *self.state.read().await == ChannelState::Joining {
                     // Basic assumption: any reply means join succeeded for now
                     self.set_state(ChannelState::Joined).await;
                 } else if *self.state.read().await == ChannelState::Leaving {
-                     self.set_state(ChannelState::Closed).await;
+                    self.set_state(ChannelState::Closed).await;
                 }
             }
             ChannelEvent::PhoenixClose => {
-                 info!("Channel '{}' received PhoenixClose. Setting state to Closed.", self.topic);
-                 self.set_state(ChannelState::Closed).await;
+                info!(
+                    "Channel '{}' received PhoenixClose. Setting state to Closed.",
+                    self.topic
+                );
+                self.set_state(ChannelState::Closed).await;
             }
             ChannelEvent::PhoenixError => {
-                 error!("Channel '{}' received PhoenixError: {:?}", self.topic, message.payload);
-                 self.set_state(ChannelState::Errored).await;
+                error!(
+                    "Channel '{}' received PhoenixError: {:?}",
+                    self.topic, message.payload
+                );
+                self.set_state(ChannelState::Errored).await;
             }
             ChannelEvent::PostgresChanges | ChannelEvent::Broadcast | ChannelEvent::Presence => {
                 // These events have nested data we need to pass to callbacks
@@ -322,7 +348,11 @@ impl Channel {
                     event_type: Some(message.event.to_string()), // Reflect the event type
                     timestamp: None, // Timestamp might be deeper in payload, needs parsing
                 };
-                trace!("Channel '{}' dispatching event {:?} to callbacks", self.topic, message.event);
+                trace!(
+                    "Channel '{}' dispatching event {:?} to callbacks",
+                    self.topic,
+                    message.event
+                );
                 let callbacks_guard = self.callbacks.read().await;
                 for callback in callbacks_guard.values() {
                     // Execute callback - Consider spawning if long-running
@@ -333,7 +363,11 @@ impl Channel {
             // Ignore other events like Heartbeat, Insert, Update, Delete, All at the channel level
             // (Those might be relevant *inside* a PostgresChanges payload)
             _ => {
-                 trace!("Channel '{}' ignored event: {:?}", self.topic, message.event);
+                trace!(
+                    "Channel '{}' ignored event: {:?}",
+                    self.topic,
+                    message.event
+                );
             }
         }
     }
@@ -413,15 +447,24 @@ impl<'a> ChannelBuilder<'a> {
         for (id, (_changes, callback)) in self.db_callbacks {
             debug!("Adding DB callback ID {} to channel {}", id, self.topic);
             callbacks_guard.insert(id.clone(), callback);
-            subscriptions.push(Subscription { id, channel: channel.clone() });
+            subscriptions.push(Subscription {
+                id,
+                channel: channel.clone(),
+            });
         }
 
         // Add broadcast callbacks
         for (id, (_changes, callback)) in self.broadcast_callbacks {
-            debug!("Adding Broadcast callback ID {} to channel {}", id, self.topic);
+            debug!(
+                "Adding Broadcast callback ID {} to channel {}",
+                id, self.topic
+            );
             // Assuming broadcast uses the same callback mechanism for now
             callbacks_guard.insert(id.clone(), callback);
-            subscriptions.push(Subscription { id, channel: channel.clone() });
+            subscriptions.push(Subscription {
+                id,
+                channel: channel.clone(),
+            });
         }
 
         // Add presence callbacks
@@ -429,8 +472,11 @@ impl<'a> ChannelBuilder<'a> {
             debug!("Adding Presence callback to channel {}", self.topic);
             presence_callbacks_guard.push(callback);
             // How to represent presence subscription? Use a fixed ID?
-             let id = format!("presence_{}", self.topic); // Example ID
-             subscriptions.push(Subscription { id, channel: channel.clone() });
+            let id = format!("presence_{}", self.topic); // Example ID
+            subscriptions.push(Subscription {
+                id,
+                channel: channel.clone(),
+            });
         }
 
         drop(callbacks_guard);
@@ -439,46 +485,78 @@ impl<'a> ChannelBuilder<'a> {
         // Only send join if channel wasn't already joined/joining
         let current_state = *channel.state.read().await;
         if current_state == ChannelState::Closed || current_state == ChannelState::Errored {
-             info!("Channel '{}' is {:?}, attempting to join.", self.topic, current_state);
+            info!(
+                "Channel '{}' is {:?}, attempting to join.",
+                self.topic, current_state
+            );
             match channel.join().await {
                 Ok(_) => {
                     // Join message sent, now wait for reply (handled by reader task)
-                    debug!("Join message sent for channel '{}'. Waiting for reply.", self.topic);
+                    debug!(
+                        "Join message sent for channel '{}'. Waiting for reply.",
+                        self.topic
+                    );
                     // We might want a timeout here to ensure the join completes
-                     match timeout(Duration::from_secs(10), async {
-                         while *channel.state.read().await != ChannelState::Joined {
-                             tokio::time::sleep(Duration::from_millis(50)).await;
-                             // Add a check for Errored or Closed state too
-                             let check_state = *channel.state.read().await;
-                              if check_state == ChannelState::Errored || check_state == ChannelState::Closed {
-                                 return Err(RealtimeError::SubscriptionError(format!("Channel '{}' entered state {:?} while waiting for join reply", self.topic, check_state)));
-                             }
-                         }
-                         Ok(())
-                     }).await {
-                         Ok(Ok(_)) => info!("Channel '{}' successfully joined.", self.topic),
-                         Ok(Err(e)) => {
-                            error!("Error waiting for join confirmation for channel '{}': {:?}", self.topic, e);
+                    match timeout(Duration::from_secs(10), async {
+                        while *channel.state.read().await != ChannelState::Joined {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            // Add a check for Errored or Closed state too
+                            let check_state = *channel.state.read().await;
+                            if check_state == ChannelState::Errored
+                                || check_state == ChannelState::Closed
+                            {
+                                return Err(RealtimeError::SubscriptionError(format!(
+                                    "Channel '{}' entered state {:?} while waiting for join reply",
+                                    self.topic, check_state
+                                )));
+                            }
+                        }
+                        Ok(())
+                    })
+                    .await
+                    {
+                        Ok(Ok(_)) => info!("Channel '{}' successfully joined.", self.topic),
+                        Ok(Err(e)) => {
+                            error!(
+                                "Error waiting for join confirmation for channel '{}': {:?}",
+                                self.topic, e
+                            );
                             return Err(e);
-                         }
-                         Err(_) => {
-                             error!("Timed out waiting for join confirmation for channel '{}'", self.topic);
-                             channel.set_state(ChannelState::Errored).await;
-                             return Err(RealtimeError::SubscriptionError(format!("Timed out waiting for join confirmation for channel '{}'", self.topic)));
-                         }
-                     }
+                        }
+                        Err(_) => {
+                            error!(
+                                "Timed out waiting for join confirmation for channel '{}'",
+                                self.topic
+                            );
+                            channel.set_state(ChannelState::Errored).await;
+                            return Err(RealtimeError::SubscriptionError(format!(
+                                "Timed out waiting for join confirmation for channel '{}'",
+                                self.topic
+                            )));
+                        }
+                    }
                 }
                 Err(e) => {
-                    error!("Failed to send join message for channel '{}': {}", self.topic, e);
+                    error!(
+                        "Failed to send join message for channel '{}': {}",
+                        self.topic, e
+                    );
                     channel.set_state(ChannelState::Errored).await;
                     return Err(e);
                 }
             }
         } else {
-             info!("Channel '{}' is already {:?}, not sending join message.", self.topic, current_state);
+            info!(
+                "Channel '{}' is already {:?}, not sending join message.",
+                self.topic, current_state
+            );
         }
 
-        info!("ChannelBuilder subscribe finished for topic '{}', returning {} subscriptions.", self.topic, subscriptions.len());
+        info!(
+            "ChannelBuilder subscribe finished for topic '{}', returning {} subscriptions.",
+            self.topic,
+            subscriptions.len()
+        );
         Ok(subscriptions)
     }
 

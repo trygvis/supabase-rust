@@ -6,10 +6,10 @@ use std::io;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use supabase_rust_gftd::auth::Session;
 use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
 use supabase_rust_gftd::Supabase;
 use tokio::time::sleep;
-use supabase_rust_gftd::auth::Session;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
@@ -257,7 +257,9 @@ async fn run_advanced_filter_example(
     let delete_client = supabase.from("tasks");
     let delete_result = delete_client
         .with_auth(access_token)?
-        .eq("user_id", &user_id).delete().await?;
+        .eq("user_id", &user_id)
+        .delete()
+        .await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
@@ -469,7 +471,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let delete_client = supabase.from("tasks");
     let delete_result = delete_client
         .with_auth(&access_token)?
-        .eq("user_id", &user_id).delete().await?;
+        .eq("user_id", &user_id)
+        .delete()
+        .await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
