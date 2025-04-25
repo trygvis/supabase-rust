@@ -559,10 +559,17 @@ impl PostgrestClient {
     pub async fn insert<T: Serialize>(&self, values: T) -> Result<Value, PostgrestError> {
         let url = self.build_url()?;
 
+        // Clone headers and add the Prefer header
+        let mut headers = self.headers.clone();
+        headers.insert(
+            HeaderName::from_static("prefer"),
+            HeaderValue::from_static("return=representation"),
+        );
+
         let response = self
             .http_client
             .post(&url)
-            .headers(self.headers.clone())
+            .headers(headers) // Use modified headers
             .json(&values)
             .send()
             .await
@@ -610,10 +617,17 @@ impl PostgrestClient {
     pub async fn update<T: Serialize>(&self, values: T) -> Result<Value, PostgrestError> {
         let url = self.build_url()?;
 
+        // Clone headers and add the Prefer header
+        let mut headers = self.headers.clone();
+        headers.insert(
+            HeaderName::from_static("prefer"),
+            HeaderValue::from_static("return=representation"),
+        );
+
         let response = self
             .http_client
             .patch(&url)
-            .headers(self.headers.clone())
+            .headers(headers) // Use modified headers
             .json(&values)
             .send()
             .await
@@ -659,10 +673,17 @@ impl PostgrestClient {
     pub async fn delete(&self) -> Result<Value, PostgrestError> {
         let url = self.build_url()?;
 
+        // Clone headers and add the Prefer header
+        let mut headers = self.headers.clone();
+        headers.insert(
+            HeaderName::from_static("prefer"),
+            HeaderValue::from_static("return=representation"),
+        );
+
         let response = self
             .http_client
             .delete(&url)
-            .headers(self.headers.clone())
+            .headers(headers) // Use modified headers
             .send()
             .await
             .map_err(PostgrestError::NetworkError)?;
@@ -1089,7 +1110,7 @@ impl Drop for PostgrestTransaction {
 mod tests {
     use super::*;
     use serde_json::json;
-    use wiremock::matchers::{body_json, method, path, query_param};
+    use wiremock::matchers::{body_json, header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[tokio::test]
@@ -1662,5 +1683,125 @@ mod tests {
             .and_then(|a: &Value| a.get("name"))
             .and_then(Value::as_str);
         assert_eq!(name_val, Some("Specific Author"));
+    }
+
+    #[tokio::test]
+    async fn test_insert() {
+        let mock_server = MockServer::start().await;
+        println!("Mock server started for insert test at: {}", mock_server.uri());
+
+        let insert_data = json!({ "name": "New Item", "value": 10 });
+        let expected_response = json!([{ "id": 3, "name": "New Item", "value": 10 }]);
+
+        Mock::given(method("POST"))
+            .and(path("/rest/v1/items"))
+            .and(header("apikey", "fake-key"))
+            .and(header("content-type", "application/json"))
+            .and(header("Prefer", "return=representation"))
+            .and(body_json(&insert_data))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&expected_response))
+            .mount(&mock_server)
+            .await;
+        println!("Insert mock set up");
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
+        println!("Client created for insert test");
+
+        let result = client.insert(&insert_data).await;
+
+        if let Err(e) = &result {
+            println!("Insert query failed: {:?}", e);
+        }
+
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data, expected_response);
+    }
+
+    #[tokio::test]
+    async fn test_update() {
+        let mock_server = MockServer::start().await;
+        println!("Mock server started for update test at: {}", mock_server.uri());
+
+        let update_data = json!({ "value": 20 });
+        let expected_response = json!([{ "id": 1, "name": "Updated Item", "value": 20 }]);
+
+        Mock::given(method("PATCH"))
+            .and(path("/rest/v1/items"))
+            .and(query_param("id", "eq.1"))
+            .and(header("apikey", "fake-key"))
+            .and(header("content-type", "application/json"))
+            .and(header("Prefer", "return=representation"))
+            .and(body_json(&update_data))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+            .mount(&mock_server)
+            .await;
+        println!("Update mock set up");
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
+        println!("Client created for update test");
+
+        let result = client
+            .eq("id", "1")
+            .update(&update_data)
+            .await;
+
+        if let Err(e) = &result {
+            println!("Update query failed: {:?}", e);
+        }
+
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data, expected_response);
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let mock_server = MockServer::start().await;
+        println!("Mock server started for delete test at: {}", mock_server.uri());
+
+        let expected_response = json!([{ "id": 1, "name": "Deleted Item", "value": 10 }]);
+
+        Mock::given(method("DELETE"))
+            .and(path("/rest/v1/items"))
+            .and(query_param("id", "eq.1"))
+            .and(header("apikey", "fake-key"))
+            .and(header("content-type", "application/json"))
+            .and(header("Prefer", "return=representation"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&expected_response))
+            .mount(&mock_server)
+            .await;
+        println!("Delete mock set up");
+
+        let client = PostgrestClient::new(
+            &mock_server.uri(),
+            "fake-key",
+            "items",
+            reqwest::Client::new(),
+        );
+        println!("Client created for delete test");
+
+        let result = client
+            .eq("id", "1")
+            .delete()
+            .await;
+
+        if let Err(e) = &result {
+            println!("Delete query failed: {:?}", e);
+        }
+
+        assert!(result.is_ok());
+        let data = result.unwrap();
+        assert_eq!(data, expected_response);
     }
 }
