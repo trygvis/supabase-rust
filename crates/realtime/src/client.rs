@@ -151,7 +151,7 @@ impl RealtimeClient {
 
             // Read the current token
             let token_guard = token_arc.read().await;
-            let token_param = token_guard.as_ref().map(|t| format!("&token={}", t)).unwrap_or_default();
+            let _token_param = token_guard.as_ref().map(|t| format!("&token={}", t)).unwrap_or_default();
             drop(token_guard); // Release read lock
 
             // Construct the WebSocket URL carefully
@@ -166,19 +166,12 @@ impl RealtimeClient {
             // Use the correct path /realtime/v1/websocket
             let host = base_url.host_str().ok_or(RealtimeError::UrlParseError(url::ParseError::EmptyHost))?;
             // Use vsn=2.0.0 and remove token parameter from URL
-            let ws_url_str = if let Some(port) = base_url.port() {
-                format!(
-                    "{}://{}:{}/realtime/v1/websocket?apikey={}&vsn=2.0.0", // Use vsn=2.0.0
-                    ws_scheme, host, port, key // Removed token_param
-                )
-            } else {
-                format!(
-                    "{}://{}/realtime/v1/websocket?apikey={}&vsn=2.0.0", // Use vsn=2.0.0
-                    ws_scheme, host, key // Removed token_param
-                )
-            };
+            let ws_url = format!(
+                "{}?apikey={}",
+                base_url.join("/realtime/v1/websocket?vsn=2.0.0").ok_or(RealtimeError::InvalidEndpoint)?,
+                key
+            );
 
-            let ws_url = Url::parse(&ws_url_str)?;
             println!("Connecting to WebSocket: {}", ws_url); // Log the URL
 
             Self::set_connection_state_internal(
