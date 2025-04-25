@@ -30,20 +30,15 @@ use std::sync::Arc;
 // モジュール
 // NOTE: Schema module is temporarily disabled to make tests pass
 // Feature-gated code that requires typescript_type_def needs more work
-// #[cfg(feature = "schema-convert")]
-// pub mod schema;
+#[cfg(feature = "schema-convert")]
+pub mod schema;
 
 // 型安全なデータベース操作
-// pub use crate::schema::{
-//     PostgrestClientTypeExtension, Table, TypedDeleteBuilder, TypedInsertBuilder,
-//     TypedPostgrestClient, TypedUpdateBuilder,
-// };
-
-// スキーマ変換機能は条件付きでのみ公開
-// #[cfg(feature = "schema-convert")]
-// pub use crate::schema::{
-//     convert_typescript_to_rust, generate_rust_from_typescript_cli, SchemaConvertOptions,
-// };
+#[cfg(feature = "schema-convert")]
+pub use crate::schema::{
+    PostgrestClientTypeExtension, Table, TypedDeleteBuilder, TypedInsertBuilder,
+    TypedPostgrestClient, TypedUpdateBuilder,
+};
 
 /// PostgREST APIエラーの詳細情報
 #[derive(Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -594,10 +589,7 @@ impl PostgrestClient {
         if status.is_success() {
             // Read the body as text first to handle potential empty responses
             let body_text = response.text().await.map_err(|e| {
-                PostgrestError::DeserializationError(format!(
-                    "Failed to read response body: {}",
-                    e
-                ))
+                PostgrestError::DeserializationError(format!("Failed to read response body: {}", e))
             })?;
 
             // If body is empty but status was success (e.g., 201), return Null.
@@ -648,10 +640,7 @@ impl PostgrestClient {
         if status.is_success() {
             // Read the body as text first
             let body_text = response.text().await.map_err(|e| {
-                PostgrestError::DeserializationError(format!(
-                    "Failed to read response body: {}",
-                    e
-                ))
+                PostgrestError::DeserializationError(format!("Failed to read response body: {}", e))
             })?;
 
             // If body is empty, return Null. Update might return 204 No Content.
@@ -699,10 +688,7 @@ impl PostgrestClient {
         if status.is_success() {
             // Read the body as text first
             let body_text = response.text().await.map_err(|e| {
-                PostgrestError::DeserializationError(format!(
-                    "Failed to read response body: {}",
-                    e
-                ))
+                PostgrestError::DeserializationError(format!("Failed to read response body: {}", e))
             })?;
 
             // If body is empty, return Null. Delete often returns 204 No Content.
