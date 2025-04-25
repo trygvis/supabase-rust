@@ -3,7 +3,7 @@
 Rust client library for [Supabase](https://supabase.com) - A Rust implementation compatible with JavaScript's [supabase-js](https://github.com/supabase/supabase-js).
 
 [![Crate](https://img.shields.io/crates/v/supabase-rust.svg)](https://crates.io/crates/supabase-rust)
-[![Docs](https://docs.rs/supabase-rust/badge.svg)](https://docs.rs/supabase-rust)
+[![Docs](https://docs.rs/supabase-rust/0.3.0/badge.svg)](https://docs.rs/supabase-rust/0.3.0)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Compatibility with Supabase JS and Implementation Status
@@ -315,7 +315,7 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-supabase-rust = "0.2.0"
+supabase-rust = "0.3.0"
 ```
 
 ### Basic Usage
@@ -450,55 +450,4 @@ The project is organized as a Cargo workspace to manage different Supabase featu
     -   `migration`: Database migration utilities (Low Priority - Not Implemented)
 -   **`src/`**: The main `supabase-rust` library crate that ties the modules together.
 -   **`examples/`**: Usage examples for each module (High Priority - Needs fixing and maintenance).
--   **`tests/`**: Integration tests (Medium Priority - Coverage needs expansion).
--   **`supabase/`**: Supabase-specific configuration or migration files (related to the `migration` crate).
--   **`docs/`**: Additional documentation (Low Priority - Needs population).
--   **`Cargo.toml`**: Workspace and root crate definition.
--   **`Makefile`**: Development and build tasks.
-
-Current priorities are **increasing test coverage** across all modules, stabilizing the examples, refactoring the Realtime crate, and starting the implementation of the Migration crate.
-
-## Examples
-
-The `/examples` directory contains various usage examples for the different crates.
-
-**Prerequisites:**
-
-*   A running Supabase instance (local or cloud).
-*   Environment variables set in `examples/.env`:
-    *   `SUPABASE_URL`: Your Supabase project URL.
-    *   `SUPABASE_KEY`: Your Supabase project `anon` key.
-    *   `SUPABASE_SERVICE_ROLE_KEY`: (Required for `auth_admin_example`) Your Supabase project `service_role` key.
-*   For `functions_example` and `functions_binary_example`: Deployed Edge Functions (`hello-world`, `generate-image`, etc.) in your Supabase project.
-*   For `storage_example`: A Storage bucket configured in your Supabase project.
-
-**Running Examples:**
-
-1.  Navigate to the examples directory: `cd examples`
-2.  Ensure your Supabase instance is running.
-3.  Run the database setup script (first time): `./setup_db.sh` (or ensure the `tasks` table exists with RLS policies from `schema/create_tables.sql`).
-4.  Run a specific example: `cargo run --bin <example_name>` (e.g., `cargo run --bin auth_example`).
-
-**Current Status (Post-Fixes - Needs Verification):**
-
-| Example                    | Status                     | Notes                                                                                                                            |
-| -------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `auth_example`             | ✅ Runs                     |                                                                                                                                  |
-| `database_example`         | ✅ Runs (with patch)       | Requires local patch to `crates/postgrest/src/lib.rs` to handle empty INSERT/UPDATE/DELETE responses from local PostgREST v12.2.11. |
-| `storage_example`          | ✅ Runs (Needs Verification) | Attempted fix for auth header. Still requires bucket setup in Supabase project.                                                |
-| `realtime_example`         | ✅ Runs (Needs Verification) | Attempted fix for type error.                                                                                                   |
-| `postgrest_example`        | ✅ Runs (Needs Verification) | Attempted fix for COUNT filter error.                                                                                            |
-| `functions_example`        | ❌ Fails (Setup Required)  | Fails due to missing `hello-world` Edge Function. Requires Supabase project setup.                                             |
-| `auth_admin_example`       | ❌ Fails (Setup Required)  | Panics due to missing `SUPABASE_SERVICE_ROLE_KEY` environment variable. Requires setup.                                          |
-| `functions_binary_example` | ❌ Fails (Setup Required)  | Fails due to missing Edge Functions (e.g., `generate-image`). Requires Supabase project setup.                                     |
-
-## Production Readiness Assessment (Updated)
-
-While core functionality exists, this library is **not yet recommended for production use** due to the following:
-
-1.  **Insufficient Testing:** Critical modules (`Storage`, `Realtime`, `Functions`) lack adequate test coverage, increasing the risk of undiscovered bugs.
-2.  **Realtime Maturity:** The `Realtime` crate requires significant refactoring, documentation improvement, and testing before being considered stable.
-3.  **Missing Migration Tool:** Database schema management is crucial for production, and the `Migration` crate is not yet implemented.
-4.  **Example Stability:** While fixes have been attempted, thorough verification of all examples across different environments is needed.
-
-Focus areas for achieving production readiness are comprehensive testing, Realtime module stabilization, and Migration crate implementation.
+-   **`tests/`
