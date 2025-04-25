@@ -4,8 +4,10 @@ use serde_json::json;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
-use supabase_rust_gftd::supabase_rust_realtime::{
-    ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator, RealtimeClientOptions,
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::io;
+use supabase_rust_gftd::realtime::{
+    ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator,
 };
 use supabase_rust_gftd::Supabase;
 use tokio::time::sleep;
@@ -25,8 +27,6 @@ struct Task {
 struct RealtimePayload<T> {
     #[serde(rename = "type")]
     event_type: String,
-    table: String,
-    schema: String,
     record: Option<T>,
     old_record: Option<T>,
 }
@@ -85,7 +85,6 @@ async fn run_advanced_filter_example(
     println!("フィルター付きチャンネルを作成しました");
 
     // 複数のタスクを作成し、一部だけを完了済みにする
-    let postgrest = supabase.from("tasks");
 
     // 5つのタスクを作成（最初は全て未完了）
     for i in 1..6 {
@@ -193,7 +192,7 @@ async fn run_advanced_filter_example(
             .from("tasks")
             .select("*")
             .eq("title", &task_title)
-            .eq("user_id", &user_id)
+            .eq("user_id", user_id)
             .execute()
             .await?;
 
@@ -248,7 +247,7 @@ async fn run_advanced_filter_example(
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
     let delete_client = supabase.from("tasks");
-    let delete_result = delete_client.eq("user_id", &user_id).delete().await?;
+    let delete_result = delete_client.eq("user_id", user_id).delete().await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
@@ -448,10 +447,18 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\nクリーンアップ - すべてのテストタスクを削除");
 
     let delete_client = supabase.from("tasks");
-    let delete_result = delete_client.eq("user_id", &user_id).delete().await?;
+    let delete_result = delete_client.eq("user_id", user_id).delete().await?;
 
     println!("削除結果: {:?}", delete_result);
     println!("すべてのテストタスクを削除しました");
+
+    // クリーンアップ - 例で作成したテストユーザーを削除
+    println!("\nテストユーザーを削除します...");
+
+    let delete_client = supabase.from("tasks");
+    let delete_result = delete_client.eq("user_id", &user_id).delete().await?;
+
+    println!("削除結果: {:?}", delete_result);
 
     // チャンネルの購読を解除
     println!("\n続行するには何かキーを押してください...");

@@ -1,8 +1,11 @@
 use bytes::Bytes;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
-use supabase_rust_gftd::storage::{FileOptions, ListOptions};
 use std::fs::File as StdFile;
+use std::env;
+use std::io::{Read, Write};
+use supabase_rust_gftd::Supabase;
+use supabase_rust_gftd::storage::{FileOptions, ListOptions};
 use tempfile::NamedTempFile;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -25,7 +28,6 @@ mod image_transform_examples {
     use supabase_rust_gftd::storage::{FileOptions, ImageTransformOptions};
     use supabase_rust_gftd::Supabase;
     use tempfile::NamedTempFile;
-    use tokio::fs;
 
     pub async fn run_image_transform_examples(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {

@@ -4,7 +4,6 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::env;
 use supabase_rust_gftd::functions::FunctionOptions;
-use supabase_rust_gftd::functions::InvokeFunctionOptions;
 use supabase_rust_gftd::Supabase;
 
 #[derive(Debug, Serialize)]

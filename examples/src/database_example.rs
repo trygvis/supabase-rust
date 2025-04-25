@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
 use supabase_rust_gftd::Supabase;
-use serde_json::json;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
