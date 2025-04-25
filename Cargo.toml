@@ -20,11 +20,11 @@ url = "2.3"
 base64 = "0.21"
 async-trait = "0.1"
 jsonwebtoken = "9.1"
-supabase-rust-auth = { path = "crates/auth", version = "0.1.5" }
-supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.5", features = ["schema-convert"] }
-supabase-rust-storage = { path = "crates/storage", version = "0.1.5" }
-supabase-rust-realtime = { path = "crates/realtime", version = "0.1.5" }
-supabase-rust-functions = { path = "crates/functions", version = "0.1.5" }
+supabase-rust-auth = { workspace = true }
+supabase-rust-postgrest = { workspace = true, features = ["schema-convert"] }
+supabase-rust-storage = { workspace = true }
+supabase-rust-realtime = { workspace = true }
+supabase-rust-functions = { workspace = true }
 clap = { version = "3.0", optional = true }
 
 [features]
@@ -41,6 +41,14 @@ members = [
     "crates/realtime",
     "crates/functions"
 ]
+resolver = "2"
+
+[workspace.dependencies]
+supabase-rust-auth = { path = "crates/auth", version = "0.1.5" }
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.5" }
+supabase-rust-storage = { path = "crates/storage", version = "0.1.5" }
+supabase-rust-realtime = { path = "crates/realtime", version = "0.1.5" }
+supabase-rust-functions = { path = "crates/functions", version = "0.1.5" }
 
 [dev-dependencies]
 wiremock = "0.5.19"
