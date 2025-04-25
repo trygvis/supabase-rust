@@ -26,6 +26,7 @@ pre-release-commit-message = "chore(version): バージョンを {{version}} に
 # --- crates.io 設定 ---
 # crates.io への公開を有効にするか (デフォルト: true)
 # publish = true
+publish = false # cargo release では公開しない
 
 # 開発バージョンのコミットメッセージテンプレート (enable-dev-version が true の場合)
 # post-release-commit-message = "chore(version): v{{version}}-dev を開始" 
