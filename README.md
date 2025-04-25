@@ -2,8 +2,8 @@
 
 Rust client library for [Supabase](https://supabase.com) - A Rust implementation compatible with JavaScript's [supabase-js](https://github.com/supabase/supabase-js).
 
-[![Crate](https://img.shields.io/crates/v/supabase-rust.svg)](https://crates.io/crates/supabase-rust)
-[![Docs](https://docs.rs/supabase-rust/0.3.0/badge.svg)](https://docs.rs/supabase-rust/0.3.0)
+[![Crate](https://img.shields.io/crates/v/supabase-rust-gftd.svg)](https://crates.io/crates/supabase-rust-gftd)
+[![Docs](https://docs.rs/supabase-rust-gftd/0.3.0/badge.svg)](https://docs.rs/supabase-rust-gftd/0.3.0)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Compatibility with Supabase JS and Implementation Status
