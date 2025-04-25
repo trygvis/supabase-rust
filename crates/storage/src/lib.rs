@@ -2145,4 +2145,100 @@ mod tests {
             panic!("Expected ApiError, got {:?}", result);
         }
     }
+
+    #[tokio::test]
+    async fn test_create_signed_transform_url() {
+        // 関数名を修正
+        // モックサーバーを起動
+        let mock_server = MockServer::start().await;
+        let bucket_id = "transform-bucket";
+        let object_path = "images/logo.png";
+        let expires_in = 3600; // 1 hour
+        let transform_options = ImageTransformOptions::new()
+            .with_width(50)
+            .with_height(50)
+            .with_resize("cover")
+            .with_format("jpeg")
+            .with_quality(80);
+
+        // クライアントを作成
+        let http_client = reqwest::Client::new();
+        let storage_client = StorageClient::new(&mock_server.uri(), "fake-anon-key", http_client);
+        let bucket_client = storage_client.from(bucket_id);
+
+        // --- 成功ケースのモック ---
+        let request_body = json!({ "expiresIn": expires_in });
+        let expected_signed_url = format!(
+            "{}/storage/v1/object/sign/{}/{}?token=test-token&transform=w_50,h_50,rs_cover,f_jpeg,q_80",
+            mock_server.uri(),
+            bucket_id,
+            object_path
+        );
+        let response_body = json!({ "signedURL": expected_signed_url });
+
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/storage/v1/object/sign/{}/{}?{}",
+                bucket_id,
+                object_path,
+                transform_options.to_query_params()
+            )))
+            .and(wiremock::matchers::body_json(request_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
+            .mount(&mock_server)
+            .await;
+
+        // create_signed_transform_url を呼び出し、成功することを確認
+        let result = bucket_client
+            .create_signed_transform_url(object_path, transform_options.clone(), expires_in)
+            .await;
+        assert!(
+            result.is_ok(),
+            "create_signed_transform_url failed: {:?}",
+            result.err()
+        );
+        let signed_url = result.unwrap();
+        // 返されたURLが期待通りか検証
+        assert!(signed_url.contains(&format!(
+            "/storage/v1/object/sign/{}/{}",
+            bucket_id, object_path
+        )));
+        assert!(signed_url.contains("token=test-token")); // モックに基づいたトークン
+        assert!(signed_url.contains("transform=w_50"));
+        assert!(signed_url.contains("h_50"));
+        assert!(signed_url.contains("rs_cover"));
+        assert!(signed_url.contains("f_jpeg"));
+        assert!(signed_url.contains("q_80"));
+
+        // モックをリセット
+        mock_server.reset().await;
+
+        // --- エラーケースのモック (例: 400 Bad Request) ---
+        let error_response = json!({ "statusCode": "400", "error": "BadRequest", "message": "Invalid transform parameters" });
+        Mock::given(method("POST"))
+            .and(path(format!(
+                "/storage/v1/object/sign/{}/{}?{}",
+                bucket_id,
+                object_path,
+                transform_options.to_query_params()
+            )))
+            .and(wiremock::matchers::body_json(request_body.clone())) // 同じリクエストボディを期待
+            .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
+            .mount(&mock_server)
+            .await;
+
+        // create_signed_transform_url を呼び出し、エラーになることを確認
+        let result = bucket_client
+            .create_signed_transform_url(object_path, transform_options, expires_in) // transform_options を再利用
+            .await;
+        assert!(result.is_err());
+        if let Err(StorageError::ApiError(msg)) = result {
+            // エラーメッセージはAPIの実装により異なる可能性がある
+            assert!(
+                msg.contains("Invalid transform parameters") || msg.contains("BadRequest") // statusCode や error フィールドを含むか確認
+            );
+        } else {
+            panic!("Expected ApiError, got {:?}", result);
+        }
+    }
 }
