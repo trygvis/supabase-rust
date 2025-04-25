@@ -1,6 +1,6 @@
 [package]
 name = "supabase-rust-gftd"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jun Kawasaki"]
 description = "Rust client for Supabase"
@@ -44,11 +44,16 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-supabase-rust-auth = { path = "crates/auth", version = "0.1.5" }
-supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.5" }
-supabase-rust-storage = { path = "crates/storage", version = "0.1.5" }
-supabase-rust-realtime = { path = "crates/realtime", version = "0.1.5" }
-supabase-rust-functions = { path = "crates/functions", version = "0.1.5" }
+# supabase-rust-auth = { path = "crates/auth", version = "0.1.5" }
+supabase-rust-auth = { path = "crates/auth", version = "0.2.0" }
+# supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.5" }
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" }
+# supabase-rust-storage = { path = "crates/storage", version = "0.1.5" }
+supabase-rust-storage = { path = "crates/storage", version = "0.2.0" }
+# supabase-rust-realtime = { path = "crates/realtime", version = "0.1.5" }
+supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" }
+# supabase-rust-functions = { path = "crates/functions", version = "0.1.5" }
+supabase-rust-functions = { path = "crates/functions", version = "0.2.0" }
 
 [dev-dependencies]
 wiremock = "0.5.19"

@@ -1,6 +1,6 @@
 [package]
 name = "supabase-rust-postgrest"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jun Kawasaki"]
 description = "PostgreSQL REST client for Supabase"
