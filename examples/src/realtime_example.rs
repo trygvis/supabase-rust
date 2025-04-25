@@ -198,7 +198,7 @@ async fn run_advanced_filter_example(
             .select("*")
             .with_auth(access_token)?
             .eq("title", &task_title)
-            .eq("user_id", user_id)
+            .eq("user_id", &user_id)
             .execute()
             .await?;
 
@@ -256,7 +256,7 @@ async fn run_advanced_filter_example(
     let delete_client = supabase.from("tasks");
     let delete_result = delete_client
         .with_auth(access_token)?
-        .eq("user_id", user_id)
+        .eq("user_id", &user_id)
         .delete()
         .await?;
 
@@ -399,7 +399,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .select("*")
         .with_auth(&access_token)?
         .eq("title", "Realtime Task 1")
-        .eq("user_id", user_id)
+        .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
         .await?;
 
@@ -431,7 +431,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .select("*")
         .with_auth(&access_token)?
         .eq("title", "Realtime Task 2")
-        .eq("user_id", user_id)
+        .eq("user_id", &user_id)
         .execute::<serde_json::Value>()
         .await?;
 
@@ -470,7 +470,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let delete_client = supabase.from("tasks");
     let delete_result = delete_client
         .with_auth(&access_token)?
-        .eq("user_id", user_id)
+        .eq("user_id", &user_id)
         .delete()
         .await?;
 
