@@ -2,8 +2,8 @@
 
 Rust client library for [Supabase](https://supabase.com) - A Rust implementation compatible with JavaScript's [supabase-js](https://github.com/supabase/supabase-js).
 
-[![Crate](https://img.shields.io/crates/v/supabase-rust-gftd.svg)](https://crates.io/crates/supabase-rust-gftd)
-[![Docs](https://docs.rs/supabase-rust-gftd/0.3.0/badge.svg)](https://docs.rs/supabase-rust-gftd/0.3.0)
+[![Crate](https://img.shields.io/crates/v/supabase-rust-client.svg)](https://crates.io/crates/supabase-rust-client)
+[![Docs](https://docs.rs/supabase-rust-client/0.4.0/badge.svg)](https://docs.rs/supabase-rust-client/0.4.0)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## Compatibility with Supabase JS and Implementation Status
@@ -224,11 +224,12 @@ Due to inter-crate dependencies within the workspace, the crates must be publish
     *   `supabase-rust-functions`
     *   `supabase-rust-postgrest`
     *   `supabase-rust-realtime`
-    *   `supabase-rust-storage`
+    *   `supabase-rust-storage` 
 2.  **Main Library:**
-    *   `supabase-rust-gftd` (depends on core libraries)
+    *   `supabase-rust-client` (depends on core libraries)
+    *   `supabase-rust-gftd` (deprecated)
 3.  **Examples:**
-    *   `supabase-rust-examples` (depends on `supabase-rust-gftd`)
+    *   `supabase-rust-examples` (depends on `supabase-rust-client`)
 
 You can use a tool like `cargo-workspaces` (`cargo install cargo-workspaces`) to manage publishing the entire workspace automatically, which respects these dependencies:
 

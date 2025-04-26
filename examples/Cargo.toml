@@ -1,8 +1,8 @@
 [package]
 name = "supabase-rust-examples"
-version = "0.1.0"
+version = "0.4.0"
 edition = "2021"
-description = "Examples for the supabase-rust-gftd crate"
+description = "Examples for the supabase-rust-client crate"
 license = "MIT"
 
 [dependencies]
