@@ -1,0 +1,214 @@
+# supabase_interaction.ssot
+# Single Source of Truth for Supabase Interaction in Rust Project
+
+# --- Meta ---
+version: 0.1.0
+description: Defines the core models, state machine, and interactions for a Rust application using Supabase.
+
+# --- Configuration ---
+# Defines necessary configuration, typically sourced from environment variables.
+configuration:
+  supabase_url:
+    type: string
+    description: "URL for the Supabase project."
+    source: "Environment Variable: SUPABASE_URL"
+    validation: { required: true, format: url }
+  supabase_anon_key:
+    type: string
+    description: "Anon key for the Supabase project."
+    source: "Environment Variable: SUPABASE_ANON_KEY"
+    validation: { required: true, minLength: 10 } # Example validation
+
+# --- Core Data Models ---
+# Defines the primary data structures representing Supabase tables.
+# These should map directly to Rust structs, potentially generated or validated.
+models:
+  # Example: A 'items' table model (replace with actual project models)
+  item:
+    id:
+      type: uuid
+      description: "Primary key (UUID)."
+      constraints: [primary_key, default_generated]
+    user_id:
+      type: uuid
+      description: "Foreign key linking to auth.users table."
+      constraints: [foreign_key(auth.users.id), not_null]
+    name:
+      type: string
+      description: "Name of the item."
+      validation: { required: true, maxLength: 255 }
+    description:
+      type: string
+      description: "Optional description."
+      validation: { maxLength: 1024 }
+    created_at:
+      type: timestamp_tz
+      description: "Timestamp of creation."
+      constraints: [default_now, not_null]
+    updated_at:
+      type: timestamp_tz
+      description: "Timestamp of last update."
+      constraints: [default_now, not_null]
+
+# --- State Machine: Supabase Client Interaction ---
+# Defines the application's lifecycle regarding its connection and interaction with Supabase.
+state_machines:
+  client_interaction:
+    id: supabaseClientInteraction
+    description: "Manages the connection, authentication, and data operations with Supabase."
+    initial: Uninitialized
+    context:
+      client: Option<SupabaseClient> # Placeholder for the Rust Supabase client
+      last_error: Option<string>
+      current_user: Option<User> # Placeholder for Supabase User model
+      current_items: Vec<Item> # Example data cache
+    states:
+      Uninitialized:
+        on:
+          INITIALIZE: Initializing
+      Initializing:
+        description: "Setting up the Supabase client."
+        invoke:
+          src: initializeSupabaseClient
+          onDone:
+            target: Disconnected
+            actions: [assignClientToContext]
+          onError:
+            target: InitializationFailed
+            actions: [assignErrorToContext]
+      Disconnected:
+        description: "Client initialized but not connected or authenticated."
+        on:
+          CONNECT_ANONYMOUSLY: Connecting # For operations not requiring login
+          LOGIN: Authenticating # Start login flow
+      Connecting:
+        description: "Establishing anonymous connection (if needed)."
+        # This might be implicit in client initialization depending on the Rust library
+        on:
+          CONNECTION_SUCCESS: Idle # Ready for anon operations or login
+          CONNECTION_FAILED: Error
+      Authenticating:
+        description: "Attempting to authenticate the user (login, signup, session restore)."
+        invoke:
+          src: authenticateUser
+          input: (credentials) # e.g., email/password, refresh token
+          onDone:
+            target: Authenticated
+            actions: [assignUserToContext, clearError]
+          onError:
+            target: AuthenticationFailed
+            actions: [assignErrorToContext]
+      Authenticated:
+        description: "User is logged in and authenticated."
+        on:
+          FETCH_ITEMS: FetchingItems
+          SUBSCRIBE_ITEMS: SubscribingItems
+          LOGOUT: LoggingOut
+          DISCONNECT: Disconnected # Or back to Uninitialized if client needs reset
+      FetchingItems:
+        description: "Retrieving items from the database."
+        invoke:
+          src: fetchItemsFromSupabase
+          onDone:
+            target: Authenticated
+            actions: [updateLocalItemState]
+          onError:
+            target: OperationFailed
+            actions: [assignErrorToContext]
+      SubscribingItems:
+        description: "Setting up real-time subscription for items."
+        invoke:
+          src: subscribeToItemChanges
+          onDone:
+            target: Authenticated # Subscription handled via callbacks/listeners
+          onError:
+            target: OperationFailed
+            actions: [assignErrorToContext]
+      LoggingOut:
+        description: "Ending the user session."
+        invoke:
+          src: logoutUser
+          onDone:
+            target: Disconnected
+            actions: [clearUserFromContext]
+          onError:
+            target: OperationFailed # Stay Authenticated or move to Error? Decide based on severity.
+            actions: [assignErrorToContext]
+      # Error States
+      InitializationFailed:
+        description: "Critical error during client setup."
+        type: final # Or allow retry
+      AuthenticationFailed:
+        description: "Failed to authenticate user."
+        on:
+          RETRY_LOGIN: Authenticating
+          CANCEL_LOGIN: Disconnected
+      OperationFailed:
+        description: "A non-critical operation (fetch, subscribe, logout) failed."
+        on:
+          RETRY_OPERATION: # Transition back to the state that triggered the operation
+             target: # Dynamically determined or specific retry states
+          DISMISS_ERROR: Authenticated # Or previous non-error state
+      Error: # Generic error state (consider more specific ones)
+        description: "A general error occurred."
+        on:
+          RETRY: # Determine target based on context
+          RESET: Uninitialized
+
+# --- API/Function Interface ---
+# Defines the functions (Rust methods) needed to implement the state machine transitions and actions.
+api_interface:
+  initializeSupabaseClient:
+    description: "Creates and configures the Supabase client instance."
+    inputs: [config: Configuration]
+    outputs: Result<SupabaseClient, Error>
+    actions_triggered: [assignClientToContext]
+  authenticateUser:
+    description: "Performs user login/signup/session recovery."
+    inputs: [client: SupabaseClient, credentials: AuthCredentials] # Define AuthCredentials model
+    outputs: Result<User, AuthError>
+    actions_triggered: [assignUserToContext, clearError]
+  logoutUser:
+    description: "Logs out the currently authenticated user."
+    inputs: [client: SupabaseClient]
+    outputs: Result<(), Error>
+    actions_triggered: [clearUserFromContext]
+  fetchItemsFromSupabase:
+    description: "Fetches 'items' associated with the current user."
+    inputs: [client: SupabaseClient, user_id: Uuid]
+    outputs: Result<Vec<Item>, DbError>
+    actions_triggered: [updateLocalItemState]
+  subscribeToItemChanges:
+    description: "Establishes a real-time subscription for 'items'."
+    inputs: [client: SupabaseClient, user_id: Uuid, callback: Function] # Define callback signature
+    outputs: Result<SubscriptionHandle, Error> # Handle to manage subscription
+  # Add CRUD operations for models (e.g., createItem, updateItem, deleteItem)
+
+# --- Validation Rules ---
+# Centralized validation rules beyond basic types.
+validation:
+  AuthCredentials:
+    email: { required: true, format: email }
+    password: { required: true, minLength: 8 }
+  Item: # Reuse model definition or specify here
+    name: { required: true, maxLength: 255 }
+
+# --- Security Considerations ---
+# Key security principles and checks for this domain.
+security:
+  - RLS (Row Level Security) MUST be enabled on all Supabase tables accessed by this client.
+  - Sensitive keys (anon key, service role key if used) MUST be handled via secure environment variables or secrets management.
+  - All user inputs (credentials, data for CRUD) MUST be validated against defined schemas/rules before processing or sending to Supabase.
+  - Authentication tokens (access, refresh) MUST be stored securely (e.g., secure storage, HttpOnly cookies if applicable).
+  - Error messages returned to the client SHOULD NOT leak sensitive internal details.
+  - Implement rate limiting and input sanitization where appropriate.
+
+# --- Open Questions / TODOs ---
+# Track areas needing further definition.
+todos:
+  - Define the specific `AuthCredentials` model.
+  - Specify the exact structure of `Error`, `AuthError`, `DbError`.
+  - Detail the callback signature for real-time subscriptions.
+  - Add CRUD operation definitions to `api_interface`.
+  - Refine error handling states and transitions.
+  - Map state machine context to specific Rust types/structs. 

@@ -1,63 +1,51 @@
-[package]
-name = "supabase-rust-gftd"
-version = "0.3.0"
-edition = "2021"
-authors = ["Jun Kawasaki"]
-description = "Rust client for Supabase"
-license = "MIT"
-repository = "https://github.com/jun784/supabase-rust"
-documentation = "https://docs.rs/supabase-rust-gftd"
-keywords = ["supabase", "postgres", "database", "api", "client"]
-categories = ["database", "api-bindings", "web-programming"]
-
-[dependencies]
-reqwest = { version = "0.11", features = ["json", "multipart"] }
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = "1.0"
-url = "2.3"
-base64 = "0.21"
-async-trait = "0.1"
-jsonwebtoken = "9.1"
-supabase-rust-auth = { workspace = true }
-supabase-rust-postgrest = { workspace = true }
-supabase-rust-storage = { workspace = true }
-supabase-rust-realtime = { workspace = true }
-supabase-rust-functions = { workspace = true }
-clap = { version = "3.0", optional = true }
-
-[features]
-default = []
+# Root Cargo.toml for the workspace
 
 [workspace]
 members = [
-    ".",
-    "examples",
-    "crates/auth",
-    "crates/postgrest",
-    "crates/storage",
-    "crates/realtime",
-    "crates/functions"
+    "crates/*"
+    # If you have examples or other top-level crates, add them here:
+    # "examples"
 ]
 resolver = "2"
 
+# Define shared dependencies for all workspace members
 [workspace.dependencies]
-# supabase-rust-auth = { path = "crates/auth", version = "0.1.5" }
-supabase-rust-auth = { path = "crates/auth", version = "0.2.0" }
-# supabase-rust-postgrest = { path = "crates/postgrest", version = "0.1.5" }
-supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" }
-# supabase-rust-storage = { path = "crates/storage", version = "0.1.5" }
-supabase-rust-storage = { path = "crates/storage", version = "0.2.0" }
-# supabase-rust-realtime = { path = "crates/realtime", version = "0.1.5" }
-supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" }
-# supabase-rust-functions = { path = "crates/functions", version = "0.1.5" }
-supabase-rust-functions = { path = "crates/functions", version = "0.2.0" }
+# Supabase Crates (assuming these are the intended ones based on original file)
+supabase-rust-auth = { path = "crates/auth", version = "0.2.0" } # Adjust version as needed
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" } # Adjust version as needed
+supabase-rust-storage = { path = "crates/storage", version = "0.2.0" } # Adjust version as needed
+supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" } # Adjust version as needed
+supabase-rust-functions = { path = "crates/functions", version = "0.2.0" } # Adjust version as needed
 
-[dev-dependencies]
+# Common Libraries
+reqwest = { version = "0.11", features = ["json", "multipart"] } # Note: consider upgrading
+tokio = { version = "1.0", features = ["full"] } # Note: consider upgrading
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+url = "2.3" # Note: consider upgrading
+base64 = "0.21"
+async-trait = "0.1"
+jsonwebtoken = "9.1"
+uuid = { version = "1.8", features = ["v4", "serde"] } # Use consistent version
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+
+# Dev Dependencies (can also be shared)
+[workspace.dev-dependencies]
 wiremock = "0.5.19"
 dotenv = "0.15.0"
-uuid = { version = "1.4.1", features = ["v4"] }
 tempfile = "3.7.0"
 tokio-test = "0.4"
 mockito = "1.0"
+
+# Optional: Define common feature flags for the workspace
+# [workspace.features]
+# default = []
+
+# Define common profile settings for the workspace
+[profile.release]
+lto = true
+codegen-units = 1
+panic = 'abort'
+strip = true
