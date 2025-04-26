@@ -31,16 +31,13 @@ uuid = { version = "1.8", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 dotenv = "0.15.0"
-wiremock = "0.5.19" # Reverted wiremock (match original dev-dep?)
-anyhow = "1.0" # Keep anyhow
-
-# Dev Dependencies (can also be shared)
-[workspace.dev-dependencies]
 wiremock = "0.5.19"
-dotenv = "0.15.0"
+anyhow = "1.0"
+
+# Additional dev-dependencies moved here
 tempfile = "3.7.0"
 tokio-test = "0.4"
-mockito = "1.0" # Reverted mockito
+mockito = "1.0"
 
 # Optional: Define common feature flags for the workspace
 # [workspace.features]

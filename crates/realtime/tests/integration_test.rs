@@ -14,6 +14,8 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 use tracing_subscriber::{fmt, EnvFilter};
+use tokio::sync::MutexGuard; // Added MutexGuard for type alias
+use tokio::task::JoinHandle;
 
 // Ensure logger is initialized only once across all tests
 static INIT_LOGGER: Once = Once::new();
@@ -91,16 +93,19 @@ async fn test_channel_builder_creation() {
     let _ = builder;
 }
 
-// Helper function to start a simple mock WebSocket server
-#[instrument]
-async fn start_mock_server() -> Result<
+// Type alias for the complex return type of start_mock_server
+type MockServerInfo = Result<
     (
         std::net::SocketAddr,
-        tokio::task::JoinHandle<()>,
+        JoinHandle<()>,
         Arc<Mutex<VecDeque<RealtimeMessage>>>,
     ),
     Box<dyn std::error::Error>,
-> {
+>;
+
+// Helper function to start a simple mock WebSocket server
+#[instrument]
+async fn start_mock_server() -> MockServerInfo {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     info!(address = %addr, "Mock server binding successful");
@@ -458,7 +463,7 @@ async fn test_join_channel_success() {
     let mut state_rx = client.on_state_change();
     let state_timeout = Duration::from_secs(5);
     match timeout(state_timeout, state_rx.recv()).await {
-        Ok(Ok(state)) if state == supabase_rust_realtime::ConnectionState::Connected => {
+        Ok(Ok(supabase_rust_realtime::ConnectionState::Connected)) => {
             info!("Join test: Client connected");
         }
         Ok(Ok(state)) => {
