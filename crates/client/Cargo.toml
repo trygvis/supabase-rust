@@ -2,6 +2,8 @@
 name = "supabase-rust-client"
 version = "0.4.0"
 edition = "2021"
+description = "A Rust client library for Supabase"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
