@@ -63,8 +63,7 @@ impl From<supabase_rust_auth::User> for User {
         let parsed_id = Uuid::parse_str(&auth_user.id).unwrap_or_else(|e| {
             eprintln!(
                 "Warning: Failed to parse user ID '{}' as UUID: {}. Using default UUID.",
-                auth_user.id,
-                e
+                auth_user.id, e
             );
             Uuid::nil() // Or Uuid::new_v4() if a default is not appropriate
         });
@@ -74,8 +73,7 @@ impl From<supabase_rust_auth::User> for User {
             .unwrap_or_else(|e| {
                 eprintln!(
                     "Warning: Failed to parse created_at '{}': {}. Using current time.",
-                    auth_user.created_at,
-                    e
+                    auth_user.created_at, e
                 );
                 Utc::now()
             });
@@ -85,8 +83,7 @@ impl From<supabase_rust_auth::User> for User {
             .unwrap_or_else(|e| {
                 eprintln!(
                     "Warning: Failed to parse updated_at '{}': {}. Using current time.",
-                    auth_user.updated_at,
-                    e
+                    auth_user.updated_at, e
                 );
                 Utc::now()
             });

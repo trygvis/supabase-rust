@@ -10,10 +10,10 @@ use std::collections::VecDeque; // For storing received messages
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex; // For thread-safe access to received messages
+use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::{debug, error, info, instrument, span, trace, warn, Level};
 use tracing_subscriber::{fmt, EnvFilter};
-use tokio::time::timeout;
 
 // Ensure logger is initialized only once across all tests
 static INIT_LOGGER: Once = Once::new();
@@ -178,22 +178,24 @@ async fn start_mock_server() -> Result<
                                                     } else {
                                                         info!(?parsed, "Handling first message (non-heartbeat), sending reply anyway");
                                                     }
-                                                     // Always send a reply to the first message using its ref/topic
-                                                     first_message = false;
+                                                    // Always send a reply to the first message using its ref/topic
+                                                    first_message = false;
                                                 } else {
-                                                     // Specific handling for subsequent joins/heartbeats etc.
+                                                    // Specific handling for subsequent joins/heartbeats etc.
                                                     if parsed.event == ChannelEvent::PhoenixJoin {
-                                                         info!(topic = %parsed.topic, "Received Join request");
-                                                         // Modify payload if needed for specific join replies
-                                                         // reply_payload = json!({ "status": "ok", "response": {"some_join_info":"value"} });
-                                                     } else if parsed.event == ChannelEvent::Heartbeat {
-                                                         info!("Received Heartbeat request");
-                                                         // Heartbeat reply is just a standard phx_reply
-                                                     } else {
-                                                         // Optional: Handle other events or log them
-                                                         debug!(event = ?parsed.event, "Received other event type");
-                                                         // Maybe don't reply to unknown events?
-                                                         // continue;
+                                                        info!(topic = %parsed.topic, "Received Join request");
+                                                        // Modify payload if needed for specific join replies
+                                                        // reply_payload = json!({ "status": "ok", "response": {"some_join_info":"value"} });
+                                                    } else if parsed.event
+                                                        == ChannelEvent::Heartbeat
+                                                    {
+                                                        info!("Received Heartbeat request");
+                                                        // Heartbeat reply is just a standard phx_reply
+                                                    } else {
+                                                        // Optional: Handle other events or log them
+                                                        debug!(event = ?parsed.event, "Received other event type");
+                                                        // Maybe don't reply to unknown events?
+                                                        // continue;
                                                     }
                                                 }
                                                 // <-- END FIX -->
@@ -287,9 +289,15 @@ async fn test_connect_disconnect() {
             panic!("Client connect failed: {}", e);
         }
         Err(_) => {
-            error!(timeout_secs = connect_timeout.as_secs(), "client.connect() future timed out");
+            error!(
+                timeout_secs = connect_timeout.as_secs(),
+                "client.connect() future timed out"
+            );
             server_handle.abort(); // Ensure server stops
-            panic!("Client connect timed out after {:?} seconds", connect_timeout);
+            panic!(
+                "Client connect timed out after {:?} seconds",
+                connect_timeout
+            );
         }
     }
     info!("Finished awaiting client.connect() within timeout.");
@@ -297,14 +305,17 @@ async fn test_connect_disconnect() {
     // Attempt to disconnect with a timeout
     let disconnect_timeout = Duration::from_secs(10);
     info!("Calling client.disconnect() within timeout...");
-     match timeout(disconnect_timeout, client.disconnect()).await {
+    match timeout(disconnect_timeout, client.disconnect()).await {
         Ok(Ok(_)) => info!("client.disconnect() future completed successfully"),
         Ok(Err(e)) => {
             error!(error = %e, "client.disconnect() future completed with error");
             // Don't panic here? Maybe just log, depends on expected disconnect behavior on error
         }
         Err(_) => {
-             error!(timeout_secs = disconnect_timeout.as_secs(), "client.disconnect() future timed out");
+            error!(
+                timeout_secs = disconnect_timeout.as_secs(),
+                "client.disconnect() future timed out"
+            );
             // Don't panic here? Maybe just log
         }
     }
@@ -344,34 +355,45 @@ async fn test_set_auth_connect() {
     match timeout(connect_timeout, client.connect()).await {
         Ok(Ok(_)) => info!("Auth connection attempt finished"),
         Ok(Err(e)) => {
-             error!(error = %e, "Auth client connect returned error");
-             server_handle.abort();
+            error!(error = %e, "Auth client connect returned error");
+            server_handle.abort();
             panic!("Auth client connect failed: {}", e);
         }
         Err(_) => {
-             error!(timeout_secs = connect_timeout.as_secs(), "Auth client connect timed out");
+            error!(
+                timeout_secs = connect_timeout.as_secs(),
+                "Auth client connect timed out"
+            );
             server_handle.abort();
-            panic!("Auth client connect timed out after {:?} seconds", connect_timeout);
+            panic!(
+                "Auth client connect timed out after {:?} seconds",
+                connect_timeout
+            );
         }
     }
 
     // Check for Connected state with timeout
     let state_timeout = Duration::from_secs(5);
     match timeout(state_timeout, state_rx.recv()).await {
-         Ok(Ok(state)) => {
+        Ok(Ok(state)) => {
             info!(?state, "Received state change in auth test");
             assert_eq!(state, supabase_rust_realtime::ConnectionState::Connected);
         }
-         Ok(Err(e)) => {
-             error!(error = ?e, "Error receiving state in auth test");
-             panic!("Error receiving state in auth test: {:?}", e);
-         }
+        Ok(Err(e)) => {
+            error!(error = ?e, "Error receiving state in auth test");
+            panic!("Error receiving state in auth test: {:?}", e);
+        }
         Err(_) => {
-             error!(timeout_secs = state_timeout.as_secs(), "Timeout waiting for Connected state in auth test");
-            panic!("Timeout waiting for Connected state in auth test after {:?} seconds", state_timeout);
+            error!(
+                timeout_secs = state_timeout.as_secs(),
+                "Timeout waiting for Connected state in auth test"
+            );
+            panic!(
+                "Timeout waiting for Connected state in auth test after {:?} seconds",
+                state_timeout
+            );
         }
     }
-
 
     // Check if the mock server received the connect message with auth
     // This requires the mock server to properly parse the connect URL or message
@@ -385,13 +407,11 @@ async fn test_set_auth_connect() {
     //     // Add assertions here if the mock server parsed the token or URL params
     // }
 
-
     // Disconnect and cleanup
     client.disconnect().await.ok(); // Ignore disconnect errors for simplicity here
     server_handle.abort();
     debug!("Set Auth Connect test finished");
 }
-
 
 #[tokio::test]
 #[instrument]
@@ -414,42 +434,58 @@ async fn test_join_channel_success() {
 
     // Connect first
     let connect_timeout = Duration::from_secs(15);
-     match timeout(connect_timeout, client.connect()).await {
+    match timeout(connect_timeout, client.connect()).await {
         Ok(Ok(_)) => info!("Join test: Connection attempt finished"),
         Ok(Err(e)) => {
-             error!(error = %e, "Join test: Client connect returned error");
+            error!(error = %e, "Join test: Client connect returned error");
             server_handle.abort();
             panic!("Join test: Client connect failed: {}", e);
         }
         Err(_) => {
-             error!(timeout_secs = connect_timeout.as_secs(), "Join test: Client connect timed out");
+            error!(
+                timeout_secs = connect_timeout.as_secs(),
+                "Join test: Client connect timed out"
+            );
             server_handle.abort();
-            panic!("Join test: Client connect timed out after {:?} seconds", connect_timeout);
+            panic!(
+                "Join test: Client connect timed out after {:?} seconds",
+                connect_timeout
+            );
         }
     }
-
 
     // Wait for Connected state
     let mut state_rx = client.on_state_change();
     let state_timeout = Duration::from_secs(5);
-     match timeout(state_timeout, state_rx.recv()).await {
-         Ok(Ok(state)) if state == supabase_rust_realtime::ConnectionState::Connected => {
+    match timeout(state_timeout, state_rx.recv()).await {
+        Ok(Ok(state)) if state == supabase_rust_realtime::ConnectionState::Connected => {
             info!("Join test: Client connected");
         }
         Ok(Ok(state)) => {
-             error!(?state, "Join test: Received unexpected state instead of Connected");
-             panic!("Join test: Received unexpected state {:?} instead of Connected", state);
-         }
-         Ok(Err(e)) => {
+            error!(
+                ?state,
+                "Join test: Received unexpected state instead of Connected"
+            );
+            panic!(
+                "Join test: Received unexpected state {:?} instead of Connected",
+                state
+            );
+        }
+        Ok(Err(e)) => {
             error!(error = ?e, "Join test: Error waiting for Connected state");
             panic!("Join test: Error waiting for Connected state: {:?}", e);
-         }
+        }
         Err(_) => {
-             error!(timeout_secs = state_timeout.as_secs(), "Join test: Timeout waiting for Connected state");
-            panic!("Join test: Timeout waiting for Connected state after {:?} seconds", state_timeout);
+            error!(
+                timeout_secs = state_timeout.as_secs(),
+                "Join test: Timeout waiting for Connected state"
+            );
+            panic!(
+                "Join test: Timeout waiting for Connected state after {:?} seconds",
+                state_timeout
+            );
         }
     }
-
 
     // Get channel and subscribe to its state
     let channel = client.channel(topic);
@@ -459,17 +495,28 @@ async fn test_join_channel_success() {
     info!("Attempting to join channel via subscribe()...");
     match timeout(join_timeout, channel.subscribe()).await {
         Ok(Ok(subscribe_result)) => {
-             // subscribe_result is Vec<Subscription> here
-            info!(count = subscribe_result.len(), "Channel subscribe() call succeeded");
-             // Keep subscribe_result (Vec<Subscription>) in scope if needed
+            // subscribe_result is Vec<Subscription> here
+            info!(
+                count = subscribe_result.len(),
+                "Channel subscribe() call succeeded"
+            );
+            // Keep subscribe_result (Vec<Subscription>) in scope if needed
         }
-         Ok(Err(e)) => { // This 'e' is the RealtimeError from subscribe()
-             error!(error = %e, "Channel subscribe() returned an inner error");
-             panic!("Channel subscribe() failed internally: {}", e);
+        Ok(Err(e)) => {
+            // This 'e' is the RealtimeError from subscribe()
+            error!(error = %e, "Channel subscribe() returned an inner error");
+            panic!("Channel subscribe() failed internally: {}", e);
         }
-        Err(_) => { // This is the Elapsed error from timeout()
-             error!(timeout_secs = join_timeout.as_secs(), "Channel subscribe() timed out");
-             panic!("Channel subscribe() timed out after {:?} seconds", join_timeout);
+        Err(_) => {
+            // This is the Elapsed error from timeout()
+            error!(
+                timeout_secs = join_timeout.as_secs(),
+                "Channel subscribe() timed out"
+            );
+            panic!(
+                "Channel subscribe() timed out after {:?} seconds",
+                join_timeout
+            );
         }
     }
 
@@ -478,21 +525,24 @@ async fn test_join_channel_success() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Check if the mock server received the join message
-     {
+    {
         let messages = received_messages.lock().await;
         info!(count = messages.len(), "Messages received by mock server");
-        let join_found = messages.iter().any(|msg| {
-            msg.topic == topic && msg.event == ChannelEvent::PhoenixJoin
-        });
-         assert!(join_found, "Mock server did not receive the expected PhoenixJoin message for topic '{}'", topic);
+        let join_found = messages
+            .iter()
+            .any(|msg| msg.topic == topic && msg.event == ChannelEvent::PhoenixJoin);
+        assert!(
+            join_found,
+            "Mock server did not receive the expected PhoenixJoin message for topic '{}'",
+            topic
+        );
         info!("Mock server received PhoenixJoin message");
-     }
-
+    }
 
     // Disconnect and cleanup
     client.disconnect().await.ok();
     server_handle.abort();
-     debug!("Join Channel Success test finished");
+    debug!("Join Channel Success test finished");
 }
 
 #[tokio::test]

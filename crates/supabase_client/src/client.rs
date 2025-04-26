@@ -132,7 +132,10 @@ impl SupabaseClientWrapper {
     /// Corresponds to `authenticateUser` in the SSOT.
     /// Returns the Supabase User details on success.
     pub async fn authenticate(&self, credentials: AuthCredentials) -> Result<User> {
-        println!("[IMPL] Attempting to authenticate user: {}", credentials.email); // Changed STUB to IMPL for clarity
+        println!(
+            "[IMPL] Attempting to authenticate user: {}",
+            credentials.email
+        ); // Changed STUB to IMPL for clarity
         match self
             .auth
             .sign_in_with_password(&credentials.email, &credentials.password)

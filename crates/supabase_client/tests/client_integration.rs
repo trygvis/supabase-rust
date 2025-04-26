@@ -19,14 +19,14 @@ use wiremock::{
 };
 
 // Import Auth client directly for more controlled testing
-use supabase_rust_auth::{Auth, AuthError, AuthOptions, Session, User as AuthUser};
 use reqwest::Client as ReqwestClient;
+use supabase_rust_auth::{Auth, AuthError, AuthOptions};
 
 // Helper function
 async fn setup_mock_config(mock_server: &MockServer) -> SupabaseConfig {
     dotenv().ok();
     let mut url = mock_server.uri(); // Get base URI
-    // Ensure no trailing slash for base URL passed to config
+                                     // Ensure no trailing slash for base URL passed to config
     if url.ends_with('/') {
         url.pop();
     }
@@ -43,12 +43,7 @@ async fn test_authenticate_success() {
 
     // Create Auth client directly
     let http_client = ReqwestClient::new();
-    let auth_client = Auth::new(
-        &base_url,
-        anon_key,
-        http_client,
-        AuthOptions::default(),
-    );
+    let auth_client = Auth::new(&base_url, anon_key, http_client, AuthOptions::default());
 
     let credentials = AuthCredentials {
         email: "test@example.com".to_string(),
