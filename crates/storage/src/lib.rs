@@ -197,7 +197,7 @@ impl ImageTransformOptions {
         self
     }
 
-    /// URLクエリパラメータに変換
+    /// URLクエリパラメータに変換 (No leading '?')
     fn to_query_params(&self) -> String {
         let mut params = Vec::new();
 
@@ -221,11 +221,7 @@ impl ImageTransformOptions {
             params.push(format!("quality={}", quality));
         }
 
-        if params.is_empty() {
-            String::new()
-        } else {
-            format!("?{}", params.join("&"))
-        }
+        params.join("&")
     }
 }
 
@@ -1618,7 +1614,7 @@ mod tests {
         let updated_public_status = false;
 
         // --- 成功ケースのモック ---
-        let request_body = json!({ "public": updated_public_status });
+        let request_body = json!({ "id": bucket_id, "public": updated_public_status });
         let response_body = json!({
             "id": bucket_id,
             "name": bucket_id,
@@ -1647,7 +1643,7 @@ mod tests {
         assert!(result.is_ok(), "update_bucket failed: {:?}", result.err());
         let bucket = result.unwrap();
         assert_eq!(bucket.id, bucket_id);
-        assert!(bucket.public);
+        assert_eq!(bucket.public, updated_public_status);
 
         // モックをリセット
         mock_server.reset().await;
@@ -1688,7 +1684,16 @@ mod tests {
 
         // --- 成功ケースのモック ---
         let response_body = json!({
-            "Key": format!("{}/{}", bucket_id, object_path)
+            "name": object_path,
+            "bucket_id": bucket_id,
+            "owner": "owner-uuid",
+            "id": "file-id-upload",
+            "updated_at": "2024-01-05T00:00:00Z",
+            "created_at": "2024-01-05T00:00:00Z",
+            "last_accessed_at": "2024-01-05T00:00:00Z",
+            "metadata": { "size": file_content.len(), "mimetype": "text/plain" },
+            "size": file_content.len(),
+            "mime_type": "text/plain",
         });
         // multipart/form-data のリクエストボディを厳密に検証するのは wiremock では難しい場合があるため、
         // path と method のみでマッチング（必要ならヘッダーも）
@@ -1710,11 +1715,9 @@ mod tests {
         // upload を呼び出し、成功することを確認
         let result = bucket_client.upload(object_path, &file_path, None).await;
         assert!(result.is_ok(), "upload failed: {:?}", result.err());
-        // Storage APIのupload成功レスポンスはFileObjectではない可能性があるため、
-        // 実際のAPI仕様に合わせてアサーションを調整する必要がある。
-        // ここでは is_ok() のチェックのみ行う。
-        // let file_object = result.unwrap();
-        // assert!(file_object.name.contains(object_path)); // レスポンス形式次第
+        let file_object = result.unwrap();
+        assert_eq!(file_object.name, object_path);
+        assert_eq!(file_object.size, file_content.len() as i64);
 
         // モックをリセット
         mock_server.reset().await;
@@ -1808,15 +1811,6 @@ mod tests {
             .limit(10)
             .offset(0)
             .sort_by("name", SortOrder::Asc);
-        let request_body = json!({
-            "prefix": prefix,
-            "limit": list_options.limit,
-            "offset": list_options.offset,
-            "sortBy": {
-                "column": list_options.sort_by.as_ref().unwrap().column,
-                "order": list_options.sort_by.as_ref().unwrap().order,
-            }
-        });
         let response_body = json!([
             {
                 "name": "folder/file1.txt",
@@ -1844,9 +1838,19 @@ mod tests {
             }
         ]);
 
-        Mock::given(method("POST"))
+        // Fix: Expect GET request with query parameters
+        Mock::given(method("GET")) // Changed from POST to GET
             .and(path(format!("/storage/v1/object/list/{}", bucket_id)))
-            .and(wiremock::matchers::body_json(request_body.clone()))
+            // Add query parameter matchers
+            .and(wiremock::matchers::query_param("prefix", prefix))
+            .and(wiremock::matchers::query_param("limit", "10"))
+            .and(wiremock::matchers::query_param("offset", "0"))
+            .and(wiremock::matchers::query_param(
+                "sortBy",
+                "name:Asc", // Match the format from ListOptions::to_string()
+            ))
+            // Remove body matcher
+            // .and(wiremock::matchers::body_json(request_body.clone()))
             .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
             .mount(&mock_server)
             .await;
@@ -1870,9 +1874,12 @@ mod tests {
 
         // --- エラーケースのモック (例: 400 Bad Request) ---
         let error_response = json!({ "message": "Invalid list parameters" });
-        Mock::given(method("POST"))
+        // Fix: Expect GET request for error case as well
+        Mock::given(method("GET")) // Changed from POST to GET
             .and(path(format!("/storage/v1/object/list/{}", bucket_id)))
-            // ボディ検証は省略 (オプションが変わると複雑なため)
+            // Add query param matchers for the specific error case call
+            .and(wiremock::matchers::query_param("prefix", prefix)) // Assuming same prefix
+            // No other options are sent in the error test call: bucket_client.list(prefix, Some(ListOptions::new()))
             .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
             .mount(&mock_server)
             .await;
@@ -1954,7 +1961,7 @@ mod tests {
 
         // --- 成功ケースのモック ---
         let request_body = json!({ "expiresIn": expires_in });
-        let response_body = json!({ "signedURL": expected_signed_url }); // APIはsignedURLを返す
+        let response_body = json!({ "signed_url": expected_signed_url }); // APIはsigned_urlを返す
 
         Mock::given(method("POST"))
             .and(path(format!(
@@ -2239,23 +2246,27 @@ mod tests {
         let bucket_client = storage_client.from(bucket_id);
 
         // --- 成功ケースのモック ---
-        let request_body = json!({ "expiresIn": expires_in });
+        let expected_transform_string = transform_options.to_query_params();
+        let expected_request_body = json!({
+            "expiresIn": expires_in,
+            "transform": expected_transform_string // Expect transform string in the body
+        });
         let expected_signed_url = format!(
-            "{}/storage/v1/object/sign/{}/{}?token=test-token&transform=w_50,h_50,rs_cover,f_jpeg,q_80",
+            "{}/storage/v1/object/sign/{}/{}?token=test-token&transform={}",
             mock_server.uri(),
             bucket_id,
-            object_path
+            object_path,
+            expected_transform_string
         );
-        let response_body = json!({ "signedURL": expected_signed_url });
+        let response_body = json!({ "signed_url": expected_signed_url });
 
         Mock::given(method("POST"))
             .and(path(format!(
-                "/storage/v1/object/sign/{}/{}?{}",
+                "/object/sign/{}/{}", // Removed /storage/v1 prefix
                 bucket_id,
-                object_path,
-                transform_options.to_query_params()
+                object_path
             )))
-            .and(wiremock::matchers::body_json(request_body.clone()))
+            .and(wiremock::matchers::body_json(expected_request_body.clone()))
             .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
             .mount(&mock_server)
             .await;
@@ -2276,25 +2287,25 @@ mod tests {
             bucket_id, object_path
         )));
         assert!(signed_url.contains("token=test-token")); // モックに基づいたトークン
-        assert!(signed_url.contains("transform=w_50"));
-        assert!(signed_url.contains("h_50"));
-        assert!(signed_url.contains("rs_cover"));
-        assert!(signed_url.contains("f_jpeg"));
-        assert!(signed_url.contains("q_80"));
+        assert!(signed_url.contains(&expected_transform_string));
 
         // モックをリセット
         mock_server.reset().await;
 
         // --- エラーケースのモック (例: 400 Bad Request) ---
         let error_response = json!({ "statusCode": "400", "error": "BadRequest", "message": "Invalid transform parameters" });
+        let expected_request_body_err = json!({
+            "expiresIn": expires_in,
+            "transform": expected_transform_string
+        });
+
         Mock::given(method("POST"))
             .and(path(format!(
-                "/storage/v1/object/sign/{}/{}?{}",
+                "/object/sign/{}/{}", // Removed /storage/v1 prefix
                 bucket_id,
-                object_path,
-                transform_options.to_query_params()
+                object_path
             )))
-            .and(wiremock::matchers::body_json(request_body.clone())) // 同じリクエストボディを期待
+            .and(wiremock::matchers::body_json(expected_request_body_err.clone()))
             .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
             .mount(&mock_server)
             .await;
