@@ -2,8 +2,8 @@
 
 // Import the crate itself
 use supabase_client_lib::client::SupabaseClientWrapper;
-use supabase_client_lib::models::{AuthCredentials, Item};
 use supabase_client_lib::client::SupabaseConfig;
+use supabase_client_lib::models::{AuthCredentials, Item};
 
 // Import dev dependencies for mocking, etc.
 use chrono::Utc;
@@ -13,7 +13,9 @@ use std::env;
 use uuid::Uuid;
 use wiremock::{
     matchers::{header, method, path}, // Keep necessary matchers
-    Mock, MockServer, ResponseTemplate,
+    Mock,
+    MockServer,
+    ResponseTemplate,
 };
 
 // Helper function
@@ -26,23 +28,23 @@ async fn setup_mock_config(mock_server: &MockServer) -> SupabaseConfig {
 
 #[tokio::test]
 async fn test_authenticate_success() {
-    let mock_server = MockServer::start().await;
-    let config = setup_mock_config(&mock_server).await;
+    let _mock_server = MockServer::start().await;
+    let config = setup_mock_config(&_mock_server).await;
     let _client = SupabaseClientWrapper::new(config).unwrap(); // Renamed to avoid unused warning
-    let credentials = AuthCredentials {
+    let _credentials = AuthCredentials {
         email: "test@example.com".to_string(),
         password: "password".to_string(),
     };
 
-    let mock_user_id = Uuid::new_v4();
-    let mock_access_token = "mock_access_token_auth_success";
+    let _mock_user_id = Uuid::new_v4();
+    let _mock_access_token = "mock_access_token_auth_success";
     let mock_session_response = json!({ /* ... session data ... */ });
 
     Mock::given(method("POST"))
         .and(path("/auth/v1/token"))
         .respond_with(ResponseTemplate::new(200).set_body_json(&mock_session_response))
         .expect(1) // Expect the mock to be called once
-        .mount(&mock_server)
+        .mount(&_mock_server)
         .await;
 
     // Call authenticate (currently stubbed)
@@ -54,10 +56,10 @@ async fn test_authenticate_success() {
 
 #[tokio::test]
 async fn test_authenticate_failure() {
-    let mock_server = MockServer::start().await;
-    let config = setup_mock_config(&mock_server).await;
+    let _mock_server = MockServer::start().await;
+    let config = setup_mock_config(&_mock_server).await;
     let _client = SupabaseClientWrapper::new(config).unwrap();
-    let credentials = AuthCredentials {
+    let _credentials = AuthCredentials {
         email: "wrong@example.com".to_string(),
         password: "wrong".to_string(),
     };
@@ -68,7 +70,7 @@ async fn test_authenticate_failure() {
         .and(path("/auth/v1/token"))
         .respond_with(ResponseTemplate::new(401).set_body_json(&mock_error_response))
         .expect(1)
-        .mount(&mock_server)
+        .mount(&_mock_server)
         .await;
 
     // Call authenticate (stubbed)
@@ -78,10 +80,10 @@ async fn test_authenticate_failure() {
 
 #[tokio::test]
 async fn test_fetch_items_authenticated() {
-    let mock_server = MockServer::start().await;
-    let config = setup_mock_config(&mock_server).await;
-    let client = SupabaseClientWrapper::new(config.clone()).unwrap();
-    let mock_access_token = "mock_access_token_fetch";
+    let _mock_server = MockServer::start().await;
+    let config = setup_mock_config(&_mock_server).await;
+    let _client = SupabaseClientWrapper::new(config.clone()).unwrap();
+    let _mock_access_token = "mock_access_token_fetch";
 
     // Simulate authentication by manually setting session if possible, or ignore for stub
     // let session = AuthSession { access_token: mock_access_token.to_string(), ... };
@@ -99,7 +101,7 @@ async fn test_fetch_items_authenticated() {
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }];
-    let auth_header_value = format!("Bearer {}", mock_access_token);
+    let auth_header_value = format!("Bearer {}", _mock_access_token);
 
     Mock::given(method("GET"))
         .and(path("/rest/v1/items"))
@@ -107,7 +109,7 @@ async fn test_fetch_items_authenticated() {
         .and(header("apikey", config.anon_key.as_str()))
         .respond_with(ResponseTemplate::new(200).set_body_json(&mock_items))
         .expect(1)
-        .mount(&mock_server)
+        .mount(&_mock_server)
         .await;
 
     // Call fetch_items (stubbed)
@@ -117,15 +119,15 @@ async fn test_fetch_items_authenticated() {
 
 #[tokio::test]
 async fn test_fetch_items_unauthenticated() {
-    let mock_server = MockServer::start().await;
-    let config = setup_mock_config(&mock_server).await;
+    let _mock_server = MockServer::start().await;
+    let config = setup_mock_config(&_mock_server).await;
     let _client = SupabaseClientWrapper::new(config).unwrap();
 
     Mock::given(method("GET"))
         .and(path("/rest/v1/items"))
         .respond_with(ResponseTemplate::new(401))
         .expect(0) // Expect zero calls
-        .mount(&mock_server)
+        .mount(&_mock_server)
         .await;
 
     // Call fetch_items (stubbed)
@@ -135,10 +137,10 @@ async fn test_fetch_items_unauthenticated() {
 
 #[tokio::test]
 async fn test_integration_crud() {
-    let mock_server = MockServer::start().await;
-    let config = setup_mock_config(&mock_server).await;
-    let client = SupabaseClientWrapper::new(config.clone()).unwrap();
-    let mock_access_token = "mock_access_token_crud";
+    let _mock_server = MockServer::start().await;
+    let config = setup_mock_config(&_mock_server).await;
+    let _client = SupabaseClientWrapper::new(config.clone()).unwrap();
+    let _mock_access_token = "mock_access_token_crud";
 
     // Simulate auth
     // ...
@@ -155,17 +157,17 @@ async fn test_integration_crud() {
     };
     // Response usually echoes the created item, possibly with DB-generated fields
     let created_item_response = vec![item_to_create.clone()];
-    let auth_header_value = format!("Bearer {}", mock_access_token);
+    let auth_header_value = format!("Bearer {}", _mock_access_token);
 
     Mock::given(method("POST"))
         .and(path("/rest/v1/items"))
         .and(header("Authorization", auth_header_value.as_str())) // Use .as_str()
         .and(header("apikey", config.anon_key.as_str()))
-        .and(header("Prefer","return=representation")) // Common for inserts
+        .and(header("Prefer", "return=representation")) // Common for inserts
         // Potentially add body matcher: .and(body_json(json!(item_to_create_without_generated_fields)))
         .respond_with(ResponseTemplate::new(201).set_body_json(&created_item_response))
         .expect(1)
-        .mount(&mock_server)
+        .mount(&_mock_server)
         .await;
 
     // ... Mocks for update, delete ...
@@ -173,5 +175,4 @@ async fn test_integration_crud() {
     // Call create_item (stubbed)
     // let create_result = client.create_item(item_to_create).await;
     // assert!(create_result.is_ok());
-
 }

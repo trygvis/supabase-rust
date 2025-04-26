@@ -10,11 +10,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 // Correct imports based on crate structure
-use supabase_rust_auth::{Auth, Session as AuthSession, AuthError};
-use supabase_rust_postgrest::PostgrestClient;
-use supabase_rust_realtime::RealtimeClient;
 use reqwest::Client as ReqwestClient;
 use supabase_rust_auth::AuthOptions;
+use supabase_rust_auth::{Auth, AuthError, Session as AuthSession};
+use supabase_rust_postgrest::PostgrestClient;
+use supabase_rust_realtime::RealtimeClient;
 
 use tokio::sync::{mpsc, Mutex};
 use url::Url;
@@ -91,7 +91,7 @@ impl SupabaseClientWrapper {
 
         let http_client_db = ReqwestClient::new();
         let db_client = PostgrestClient::new(
-            rest_url.as_ref(),  // Use as_ref()
+            rest_url.as_ref(), // Use as_ref()
             &config.anon_key,
             "unknown",
             http_client_db,
@@ -99,7 +99,11 @@ impl SupabaseClientWrapper {
 
         // Realtime init
         let mut rt_url_builder = config.url.clone();
-        let scheme = if config.url.scheme() == "https" { "wss" } else { "ws" };
+        let scheme = if config.url.scheme() == "https" {
+            "wss"
+        } else {
+            "ws"
+        };
         rt_url_builder.set_scheme(scheme).map_err(|_| {
             SupabaseError::Initialization("Failed to set scheme for Realtime URL".to_string())
         })?;
@@ -124,7 +128,7 @@ impl SupabaseClientWrapper {
         Self::new(config)
     }
 
-    // --- Stub out methods causing compilation errors --- 
+    // --- Stub out methods causing compilation errors ---
 
     /// Authenticates a user using email and password.
     /// Corresponds to `authenticateUser` in the SSOT.
@@ -152,11 +156,9 @@ impl SupabaseClientWrapper {
 
     /// Subscribes to item changes.
     /// Corresponds to `subscribeToItemChanges` in the SSOT.
-    pub async fn subscribe_to_item_changes(
-        &self,
-    ) -> Result<mpsc::UnboundedReceiver<ItemChange>> {
-         println!("[STUB] Attempting to subscribe to item changes");
-         unimplemented!("Realtime subscription logic needs fixing for v0.2.0 API");
+    pub async fn subscribe_to_item_changes(&self) -> Result<mpsc::UnboundedReceiver<ItemChange>> {
+        println!("[STUB] Attempting to subscribe to item changes");
+        unimplemented!("Realtime subscription logic needs fixing for v0.2.0 API");
     }
 
     // --- CRUD Operations for Items ---
@@ -176,8 +178,8 @@ impl SupabaseClientWrapper {
 
     /// Updates an existing 'item' by its ID.
     pub async fn update_item(&self, _item_id: Uuid, _item_update: Item) -> Result<Item> {
-         println!("[STUB] Attempting to update item");
-         unimplemented!("Postgrest update logic needs fixing for v0.2.0 API");
+        println!("[STUB] Attempting to update item");
+        unimplemented!("Postgrest update logic needs fixing for v0.2.0 API");
     }
 
     /// Deletes an 'item' by its ID.
@@ -207,8 +209,8 @@ mod tests {
     fn config_new_valid() {
         dotenv().ok(); // Load .env file for testing
         let url = std::env::var("SUPABASE_URL").expect("SUPABASE_URL must be set for tests");
-        let key = std::env::var("SUPABASE_ANON_KEY")
-            .expect("SUPABASE_ANON_KEY must be set for tests");
+        let key =
+            std::env::var("SUPABASE_ANON_KEY").expect("SUPABASE_ANON_KEY must be set for tests");
         let config = SupabaseConfig::new(&url, key.clone()).unwrap();
         // Fix: Url::parse adds a trailing slash if missing path, format! needs literal and arg
         assert_eq!(config.url.to_string(), format!("{}/", url));
