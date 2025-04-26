@@ -10,11 +10,11 @@ resolver = "2"
 # Define shared dependencies for all workspace members
 [workspace.dependencies]
 # Update path dependencies to reflect potential renames or keep as is if they resolve correctly
-supabase-rust-auth = { path = "crates/auth", version = "0.2.0" }
-supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" }
-supabase-rust-storage = { path = "crates/storage", version = "0.2.0" }
-supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" }
-supabase-rust-functions = { path = "crates/functions", version = "0.2.0" }
+supabase-rust-auth = { path = "crates/auth", version = "0.4.0" }
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.4.0" }
+supabase-rust-storage = { path = "crates/storage", version = "0.4.0" }
+supabase-rust-realtime = { path = "crates/realtime", version = "0.4.0" }
+supabase-rust-functions = { path = "crates/functions", version = "0.4.0" }
 
 # Explicitly define the client dependency IF needed by other workspace members
 # supabase-rust-client = { path = "crates/supabase-rust-client", version = "0.3.0" }
