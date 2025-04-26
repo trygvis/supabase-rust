@@ -3217,6 +3217,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "supabase-rust-client"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "dotenv",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "supabase-rust-auth",
+ "supabase-rust-postgrest",
+ "supabase-rust-realtime",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
 name = "supabase-rust-functions"
 version = "0.2.0"
 dependencies = [
@@ -3315,28 +3337,6 @@ dependencies = [
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",
- "url",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "supabase_client_lib"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "dotenv",
- "reqwest",
- "serde",
- "serde_json",
- "supabase-rust-auth",
- "supabase-rust-postgrest",
- "supabase-rust-realtime",
- "thiserror 1.0.69",
- "tokio",
- "tracing",
  "url",
  "uuid",
  "wiremock",

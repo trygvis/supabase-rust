@@ -6,7 +6,7 @@ description = "Examples for the supabase-rust-gftd crate"
 license = "MIT"
 
 [dependencies]
-supabase-rust-gftd = { version = "0.3.0", path = ".." }
+supabase-rust-client = { version = "0.3.0", path = "../crates/supabase-rust-client" }
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

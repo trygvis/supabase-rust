@@ -2,22 +2,24 @@
 
 [workspace]
 members = [
-    "crates/*"
-    # If you have examples or other top-level crates, add them here:
-    # "examples"
+    "crates/*",
+    # "examples" # Keep examples managed separately for now based on its Cargo.toml
 ]
 resolver = "2"
 
 # Define shared dependencies for all workspace members
 [workspace.dependencies]
-# Revert to original path dependencies
+# Update path dependencies to reflect potential renames or keep as is if they resolve correctly
 supabase-rust-auth = { path = "crates/auth", version = "0.2.0" }
 supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" }
 supabase-rust-storage = { path = "crates/storage", version = "0.2.0" }
 supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" }
 supabase-rust-functions = { path = "crates/functions", version = "0.2.0" }
 
-# Revert Common Libraries to older versions (or versions compatible with 0.2.0)
+# Explicitly define the client dependency IF needed by other workspace members
+# supabase-rust-client = { path = "crates/supabase-rust-client", version = "0.3.0" }
+
+# Common Libraries
 reqwest = { version = "0.11", features = ["json", "multipart"] }
 tokio = { version = "1.0", features = ["full", "macros", "rt-multi-thread", "sync"] }
 serde = { version = "1.0", features = ["derive"] }

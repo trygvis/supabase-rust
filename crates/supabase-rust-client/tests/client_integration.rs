@@ -1,10 +1,10 @@
 // crates/supabase_client/tests/client_integration.rs
 
 // Import the crate itself
-use supabase_client_lib::client::SupabaseClientWrapper;
-use supabase_client_lib::client::SupabaseConfig;
-use supabase_client_lib::error::SupabaseError;
-use supabase_client_lib::models::{AuthCredentials, Item};
+use supabase_rust_client::client::SupabaseClientWrapper;
+use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_client::error::SupabaseError;
+use supabase_rust_client::models::{AuthCredentials, Item};
 
 // Import dev dependencies for mocking, etc.
 use chrono::Utc;
