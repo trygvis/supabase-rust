@@ -128,14 +128,32 @@ impl SupabaseClientWrapper {
         Self::new(config)
     }
 
-    // --- Stub out methods causing compilation errors ---
-
     /// Authenticates a user using email and password.
     /// Corresponds to `authenticateUser` in the SSOT.
     /// Returns the Supabase User details on success.
-    pub async fn authenticate(&self, _credentials: AuthCredentials) -> Result<User> {
-        println!("[STUB] Attempting to authenticate user");
-        unimplemented!("Authentication logic needs fixing for v0.2.0 API");
+    pub async fn authenticate(&self, credentials: AuthCredentials) -> Result<User> {
+        println!("[IMPL] Attempting to authenticate user: {}", credentials.email); // Changed STUB to IMPL for clarity
+        match self
+            .auth
+            .sign_in_with_password(&credentials.email, &credentials.password)
+            .await
+        {
+            Ok(session) => {
+                // Authentication successful, store the session
+                let mut session_guard = self.current_session.lock().await;
+                *session_guard = Some(session.clone()); // Clone session to store and return user
+                println!(
+                    "[IMPL] Authentication successful for user: {}",
+                    session.user.id
+                );
+                Ok(session.user.into()) // Convert auth::User to models::User
+            }
+            Err(e) => {
+                // Authentication failed
+                eprintln!("[IMPL] Authentication failed: {:?}", e); // Use eprintln for errors
+                Err(SupabaseError::Auth(e)) // Map the AuthError to SupabaseError
+            }
+        }
     }
 
     /// Logs out the currently authenticated user by invalidating the session/token.
@@ -207,14 +225,29 @@ mod tests {
 
     #[test]
     fn config_new_valid() {
-        dotenv().ok(); // Load .env file for testing
-        let url = std::env::var("SUPABASE_URL").expect("SUPABASE_URL must be set for tests");
-        let key =
-            std::env::var("SUPABASE_ANON_KEY").expect("SUPABASE_ANON_KEY must be set for tests");
-        let config = SupabaseConfig::new(&url, key.clone()).unwrap();
+        dotenv().ok(); // Load .env file for testing if available
+
+        // Temporarily set dummy env vars for this test
+        let url = "http://localhost:12345";
+        let key = "dummy-anon-key";
+        std::env::set_var("SUPABASE_URL", url);
+        std::env::set_var("SUPABASE_ANON_KEY", key);
+
+        // Test creating config with the (now set) env vars
+        // let url_from_env = std::env::var("SUPABASE_URL").expect("SUPABASE_URL must be set for tests");
+        // let key_from_env =
+        //     std::env::var("SUPABASE_ANON_KEY").expect("SUPABASE_ANON_KEY must be set for tests");
+        // Use the values directly now that we set them
+        let config = SupabaseConfig::new(url, key.to_string()).unwrap();
+
         // Fix: Url::parse adds a trailing slash if missing path, format! needs literal and arg
+        // Use the original URL value for comparison
         assert_eq!(config.url.to_string(), format!("{}/", url));
         assert_eq!(config.anon_key, key);
+
+        // Optional: Unset the vars? Generally not needed as it affects only this process.
+        // std::env::remove_var("SUPABASE_URL");
+        // std::env::remove_var("SUPABASE_ANON_KEY");
     }
 
     #[test]

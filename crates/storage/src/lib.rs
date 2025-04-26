@@ -1846,8 +1846,7 @@ mod tests {
             .and(wiremock::matchers::query_param("limit", "10"))
             .and(wiremock::matchers::query_param("offset", "0"))
             .and(wiremock::matchers::query_param(
-                "sortBy",
-                "name:Asc", // Match the format from ListOptions::to_string()
+                "sortBy", "name:Asc", // Match the format from ListOptions::to_string()
             ))
             // Remove body matcher
             // .and(wiremock::matchers::body_json(request_body.clone()))
@@ -2263,8 +2262,7 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(format!(
                 "/object/sign/{}/{}", // Removed /storage/v1 prefix
-                bucket_id,
-                object_path
+                bucket_id, object_path
             )))
             .and(wiremock::matchers::body_json(expected_request_body.clone()))
             .respond_with(ResponseTemplate::new(200).set_body_json(response_body))
@@ -2302,10 +2300,11 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(format!(
                 "/object/sign/{}/{}", // Removed /storage/v1 prefix
-                bucket_id,
-                object_path
+                bucket_id, object_path
             )))
-            .and(wiremock::matchers::body_json(expected_request_body_err.clone()))
+            .and(wiremock::matchers::body_json(
+                expected_request_body_err.clone(),
+            ))
             .respond_with(ResponseTemplate::new(400).set_body_json(error_response))
             .mount(&mock_server)
             .await;
