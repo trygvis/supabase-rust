@@ -5,7 +5,12 @@
 
 use thiserror::Error;
 
+// Use correct error path from supabase-rust-auth v0.2.0
+use supabase_rust_auth::AuthError;
+use supabase_rust_postgrest::PostgrestError;
+
 /// Universal error type for the Supabase client library operations.
+/// This now mostly wraps or maps errors from the `supabase_rust_gftd` crate.
 #[derive(Error, Debug)]
 pub enum SupabaseError {
     #[error("Configuration error: Missing or invalid {0}")]
@@ -14,21 +19,23 @@ pub enum SupabaseError {
     #[error("Initialization failed: {0}")]
     Initialization(String), // For general client setup issues
 
+    // Revert to original error wrapping
     #[error("Authentication error: {0}")]
-    Auth(#[from] supabase_rust_auth::AuthError), // Wrap the specific auth crate error
+    Auth(#[from] AuthError),
 
     #[error("Database error: {0}")]
-    Postgrest(#[from] supabase_rust_postgrest::PostgrestError), // Wrap the postgrest crate error
+    Postgrest(#[from] PostgrestError),
 
     #[error("Realtime error: {0}")]
-    Realtime(String), // Define more specific realtime errors if needed or wrap from crate
+    Realtime(String), // Keep as String for now as realtime code is commented out
 
     #[error("Storage error: {0}")]
-    Storage(String), // Placeholder, wrap actual StorageError if storage crate is used
+    Storage(String), // Keep as String
 
     #[error("Function error: {0}")]
-    Function(String), // Placeholder, wrap actual FunctionError if functions crate is used
+    Function(String), // Keep as String
 
+    // Keep utility errors
     #[error("Network request error: {0}")]
     Network(#[from] reqwest::Error),
 
@@ -55,4 +62,4 @@ pub enum SupabaseError {
 pub type Result<T> = std::result::Result<T, SupabaseError>;
 
 // Define specific AuthError, DbError etc. as needed, potentially wrapping SupabaseError
-// or being distinct enums. 
+// or being distinct enums.

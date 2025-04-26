@@ -1,14 +1,13 @@
 // src/lib.rs
 
-pub mod models;
 pub mod client;
 pub mod error;
+pub mod models;
 
 // Re-export key components
 pub use client::SupabaseClientWrapper; // Example, adjust as needed
-pub use models::Item; // Example, adjust as needed
-pub use error::SupabaseError; // Example, adjust as needed
-
+pub use error::SupabaseError;
+pub use models::Item; // Example, adjust as needed // Example, adjust as needed
 
 #[cfg(test)]
 mod tests {
@@ -17,4 +16,4 @@ mod tests {
         let result = 2 + 2;
         assert_eq!(result, 4);
     }
-} 
+}

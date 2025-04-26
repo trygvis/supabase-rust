@@ -6,9 +6,9 @@
 // Potentially use crates like serde for serialization/deserialization
 // and uuid for the ID type.
 
-use serde::{Serialize, Deserialize};
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Represents the 'item' model structure defined in the SSOT.
 /// Corresponds to the 'items' table in Supabase.
@@ -70,4 +70,4 @@ pub struct User {
 //     pub id: Uuid,
 //     pub email: Option<String>,
 //     // Add other relevant user fields
-// } 
+// }

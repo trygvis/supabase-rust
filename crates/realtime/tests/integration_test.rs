@@ -2,7 +2,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::sync::Once;
 use supabase_rust_realtime::{
-    ChannelEvent, DatabaseChanges, RealtimeClient, RealtimeClientOptions, RealtimeMessage
+    ChannelEvent, DatabaseChanges, RealtimeClient, RealtimeClientOptions, RealtimeMessage,
 };
 use tokio::sync::mpsc;
 // Add tracing imports

@@ -392,7 +392,7 @@ impl RealtimeClient {
             let _reader_handle = tokio::spawn(async move {
                 // Add instrument to reader task
                 // Remove the instrument macro to avoid too_many_arguments error for now
-                // #[instrument(skip_all, name = "ws_reader")] 
+                // #[instrument(skip_all, name = "ws_reader")]
                 #[allow(clippy::too_many_arguments)] // Allow > 7 arguments for this task
                 async fn reader_task(
                     mut read: impl StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>>
@@ -402,7 +402,7 @@ impl RealtimeClient {
                     reader_state_arc: Arc<RwLock<ConnectionState>>,
                     reader_state_change_tx: broadcast::Sender<ConnectionState>,
                     _reader_reconnect_attempts: Arc<AtomicU32>, // Prefix unused parameter
-                    reader_options: RealtimeClientOptions,     // Pass options
+                    reader_options: RealtimeClientOptions,      // Pass options
                     reader_is_manually_closed: Arc<AtomicBool>,
                 ) {
                     info!("Reader task started");

@@ -10,26 +10,29 @@ resolver = "2"
 
 # Define shared dependencies for all workspace members
 [workspace.dependencies]
-# Supabase Crates (assuming these are the intended ones based on original file)
-supabase-rust-auth = { path = "crates/auth", version = "0.2.0" } # Adjust version as needed
-supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" } # Adjust version as needed
-supabase-rust-storage = { path = "crates/storage", version = "0.2.0" } # Adjust version as needed
-supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" } # Adjust version as needed
-supabase-rust-functions = { path = "crates/functions", version = "0.2.0" } # Adjust version as needed
+# Revert to original path dependencies
+supabase-rust-auth = { path = "crates/auth", version = "0.2.0" }
+supabase-rust-postgrest = { path = "crates/postgrest", version = "0.2.0" }
+supabase-rust-storage = { path = "crates/storage", version = "0.2.0" }
+supabase-rust-realtime = { path = "crates/realtime", version = "0.2.0" }
+supabase-rust-functions = { path = "crates/functions", version = "0.2.0" }
 
-# Common Libraries
-reqwest = { version = "0.11", features = ["json", "multipart"] } # Note: consider upgrading
-tokio = { version = "1.0", features = ["full", "macros", "rt-multi-thread", "sync"] } # Ensure needed features
+# Revert Common Libraries to older versions (or versions compatible with 0.2.0)
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+tokio = { version = "1.0", features = ["full", "macros", "rt-multi-thread", "sync"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-url = "2.3" # Note: consider upgrading
+url = "2.3" # Reverted URL
 base64 = "0.21"
 async-trait = "0.1"
 jsonwebtoken = "9.1"
-uuid = { version = "1.8", features = ["v4", "serde"] } # Use consistent version
+uuid = { version = "1.8", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
+dotenv = "0.15.0"
+wiremock = "0.5.19" # Reverted wiremock (match original dev-dep?)
+anyhow = "1.0" # Keep anyhow
 
 # Dev Dependencies (can also be shared)
 [workspace.dev-dependencies]
@@ -37,7 +40,7 @@ wiremock = "0.5.19"
 dotenv = "0.15.0"
 tempfile = "3.7.0"
 tokio-test = "0.4"
-mockito = "1.0"
+mockito = "1.0" # Reverted mockito
 
 # Optional: Define common feature flags for the workspace
 # [workspace.features]
