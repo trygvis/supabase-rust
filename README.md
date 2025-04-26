@@ -451,3 +451,9 @@ The project is organized as a Cargo workspace to manage different Supabase featu
 -   **`src/`**: The main `supabase-rust` library crate that ties the modules together.
 -   **`examples/`**: Usage examples for each module (High Priority - Needs fixing and maintenance).
 -   **`tests/`
+
+
+DATABASE_URL=postgres://postgres:postgres@localhost:54322/postgres
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+SUPABASE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9f

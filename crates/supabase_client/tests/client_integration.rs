@@ -3,8 +3,8 @@
 // Import the crate itself
 use supabase_client_lib::client::SupabaseClientWrapper;
 use supabase_client_lib::client::SupabaseConfig;
-use supabase_client_lib::models::{AuthCredentials, Item};
 use supabase_client_lib::error::SupabaseError;
+use supabase_client_lib::models::{AuthCredentials, Item};
 
 // Import dev dependencies for mocking, etc.
 use chrono::Utc;
@@ -13,7 +13,7 @@ use serde_json::json; // To create mock JSON bodies
 use std::env;
 use uuid::Uuid;
 use wiremock::{
-    matchers::{header, method, path, path_regex}, // Use path_regex
+    matchers::{header, method, path_regex}, // Use path_regex
     Mock,
     MockServer,
     ResponseTemplate,
@@ -27,7 +27,7 @@ use supabase_rust_auth::{Auth, AuthError, AuthOptions, Session as AuthSession, U
 async fn setup_mock_config(mock_server: &MockServer) -> SupabaseConfig {
     dotenv().ok();
     let mut url_string = mock_server.uri(); // Get base URI as string
-    // Ensure no trailing slash for base URL passed to config
+                                            // Ensure no trailing slash for base URL passed to config
     if url_string.ends_with('/') {
         url_string.pop();
     }
@@ -158,13 +158,14 @@ async fn test_fetch_items_authenticated() {
         refresh_token: "mock_refresh_token".to_string(),
         expires_in: 3600,
         token_type: "bearer".to_string(),
-        user: AuthUser { // Use the actual User struct from supabase_rust_auth
+        user: AuthUser {
+            // Use the actual User struct from supabase_rust_auth
             id: mock_user_id.to_string(), // ID is string
             email: Some("test@example.com".to_string()),
             phone: None,
             created_at: Utc::now().to_rfc3339(), // created_at is string
             updated_at: Utc::now().to_rfc3339(), // updated_at is string
-            app_metadata: json!({}), // Use json! macro for Value
+            app_metadata: json!({}),             // Use json! macro for Value
             user_metadata: json!({ "test_field": "test_value" }),
         },
     };
@@ -184,7 +185,7 @@ async fn test_fetch_items_authenticated() {
     let auth_header_value = format!("Bearer {}", mock_access_token);
 
     Mock::given(method("GET"))
-        .and(path("/rest/v1/items"))
+        .and(wiremock::matchers::path_regex(r"/rest/v1/items(?:\?.*)?"))
         .and(header("Authorization", auth_header_value.as_str()))
         .and(header("apikey", config.anon_key.as_str()))
         .respond_with(ResponseTemplate::new(200).set_body_json(&mock_items))
@@ -194,7 +195,11 @@ async fn test_fetch_items_authenticated() {
 
     let fetch_result = client.fetch_items().await;
 
-    assert!(fetch_result.is_ok(), "Fetch failed: {:?}", fetch_result.err());
+    assert!(
+        fetch_result.is_ok(),
+        "Fetch failed: {:?}",
+        fetch_result.err()
+    );
     let items = fetch_result.unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].id, mock_item_id);
@@ -213,9 +218,11 @@ async fn test_fetch_items_unauthenticated() {
     // Mock is not strictly needed as get_auth_token should fail first,
     // but we can keep it for defence.
     Mock::given(method("GET"))
-        .and(path("/rest/v1/items"))
+        .and(wiremock::matchers::path_regex(r"/rest/v1/items(?:\?.*)?"))
         .and(header("apikey", client.anon_key()))
-        .respond_with(ResponseTemplate::new(401).set_body_json(json!({ "message": "Unauthorized" })))
+        .respond_with(
+            ResponseTemplate::new(401).set_body_json(json!({ "message": "Unauthorized" })),
+        )
         .expect(0) // Expect 0 calls matching this (client should error before request)
         .mount(&mock_server)
         .await;
@@ -226,7 +233,10 @@ async fn test_fetch_items_unauthenticated() {
         SupabaseError::Auth(AuthError::ApiError(msg)) => {
             assert!(msg.contains("Missing session token"))
         }
-        e => panic!("Expected AuthError::ApiError(Missing session token), got {:?}", e),
+        e => panic!(
+            "Expected AuthError::ApiError(Missing session token), got {:?}",
+            e
+        ),
     }
 }
 
@@ -244,7 +254,8 @@ async fn test_integration_crud() {
         refresh_token: "mock_refresh_token_crud".to_string(),
         expires_in: 3600,
         token_type: "bearer".to_string(),
-        user: AuthUser { // Use actual User struct
+        user: AuthUser {
+            // Use actual User struct
             id: mock_user_id.to_string(),
             email: Some("crud@example.com".to_string()),
             phone: None,
@@ -276,17 +287,23 @@ async fn test_integration_crud() {
     let auth_header_value = format!("Bearer {}", mock_access_token);
 
     Mock::given(method("POST"))
-        .and(path("/rest/v1/items"))
+        .and(wiremock::matchers::path_regex(r"/rest/v1/items(?:\?.*)?"))
         .and(header("Authorization", auth_header_value.as_str()))
         .and(header("apikey", config.anon_key.as_str()))
         .and(header("Prefer", "return=representation"))
-        .respond_with(ResponseTemplate::new(201).set_body_json(&vec![expected_created_item.clone()]))
+        .respond_with(
+            ResponseTemplate::new(201).set_body_json(vec![expected_created_item.clone()]),
+        )
         .expect(1)
         .mount(&mock_server)
         .await;
 
     let create_result = client.create_item(new_item_data).await;
-    assert!(create_result.is_ok(), "Create failed: {:?}", create_result.err());
+    assert!(
+        create_result.is_ok(),
+        "Create failed: {:?}",
+        create_result.err()
+    );
     let created_item = create_result.unwrap();
     assert_ne!(created_item.id, Uuid::nil());
     assert_eq!(created_item.user_id, mock_user_id);

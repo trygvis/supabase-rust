@@ -13,8 +13,8 @@ use std::sync::Arc;
 use reqwest::Client as ReqwestClient;
 use supabase_rust_auth::AuthOptions;
 use supabase_rust_auth::{Auth, AuthError, Session as AuthSession};
-use supabase_rust_realtime::RealtimeClient;
 use supabase_rust_postgrest::PostgrestError;
+use supabase_rust_realtime::RealtimeClient;
 
 use tokio::sync::{mpsc, Mutex};
 use url::Url;
@@ -208,8 +208,8 @@ impl SupabaseClientWrapper {
 
         // Parse the serde_json::Value into Vec<Item>
         // Postgrest insert with return=representation returns an array
-        let mut created_items: Vec<Item> = serde_json::from_value(response_value)
-            .map_err(SupabaseError::Json)?; // Map serde_json::Error using #[from]
+        let mut created_items: Vec<Item> =
+            serde_json::from_value(response_value).map_err(SupabaseError::Json)?; // Map serde_json::Error using #[from]
 
         // Extract the first item
         created_items.pop().ok_or_else(|| {
