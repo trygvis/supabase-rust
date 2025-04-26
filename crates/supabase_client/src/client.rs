@@ -418,4 +418,47 @@ impl SupabaseClientWrapper {
             .and_then(|s| s.access_token.clone())
             .ok_or_else(|| SupabaseError::Auth("Not authenticated or session token missing".to_string().into()))
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*; // Import items from outer module
+
+    #[test]
+    fn config_new_valid() {
+        let url = "http://localhost:54321";
+        let key = "some_anon_key";
+        let config = SupabaseConfig::new(url, key.to_string());
+        assert!(config.is_ok());
+        let config = config.unwrap();
+        assert_eq!(config.url.to_string(), format!("{}/"), url); // Url::parse adds trailing slash
+        assert_eq!(config.anon_key, key);
+    }
+
+    #[test]
+    fn config_new_invalid_url() {
+        let url = "not a valid url";
+        let key = "some_anon_key";
+        let config = SupabaseConfig::new(url, key.to_string());
+        assert!(config.is_err());
+        match config.err().unwrap() {
+            SupabaseError::UrlParse(_) => {} // Expected error
+            _ => panic!("Expected UrlParse error"),
+        }
+    }
+
+    #[test]
+    fn config_new_empty_key() {
+        let url = "http://localhost:54321";
+        let key = "";
+        let config = SupabaseConfig::new(url, key.to_string());
+        assert!(config.is_err());
+        match config.err().unwrap() {
+            SupabaseError::Config(msg) => assert!(msg.contains("anon_key cannot be empty")),
+            _ => panic!("Expected Config error for empty key"),
+        }
+    }
+
+    // Add tests for SupabaseConfig::from_env() - requires setting env vars for test
+    // This might be better suited for integration tests or require helper libraries.
 } 
