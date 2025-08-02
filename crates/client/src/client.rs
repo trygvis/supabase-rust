@@ -100,11 +100,8 @@ impl SupabaseClientWrapper {
             AuthOptions::default(),
         );
 
-        let functions_client = FunctionsClient::new(
-            config.url.as_str(),
-            &config.anon_key,
-            http_client.clone(),
-        );
+        let functions_client =
+            FunctionsClient::new(config.url.as_str(), &config.anon_key, http_client.clone());
 
         let mut rt_url_builder = config.url.clone();
         let scheme = if config.url.scheme() == "https" {
@@ -120,11 +117,8 @@ impl SupabaseClientWrapper {
         })?;
         let realtime_client = RealtimeClient::new(rt_url.as_ref(), &config.anon_key);
 
-        let storage_client = StorageClient::new(
-            config.url.as_str(),
-            &config.anon_key,
-            http_client.clone(),
-        );
+        let storage_client =
+            StorageClient::new(config.url.as_str(), &config.anon_key, http_client.clone());
 
         println!("Supabase client initialized (Auth & Realtime - Postgrest on demand).");
 
@@ -295,7 +289,7 @@ impl SupabaseClientWrapper {
 mod tests {
     use super::*;
     // Import items from parent module
-        use dotenv::dotenv;
+    use dotenv::dotenv;
 
     #[test]
     fn config_new_valid() {

@@ -4,18 +4,18 @@ use std::env;
 use std::fs::File as StdFile;
 use std::io::{Read, Write};
 use std::path::Path;
-use supabase_rust_storage::{FileObject, FileOptions, ImageTransformOptions, ListOptions};
-use supabase_rust_client::SupabaseClientWrapper;
-use tempfile::NamedTempFile;
 use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_client::SupabaseClientWrapper;
+use supabase_rust_storage::{FileObject, FileOptions, ImageTransformOptions, ListOptions};
+use tempfile::NamedTempFile;
 
 mod image_transform_examples {
     use std::env;
     use std::io::Write;
-    use supabase_rust_storage::{FileOptions, ImageTransformOptions};
-    use supabase_rust_client::SupabaseClientWrapper;
-    use tempfile::NamedTempFile;
     use supabase_rust_client::client::SupabaseConfig;
+    use supabase_rust_client::SupabaseClientWrapper;
+    use supabase_rust_storage::{FileOptions, ImageTransformOptions};
+    use tempfile::NamedTempFile;
 
     pub async fn run_image_transform_examples(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {

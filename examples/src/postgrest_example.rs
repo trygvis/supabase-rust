@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
 use supabase_rust_client::client::SupabaseConfig;
-use supabase_rust_postgrest::{IsolationLevel, PostgrestError, SortOrder, TransactionMode};
 use supabase_rust_client::SupabaseClientWrapper;
+use supabase_rust_postgrest::{IsolationLevel, PostgrestError, SortOrder, TransactionMode};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {

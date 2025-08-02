@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::env;
-use supabase_rust_functions::FunctionOptions;
 use supabase_rust_client::client::SupabaseConfig;
 use supabase_rust_client::SupabaseClientWrapper;
+use supabase_rust_functions::FunctionOptions;
 
 #[derive(Debug, Serialize)]
 struct HelloRequest {

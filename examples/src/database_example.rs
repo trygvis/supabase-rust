@@ -2,9 +2,9 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
+use supabase_rust_client::client::SupabaseConfig;
 use supabase_rust_client::SupabaseClientWrapper;
 use uuid::Uuid;
-use supabase_rust_client::client::SupabaseConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Task {

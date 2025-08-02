@@ -6,10 +6,10 @@ use std::io;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use supabase_rust_realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
-use supabase_rust_client::SupabaseClientWrapper;
-use tokio::time::sleep;
 use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_client::SupabaseClientWrapper;
+use supabase_rust_realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
+use tokio::time::sleep;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {

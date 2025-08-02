@@ -26,7 +26,6 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase = SupabaseClientWrapper::new(config)?;
     println!("バイナリ・ストリーミングの例を開始します");
 
-
     // Functionsクライアントにアクセス
     let functions = supabase.functions;
 
