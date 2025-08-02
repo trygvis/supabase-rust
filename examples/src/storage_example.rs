@@ -4,16 +4,18 @@ use std::env;
 use std::fs::File as StdFile;
 use std::io::{Read, Write};
 use std::path::Path;
-use supabase_rust_gftd::storage::{FileObject, FileOptions, ImageTransformOptions, ListOptions};
-use supabase_rust_gftd::Supabase;
+use supabase_rust_storage::{FileObject, FileOptions, ImageTransformOptions, ListOptions};
+use supabase_rust_client::SupabaseClientWrapper;
 use tempfile::NamedTempFile;
+use supabase_rust_client::client::SupabaseConfig;
 
 mod image_transform_examples {
     use std::env;
     use std::io::Write;
-    use supabase_rust_gftd::storage::{FileOptions, ImageTransformOptions};
-    use supabase_rust_gftd::Supabase;
+    use supabase_rust_storage::{FileOptions, ImageTransformOptions};
+    use supabase_rust_client::SupabaseClientWrapper;
     use tempfile::NamedTempFile;
+    use supabase_rust_client::client::SupabaseConfig;
 
     pub async fn run_image_transform_examples(
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -39,8 +41,10 @@ mod image_transform_examples {
         let upload_path = "test-transform-image.jpg";
 
         // Supabaseクライアントの初期化
-        let supabase = Supabase::new(&supabase_url, &supabase_key);
-        let storage = supabase.storage();
+        let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+        let supabase = SupabaseClientWrapper::new(config)?;
+
+        let storage = supabase.storage;
 
         println!("\n=== 画像変換機能の例 ===\n");
 
@@ -137,12 +141,12 @@ mod image_transform_examples {
 
 /// S3互換APIの例を実行
 async fn run_s3_compatible_example(
-    supabase: &Supabase,
+    supabase: SupabaseClientWrapper,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== S3互換APIの例 ===\n");
 
     // S3互換オプションを設定
-    let s3_options = supabase_rust_gftd::storage::s3::S3Options {
+    let s3_options = supabase_rust_storage::s3::S3Options {
         access_key_id: "your-access-key".to_string(), // 実際の環境では適切な値に置き換えてください
         secret_access_key: "your-secret-key".to_string(), // 実際の環境では適切な値に置き換えてください
         region: Some("auto".to_string()),
@@ -150,7 +154,7 @@ async fn run_s3_compatible_example(
     };
 
     // S3互換クライアントを取得
-    let storage_client = supabase.storage();
+    let storage_client = supabase.storage;
     let bucket_client = storage_client.from("test-bucket");
     let s3_client = bucket_client.s3_compatible(s3_options);
 
@@ -231,7 +235,7 @@ async fn run_s3_compatible_example(
 
 /// 基本的なストレージ操作の例を実行
 async fn run_basic_storage_operations(
-    storage: &supabase_rust_gftd::storage::StorageClient,
+    storage: &supabase_rust_storage::StorageClient,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 基本的なストレージ操作の例 ===\n");
 
@@ -366,7 +370,7 @@ async fn run_basic_storage_operations(
 
 /// 大容量ファイルのアップロード例を実行
 async fn run_large_file_upload(
-    storage: &supabase_rust_gftd::storage::StorageClient,
+    storage: &supabase_rust_storage::StorageClient,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 大容量ファイルのアップロード例 ===\n");
 
@@ -448,7 +452,7 @@ fn handle_result<T: std::fmt::Debug>(
 // Function to test public bucket operations
 #[allow(dead_code)] // Allow dead code for example test function
 async fn test_public_operations(
-    storage: &supabase_rust_gftd::storage::StorageClient,
+    storage: &supabase_rust_storage::StorageClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bucket_name = "public-example-bucket";
     println!(
@@ -532,7 +536,7 @@ async fn test_public_operations(
 // Function to test image transformations
 #[allow(dead_code)] // Allow dead code for example test function
 async fn test_image_transformations(
-    storage: &supabase_rust_gftd::storage::StorageClient,
+    storage: &supabase_rust_storage::StorageClient,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bucket_name = "image-transform-bucket";
     println!(
@@ -617,14 +621,14 @@ async fn test_image_transformations(
 }
 
 async fn test_authenticated_operations(
-    supabase: &Supabase,
+    supabase: SupabaseClientWrapper,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let bucket_name = "authenticated-bucket";
     println!(
         "\n--- Testing Authenticated Operations in bucket: {} ---",
         bucket_name
     );
-    let storage = supabase.storage();
+    let storage = supabase.storage;
 
     // Ensure bucket exists (authenticated bucket creation)
     match storage.create_bucket(bucket_name, false).await {
@@ -742,9 +746,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("==== Supabase Storage Examples ====");
 
     // Supabaseクライアントの初期化
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase = SupabaseClientWrapper::new(config)?;
 
-    let storage = supabase.storage();
+    let storage = supabase.storage.clone();
 
     // 各サンプル関数を呼び出す
     match run_basic_storage_operations(&storage).await {
@@ -767,13 +772,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         Err(e) => eprintln!("画像変換機能の例でエラーが発生しました: {}", e),
     }
 
-    match run_s3_compatible_example(&supabase).await {
+    match run_s3_compatible_example(supabase.clone()).await {
         Ok(_) => println!("S3互換APIの例が正常に完了しました。"),
         Err(e) => eprintln!("S3互換APIの例でエラーが発生しました: {}", e),
     }
 
     // Ensure authenticated tests run if applicable (they might need adjustment depending on actual auth flow)
-    if let Err(e) = test_authenticated_operations(&supabase).await {
+    if let Err(e) = test_authenticated_operations(supabase).await {
         println!("Error in authenticated storage operations: {}", e);
     }
 

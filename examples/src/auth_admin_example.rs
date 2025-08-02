@@ -2,7 +2,7 @@ use dotenv::dotenv;
 use reqwest::Client;
 use serde_json::json;
 use std::env;
-use supabase_rust_gftd::auth::AdminAuth;
+use supabase_rust_auth::AdminAuth;
 // use supabase_rust_gftd::Supabase; // Unused import
 
 #[tokio::main]

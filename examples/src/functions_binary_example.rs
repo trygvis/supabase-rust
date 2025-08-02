@@ -5,8 +5,9 @@ use std::env;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use supabase_rust_gftd::functions::FunctionOptions;
-use supabase_rust_gftd::Supabase;
+use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_client::SupabaseClientWrapper;
+use supabase_rust_functions::FunctionOptions;
 
 // このサンプルは、Supabase Edge Functionsからバイナリデータを
 // ストリーミングで取得し処理する例を示しています
@@ -21,12 +22,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
 
     // Supabaseクライアントを初期化
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
-
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase = SupabaseClientWrapper::new(config)?;
     println!("バイナリ・ストリーミングの例を開始します");
 
+
     // Functionsクライアントにアクセス
-    let functions = supabase.functions();
+    let functions = supabase.functions;
 
     // 画像を生成するEdge Function (例: generate-image)を呼び出す
     // このEdge Functionはクライアントに画像データをストリーミングで返す想定です

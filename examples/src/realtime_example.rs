@@ -6,9 +6,10 @@ use std::io;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use supabase_rust_gftd::realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
-use supabase_rust_gftd::Supabase;
+use supabase_rust_realtime::{ChannelEvent, DatabaseChanges, DatabaseFilter, FilterOperator};
+use supabase_rust_client::SupabaseClientWrapper;
 use tokio::time::sleep;
+use supabase_rust_client::client::SupabaseConfig;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
@@ -32,14 +33,14 @@ struct RealtimePayload<T> {
 
 /// 高度なフィルタリング機能の例
 async fn run_advanced_filter_example(
-    supabase: &Supabase,
+    supabase: SupabaseClientWrapper,
     user_id: &str,
     access_token: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("\n=== 高度なリアルタイムフィルタリングの例 ===\n");
 
     // リアルタイムクライアントを取得
-    let realtime = supabase.realtime();
+    let realtime = supabase.realtime.clone();
 
     // メッセージ受信カウンターを作成
     let counter = Arc::new(AtomicU32::new(0));
@@ -276,7 +277,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
 
     // Initialize the Supabase client
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase = SupabaseClientWrapper::new(config)?;
 
     println!("Starting Realtime example");
 
@@ -284,7 +286,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let test_email = format!("test-realtime-{}@example.com", uuid::Uuid::new_v4());
     let test_password = "password123";
 
-    let sign_up_result = supabase.auth().sign_up(&test_email, test_password).await?;
+    let sign_up_result = supabase.auth.sign_up(&test_email, test_password).await?;
 
     let user_id = sign_up_result.user.id.clone();
     let access_token = sign_up_result.access_token.clone();
@@ -292,7 +294,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Created test user with ID: {}", user_id);
 
     // --- Set Auth Token for Realtime ---
-    let realtime = supabase.realtime();
+    let realtime = supabase.realtime.clone();
     realtime.set_auth(Some(access_token.clone())).await; // Set the token
 
     // タスクテーブルの準備
@@ -460,7 +462,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("期待値: 5 (作成イベント3件 + 更新イベント1件 + 削除イベント1件)");
 
     // 高度なフィルタリングの例を実行
-    if let Err(e) = run_advanced_filter_example(&supabase, &user_id, &access_token).await {
+    if let Err(e) = run_advanced_filter_example(supabase.clone(), &user_id, &access_token).await {
         println!("フィルタリング例でエラーが発生しました: {}", e);
     }
 

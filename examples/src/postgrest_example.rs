@@ -2,8 +2,9 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::env;
-use supabase_rust_gftd::postgrest::{IsolationLevel, PostgrestError, SortOrder, TransactionMode};
-use supabase_rust_gftd::Supabase;
+use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_postgrest::{IsolationLevel, PostgrestError, SortOrder, TransactionMode};
+use supabase_rust_client::SupabaseClientWrapper;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct Task {
@@ -27,7 +28,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Using Supabase URL: {}", supabase_url);
 
     // Initialize the Supabase client
-    let supabase_client = Supabase::new(&supabase_url, &supabase_key);
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase_client = SupabaseClientWrapper::new(config)?;
 
     println!("Starting PostgREST advanced example");
 
@@ -36,7 +38,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let test_password = "password123";
 
     let sign_up_result = supabase_client
-        .auth()
+        .auth
         .sign_up(&test_email, test_password)
         .await?;
 

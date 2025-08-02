@@ -1,6 +1,7 @@
 use dotenv::dotenv;
 use std::env;
-use supabase_rust_gftd::Supabase;
+use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_client::SupabaseClientWrapper;
 use uuid::Uuid;
 
 #[tokio::main]
@@ -13,7 +14,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
 
     // Initialize the Supabase client
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase = SupabaseClientWrapper::new(config)?;
 
     println!("Starting Auth example");
 
@@ -23,7 +25,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let test_password = "securePassword123!";
 
     // Create a new user
-    let auth = supabase.auth();
+    let auth = supabase.auth;
 
     // Sign up a new user
     println!("Signing up a new user with email: {}", test_email);

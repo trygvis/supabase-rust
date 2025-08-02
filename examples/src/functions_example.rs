@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::env;
-use supabase_rust_gftd::functions::FunctionOptions;
-use supabase_rust_gftd::Supabase;
+use supabase_rust_functions::FunctionOptions;
+use supabase_rust_client::client::SupabaseConfig;
+use supabase_rust_client::SupabaseClientWrapper;
 
 #[derive(Debug, Serialize)]
 struct HelloRequest {
@@ -27,12 +28,13 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let supabase_key = env::var("SUPABASE_KEY").expect("SUPABASE_KEY must be set");
 
     // Initialize the Supabase client
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase = SupabaseClientWrapper::new(config)?;
 
     println!("Starting Edge Functions example");
 
     // Access the Functions client
-    let functions = supabase.functions();
+    let functions = supabase.functions;
 
     // This example assumes you have created an Edge Function named "hello-world"
     // that accepts a JSON payload with a "name" field and returns a JSON response
@@ -87,14 +89,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let test_email = format!("test-functions-{}@example.com", uuid::Uuid::new_v4());
     let test_password = "password123";
 
-    let sign_up_result = supabase.auth().sign_up(&test_email, test_password).await?;
+    let sign_up_result = supabase.auth.sign_up(&test_email, test_password).await?;
 
     let user_id = sign_up_result.user.id;
     println!("Created test user with ID: {}", user_id);
 
     // Sign in to get a session
     let sign_in_result = supabase
-        .auth()
+        .auth
         .sign_in_with_password(&test_email, test_password)
         .await?;
 

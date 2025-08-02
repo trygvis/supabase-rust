@@ -2,8 +2,9 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::env;
-use supabase_rust_gftd::Supabase;
+use supabase_rust_client::SupabaseClientWrapper;
 use uuid::Uuid;
+use supabase_rust_client::client::SupabaseConfig;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Task {
@@ -28,7 +29,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("Using Supabase Key: {}", &supabase_key[..10]); // Show only the first 10 chars for security
 
     // Initialize the Supabase client
-    let supabase = Supabase::new(&supabase_url, &supabase_key);
+    let config = SupabaseConfig::new(supabase_url.as_str(), supabase_key)?;
+    let supabase = SupabaseClientWrapper::new(config)?;
 
     println!("Starting database example");
 
@@ -38,7 +40,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     println!("Signing up a test user with email: {}", test_email);
 
-    let sign_up_result = match supabase.auth().sign_up(&test_email, test_password).await {
+    let sign_up_result = match supabase.auth.sign_up(&test_email, test_password).await {
         Ok(result) => result,
         Err(e) => {
             println!("Error signing up test user: {:?}", e);
