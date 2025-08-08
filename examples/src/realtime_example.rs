@@ -60,15 +60,12 @@ async fn run_advanced_filter_example(
                 .eq("is_complete", true),
             move |payload| {
                 let counter = counter_clone.clone();
-                println!("フィルター付きチャンネルで受信: {:?}", payload);
+                println!("フィルター付きチャンネルで受信: {payload:?}");
                 counter.fetch_add(1, Ordering::SeqCst);
 
                 if let Some(record) = payload.data.get("record") {
                     if let Some(title) = record.get("title") {
-                        println!(
-                            "フィルター付きチャンネルで受信: 完了済みタスク「{}」",
-                            title
-                        );
+                        println!("フィルター付きチャンネルで受信: 完了済みタスク「{title}」");
                     }
 
                     if let Some(is_complete) = record.get("is_complete") {
@@ -91,8 +88,8 @@ async fn run_advanced_filter_example(
     for i in 1..6 {
         let task = Task {
             id: None,
-            title: format!("フィルタリングテスト用タスク {}", i),
-            description: Some(format!("フィルター機能テスト用 {}", i)),
+            title: format!("フィルタリングテスト用タスク {i}"),
+            description: Some(format!("フィルター機能テスト用 {i}")),
             is_complete: false,
             created_at: None,
             user_id: user_id.to_string(),
@@ -113,7 +110,7 @@ async fn run_advanced_filter_example(
 
         // 偶数番目のタスクを完了済みに更新（フィルターに合致）
         if i % 2 == 0 {
-            println!("タスク {} を完了済みに更新（フィルターに合致）", i);
+            println!("タスク {i} を完了済みに更新（フィルターに合致）");
             let update_result = supabase
                 .from("tasks")
                 .with_auth(access_token)?
@@ -121,7 +118,7 @@ async fn run_advanced_filter_example(
                 .update(json!({ "is_complete": true }))
                 .await?;
 
-            println!("更新結果: {:?}", update_result);
+            println!("更新結果: {update_result:?}");
         }
 
         // 少し待機してイベントを処理させる
@@ -161,12 +158,12 @@ async fn run_advanced_filter_example(
                 .eq("is_complete", false),
             move |payload| {
                 let counter = counter2_clone.clone();
-                println!("複合フィルターで受信: {:?}", payload);
+                println!("複合フィルターで受信: {payload:?}");
                 counter.fetch_add(1, Ordering::SeqCst);
 
                 if let Some(record) = payload.data.get("record") {
                     if let Some(title) = record.get("title") {
-                        println!("複合フィルターで受信: 「{}」", title);
+                        println!("複合フィルターで受信: 「{title}」");
 
                         if let Some(title_str) = title.as_str() {
                             // タスクのタイトルには「3」または「5」が含まれるはず
@@ -190,8 +187,8 @@ async fn run_advanced_filter_example(
 
     // タスク3と5を更新
     for &i in &[3, 5] {
-        let task_title = format!("フィルタリングテスト用タスク {}", i);
-        println!("タスク {} の説明を更新（複合フィルターに合致）", i);
+        let task_title = format!("フィルタリングテスト用タスク {i}");
+        println!("タスク {i} の説明を更新（複合フィルターに合致）");
 
         // タスクを取得
         let task_list: Vec<serde_json::Value> = supabase
@@ -199,7 +196,7 @@ async fn run_advanced_filter_example(
             .select("*")
             .with_auth(access_token)?
             .eq("title", &task_title)
-            .eq("user_id", &user_id)
+            .eq("user_id", user_id)
             .execute()
             .await?;
 
@@ -216,7 +213,7 @@ async fn run_advanced_filter_example(
                 }))
                 .await?;
 
-            println!("更新結果: {:?}", update_result);
+            println!("更新結果: {update_result:?}");
         }
 
         // 少し待機
@@ -228,16 +225,10 @@ async fn run_advanced_filter_example(
 
     // 結果を確認
     let received_count = counter.load(Ordering::SeqCst);
-    println!(
-        "\n検証: 完了済みタスクフィルターで受信したイベント数: {}",
-        received_count
-    );
+    println!("\n検証: 完了済みタスクフィルターで受信したイベント数: {received_count}");
 
     let received_count2 = counter2.load(Ordering::SeqCst);
-    println!(
-        "検証: 複合フィルターで受信したイベント数: {}",
-        received_count2
-    );
+    println!("検証: 複合フィルターで受信したイベント数: {received_count2}");
 
     // 購読を終了
     // トークンを使用してチャンネルの使用を終了
@@ -257,11 +248,11 @@ async fn run_advanced_filter_example(
     let delete_client = supabase.from("tasks");
     let delete_result = delete_client
         .with_auth(access_token)?
-        .eq("user_id", &user_id)
+        .eq("user_id", user_id)
         .delete()
         .await?;
 
-    println!("削除結果: {:?}", delete_result);
+    println!("削除結果: {delete_result:?}");
     println!("すべてのテストタスクを削除しました");
 
     Ok(())
@@ -291,7 +282,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let user_id = sign_up_result.user.id.clone();
     let access_token = sign_up_result.access_token.clone();
 
-    println!("Created test user with ID: {}", user_id);
+    println!("Created test user with ID: {user_id}");
 
     // --- Set Auth Token for Realtime ---
     let realtime = supabase.realtime.clone();
@@ -373,8 +364,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     for i in 1..4 {
         let task = Task {
             id: None,
-            title: format!("Realtime Task {}", i),
-            description: Some(format!("Test task for realtime #{}", i)),
+            title: format!("Realtime Task {i}"),
+            description: Some(format!("Test task for realtime #{i}")),
             is_complete: false,
             created_at: None,
             user_id: user_id.clone(),
@@ -386,7 +377,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .insert(json!(task))
             .await?;
 
-        println!("タスク {} を作成しました", i);
+        println!("タスク {i} を作成しました");
 
         // イベントが処理される時間を確保
         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -416,7 +407,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .update(json!({ "is_complete": true }))
             .await?;
 
-        println!("更新結果: {:?}", update_result);
+        println!("更新結果: {update_result:?}");
     }
 
     println!("タスク1を更新しました");
@@ -448,7 +439,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .delete()
             .await?;
 
-        println!("削除結果: {:?}", delete_result);
+        println!("削除結果: {delete_result:?}");
     }
 
     println!("タスク2を削除しました");
@@ -458,12 +449,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     // 結果を表示
     let received_count = message_counter.load(Ordering::SeqCst);
-    println!("\n受信したリアルタイムイベント数: {}", received_count);
+    println!("\n受信したリアルタイムイベント数: {received_count}");
     println!("期待値: 5 (作成イベント3件 + 更新イベント1件 + 削除イベント1件)");
 
     // 高度なフィルタリングの例を実行
     if let Err(e) = run_advanced_filter_example(supabase.clone(), &user_id, &access_token).await {
-        println!("フィルタリング例でエラーが発生しました: {}", e);
+        println!("フィルタリング例でエラーが発生しました: {e}");
     }
 
     // クリーンアップ - 作成したすべてのタスクを削除
@@ -476,7 +467,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .delete()
         .await?;
 
-    println!("削除結果: {:?}", delete_result);
+    println!("削除結果: {delete_result:?}");
     println!("すべてのテストタスクを削除しました");
 
     // チャンネルの購読を解除

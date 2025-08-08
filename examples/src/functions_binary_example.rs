@@ -79,10 +79,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             let mut file = File::create(output_path)?;
             file.write_all(&binary_data)?;
 
-            println!("バイナリデータを {} に保存しました", output_path);
+            println!("バイナリデータを {output_path} に保存しました");
         }
         Err(e) => {
-            println!("バイナリデータの取得でエラーが発生しました: {:?}", e);
+            println!("バイナリデータの取得でエラーが発生しました: {e:?}");
             println!("注意: この例では 'generate-image' という名前のEdge Functionが必要です");
         }
     }
@@ -132,8 +132,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                         // 進捗表示
                         if chunks_received % 10 == 0 {
                             println!(
-                                "  進捗: {} チャンク, {} バイト受信",
-                                chunks_received, bytes_received
+                                "  進捗: {chunks_received} チャンク, {bytes_received} バイト受信"
                             );
                         }
 
@@ -141,20 +140,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                         file.write_all(&chunk)?;
                     }
                     Err(e) => {
-                        println!("ストリーム処理中にエラーが発生しました: {:?}", e);
+                        println!("ストリーム処理中にエラーが発生しました: {e:?}");
                         break;
                     }
                 }
             }
 
             println!(
-                "ストリーム受信完了: {} チャンク, 合計 {} バイト",
-                chunks_received, bytes_received
+                "ストリーム受信完了: {chunks_received} チャンク, 合計 {bytes_received} バイト"
             );
-            println!("データを {} に保存しました", output_path);
+            println!("データを {output_path} に保存しました");
         }
         Err(e) => {
-            println!("バイナリストリームの開始にエラーが発生しました: {:?}", e);
+            println!("バイナリストリームの開始にエラーが発生しました: {e:?}");
         }
     }
 
@@ -205,8 +203,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                         // 進捗表示
                         if chunks_processed % 5 == 0 {
                             println!(
-                                "  進捗: {} チャンク, {} バイト処理済み",
-                                chunks_processed, bytes_processed
+                                "  進捗: {chunks_processed} チャンク, {bytes_processed} バイト処理済み"
                             );
                         }
 
@@ -214,20 +211,17 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
                         file.write_all(&processed_chunk)?;
                     }
                     Err(e) => {
-                        println!("処理中にエラーが発生しました: {:?}", e);
+                        println!("処理中にエラーが発生しました: {e:?}");
                         break;
                     }
                 }
             }
 
-            println!(
-                "処理完了: {} チャンク, 合計 {} バイト",
-                chunks_processed, bytes_processed
-            );
-            println!("処理済みデータを {} に保存しました", output_path);
+            println!("処理完了: {chunks_processed} チャンク, 合計 {bytes_processed} バイト");
+            println!("処理済みデータを {output_path} に保存しました");
         }
         Err(e) => {
-            println!("動画ストリームの開始にエラーが発生しました: {:?}", e);
+            println!("動画ストリームの開始にエラーが発生しました: {e:?}");
         }
     }
 

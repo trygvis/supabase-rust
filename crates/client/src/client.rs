@@ -113,7 +113,7 @@ impl SupabaseClientWrapper {
             SupabaseError::Initialization("Failed to set scheme for Realtime URL".to_string())
         })?;
         let rt_url = rt_url_builder.join("realtime/v1").map_err(|e| {
-            SupabaseError::Initialization(format!("Failed to construct Realtime URL: {}", e))
+            SupabaseError::Initialization(format!("Failed to construct Realtime URL: {e}"))
         })?;
         let realtime_client = RealtimeClient::new(rt_url.as_ref(), &config.anon_key);
 
@@ -164,7 +164,7 @@ impl SupabaseClientWrapper {
             }
             Err(e) => {
                 // Authentication failed
-                eprintln!("[IMPL] Authentication failed: {:?}", e); // Use eprintln for errors
+                eprintln!("[IMPL] Authentication failed: {e:?}"); // Use eprintln for errors
                 Err(SupabaseError::Auth(e)) // Map the AuthError to SupabaseError
             }
         }
@@ -310,7 +310,7 @@ mod tests {
 
         // Fix: Url::parse adds a trailing slash if missing path, format! needs literal and arg
         // Use the original URL value for comparison
-        assert_eq!(config.url.to_string(), format!("{}/", url));
+        assert_eq!(config.url.to_string(), format!("{url}/"));
         assert_eq!(config.anon_key, key);
 
         // Optional: Unset the vars? Generally not needed as it affects only this process.

@@ -73,10 +73,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(response) => {
-            println!("Function response: {:?}", response);
+            println!("Function response: {response:?}");
         }
         Err(e) => {
-            println!("Error invoking function: {:?}", e);
+            println!("Error invoking function: {e:?}");
             println!(
                 "Note: This example assumes you have created an Edge Function named 'hello-world'"
             );
@@ -92,7 +92,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let sign_up_result = supabase.auth.sign_up(&test_email, test_password).await?;
 
     let user_id = sign_up_result.user.id;
-    println!("Created test user with ID: {}", user_id);
+    println!("Created test user with ID: {user_id}");
 
     // Sign in to get a session
     let sign_in_result = supabase
@@ -116,7 +116,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut headers = HashMap::new();
     headers.insert(
         "Authorization".to_string(),
-        format!("Bearer {}", access_token),
+        format!("Bearer {access_token}"),
     );
 
     let options = FunctionOptions {
@@ -129,10 +129,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(response) => {
-            println!("Authenticated function response: {:?}", response);
+            println!("Authenticated function response: {response:?}");
         }
         Err(e) => {
-            println!("Error invoking authenticated function: {:?}", e);
+            println!("Error invoking authenticated function: {e:?}");
         }
     }
 
@@ -159,10 +159,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await
     {
         Ok(response) => {
-            println!("Function response with custom headers: {:?}", response);
+            println!("Function response with custom headers: {response:?}");
         }
         Err(e) => {
-            println!("Error invoking function with custom headers: {:?}", e);
+            println!("Error invoking function with custom headers: {e:?}");
         }
     }
 
