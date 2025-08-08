@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 // Correct imports based on crate structure
 use reqwest::Client as ReqwestClient;
+use serde::{Deserialize, Serialize};
 use supabase_rust_auth::AuthOptions;
 use supabase_rust_auth::{Auth, AuthError, Session as AuthSession};
 use supabase_rust_functions::FunctionsClient;
@@ -24,7 +25,7 @@ use uuid::Uuid;
 
 /// Configuration for the Supabase client.
 /// It's recommended to load these values from environment variables or a secure config source.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SupabaseConfig {
     pub url: Url,
     pub anon_key: String,
@@ -66,7 +67,7 @@ pub enum ItemChange {
 /// Wraps Supabase sub-clients and manages configuration/state.
 #[derive(Clone)]
 pub struct SupabaseClientWrapper {
-    config: Arc<SupabaseConfig>,
+    pub config: Arc<SupabaseConfig>,
     http_client: ReqwestClient,
     pub auth: Arc<Auth>,
     pub functions: Arc<FunctionsClient>,
