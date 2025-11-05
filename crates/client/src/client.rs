@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 /// Configuration for the Supabase client.
 /// It's recommended to load these values from environment variables or a secure config source.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SupabaseConfig {
     pub url: Url,
     pub anon_key: String,
